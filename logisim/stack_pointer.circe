@@ -120,7 +120,7 @@ end TCL_Generic;
   </lib>
   <lib desc="#BFH-Praktika" name="10"/>
   <lib desc="#Logisim ITA components" name="11"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/logi7400/logi7400ic.circ" name="12"/>
+  <lib desc="file#logi7400/logi7400ic.circ" name="12"/>
   <main name="stack_pointer"/>
   <options>
     <a name="gateUndefined" val="ignore"/>

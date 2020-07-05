@@ -118,8 +118,8 @@ end TCL_Generic;
   </lib>
   <lib desc="#BFH-Praktika" name="10"/>
   <lib desc="#Logisim ITA components" name="11"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/logi7400/logi7400ic.circ" name="12"/>
-  <main name="instruction_register"/>
+  <lib desc="file#logi7400/logi7400ic.circ" name="12"/>
+  <main name="sequence_counter"/>
   <options>
     <a name="gateUndefined" val="ignore"/>
     <a name="simlimit" val="1000"/>
@@ -150,8 +150,8 @@ end TCL_Generic;
     <tool lib="1" name="AND Gate"/>
     <tool lib="1" name="OR Gate"/>
   </toolbar>
-  <circuit name="instruction_register">
-    <a name="circuit" val="instruction_register"/>
+  <circuit name="sequence_counter">
+    <a name="circuit" val="sequence_counter"/>
     <a name="clabel" val=""/>
     <a name="clabelup" val="east"/>
     <a name="clabelfont" val="SansSerif bold 16"/>
@@ -159,70 +159,76 @@ end TCL_Generic;
     <a name="circuitnamedboxfixedsize" val="true"/>
     <a name="circuitvhdlpath" val=""/>
     <appear>
-      <rect height="4" stroke="none" width="10" x="50" y="58"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="64">DataBusIn</text>
+      <rect height="3" stroke="none" width="10" x="50" y="59"/>
+      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="64">COUNT</text>
       <rect height="3" stroke="none" width="10" x="50" y="79"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="84">WE</text>
+      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="84">SYNC_RST</text>
       <rect height="3" stroke="none" width="10" x="50" y="99"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="104">RST</text>
+      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="104">ASYNC_RST</text>
       <rect height="3" stroke="none" width="10" x="50" y="119"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="124">CLK negedge write</text>
+      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="124">CLK negedge</text>
       <rect height="4" stroke="none" width="10" x="260" y="58"/>
-      <circ-port height="10" pin="410,280" width="10" x="265" y="55"/>
-      <circ-port height="8" pin="210,380" width="8" x="46" y="116"/>
-      <circ-port height="8" pin="210,360" width="8" x="46" y="96"/>
-      <circ-port height="8" pin="210,340" width="8" x="46" y="76"/>
-      <circ-port height="8" pin="270,280" width="8" x="46" y="56"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="end" x="255" y="64">INSTRUCTION</text>
+      <circ-port height="10" pin="340,360" width="10" x="265" y="55"/>
+      <circ-port height="8" pin="200,470" width="8" x="46" y="116"/>
+      <circ-port height="8" pin="200,430" width="8" x="46" y="96"/>
+      <circ-port height="8" pin="200,280" width="8" x="46" y="76"/>
+      <circ-port height="8" pin="200,240" width="8" x="46" y="56"/>
+      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="end" x="255" y="64">SEQUENCE</text>
       <rect height="20" stroke="none" width="200" x="60" y="130"/>
       <rect fill="none" height="100" stroke="#000000" stroke-width="2" width="200" x="60" y="50"/>
-      <text fill="#ffffff" font-family="Courier 10 Pitch" font-size="14" font-weight="bold" text-anchor="middle" x="160" y="144">instruction_register</text>
-      <polyline fill="none" points="65,73 78,73" stroke="#000000"/>
-      <polyline fill="none" points="66,94 84,94" stroke="#000000"/>
-      <circ-anchor facing="east" height="6" width="6" x="267" y="57"/>
+      <text fill="#ffffff" font-family="Courier 10 Pitch" font-size="14" font-weight="bold" text-anchor="middle" x="160" y="144">sequence_counter</text>
+      <polyline fill="none" points="65,73 119,73" stroke="#000000"/>
+      <polyline fill="none" points="67,93 128,93" stroke="#000000"/>
+      <circ-anchor facing="east" height="6" width="6" x="157" y="87"/>
     </appear>
-    <wire from="(400,280)" to="(410,280)"/>
-    <wire from="(350,340)" to="(350,360)"/>
-    <wire from="(210,380)" to="(220,380)"/>
-    <wire from="(270,280)" to="(300,280)"/>
-    <wire from="(210,360)" to="(350,360)"/>
-    <wire from="(300,330)" to="(320,330)"/>
-    <wire from="(220,320)" to="(260,320)"/>
-    <wire from="(210,340)" to="(260,340)"/>
-    <wire from="(220,320)" to="(220,380)"/>
-    <comp lib="0" loc="(300,280)" name="Splitter">
-      <a name="fanout" val="8"/>
-      <a name="incoming" val="8"/>
-      <a name="appear" val="center"/>
+    <wire from="(200,470)" to="(230,470)"/>
+    <wire from="(270,240)" to="(270,310)"/>
+    <wire from="(200,280)" to="(260,280)"/>
+    <wire from="(320,360)" to="(340,360)"/>
+    <wire from="(280,310)" to="(280,330)"/>
+    <wire from="(270,310)" to="(270,330)"/>
+    <wire from="(270,310)" to="(280,310)"/>
+    <wire from="(230,390)" to="(230,470)"/>
+    <wire from="(210,360)" to="(220,360)"/>
+    <wire from="(230,390)" to="(240,390)"/>
+    <wire from="(260,280)" to="(260,330)"/>
+    <wire from="(200,430)" to="(270,430)"/>
+    <wire from="(200,240)" to="(270,240)"/>
+    <wire from="(270,400)" to="(270,430)"/>
+    <comp lib="0" loc="(200,430)" name="Pin">
+      <a name="label" val="ASYNC_RST_n"/>
     </comp>
-    <comp lib="0" loc="(270,280)" name="Pin">
-      <a name="width" val="8"/>
-      <a name="label" val="DataBusIn"/>
-    </comp>
-    <comp lib="0" loc="(400,280)" name="Splitter">
-      <a name="facing" val="west"/>
-      <a name="fanout" val="8"/>
-      <a name="incoming" val="8"/>
-      <a name="appear" val="center"/>
-    </comp>
-    <comp lib="0" loc="(410,280)" name="Pin">
-      <a name="facing" val="west"/>
-      <a name="output" val="true"/>
-      <a name="width" val="8"/>
-      <a name="label" val="INSTRUCTION"/>
-    </comp>
-    <comp lib="12" loc="(380,240)" name="IC_74273"/>
-    <comp lib="1" loc="(300,330)" name="NOR Gate">
-      <a name="size" val="30"/>
-    </comp>
-    <comp lib="0" loc="(210,340)" name="Pin">
-      <a name="label" val="WE_n"/>
-    </comp>
-    <comp lib="0" loc="(210,360)" name="Pin">
-      <a name="label" val="RST_n"/>
-    </comp>
-    <comp lib="0" loc="(210,380)" name="Pin">
+    <comp lib="0" loc="(200,470)" name="Pin">
       <a name="label" val="CLK"/>
     </comp>
+    <comp lib="0" loc="(200,280)" name="Pin">
+      <a name="label" val="SYNC_RST_n"/>
+    </comp>
+    <comp lib="0" loc="(200,240)" name="Pin">
+      <a name="label" val="COUNT"/>
+    </comp>
+    <comp lib="0" loc="(340,360)" name="Pin">
+      <a name="facing" val="west"/>
+      <a name="output" val="true"/>
+      <a name="width" val="4"/>
+      <a name="label" val="SEQUENCE"/>
+      <a name="radix" val="10unsigned"/>
+    </comp>
+    <comp lib="0" loc="(220,360)" name="Splitter">
+      <a name="fanout" val="4"/>
+      <a name="incoming" val="4"/>
+      <a name="appear" val="center"/>
+    </comp>
+    <comp lib="0" loc="(210,360)" name="Constant">
+      <a name="width" val="4"/>
+      <a name="value" val="0x0"/>
+    </comp>
+    <comp lib="0" loc="(320,360)" name="Splitter">
+      <a name="facing" val="west"/>
+      <a name="fanout" val="4"/>
+      <a name="incoming" val="4"/>
+      <a name="appear" val="center"/>
+    </comp>
+    <comp lib="12" loc="(300,340)" name="IC_74161"/>
   </circuit>
 </project>

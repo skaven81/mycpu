@@ -57,7 +57,7 @@ This file is intended to be loaded by Logisim-evolution (https://github.com/reds
       <a name="valign" val="base"/>
     </tool>
   </lib>
-  <lib desc="file#/raid/user/skaven/mycpu2/logi7400/logi7400ic.circ" name="7"/>
+  <lib desc="file#logi7400/logi7400ic.circ" name="7"/>
   <main name="register_pair"/>
   <options>
     <a name="gateUndefined" val="ignore"/>

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <project source="2.15.0" version="1.0">
-This file is intended to be loaded by Logisim-evolution (https://github.com/reds-heig/logisim-evolution).
-<lib desc="#Wiring" name="0">
+  This file is intended to be loaded by Logisim-evolution (https://github.com/reds-heig/logisim-evolution).
+
+  <lib desc="#Wiring" name="0">
     <tool name="Splitter">
       <a name="facing" val="south"/>
       <a name="appear" val="center"/>
@@ -194,15 +195,15 @@ end TCL_Generic;
   </lib>
   <lib desc="#BFH-Praktika" name="10"/>
   <lib desc="#Logisim ITA components" name="11"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/main_memory.circ" name="12"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/register.circ" name="13"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/program_counter.circ" name="14"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/stack_pointer.circ" name="15"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/sequence_counter.circ" name="16"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/instruction_register.circ" name="17"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/immediate_register.circ" name="18"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/alu.circ" name="19"/>
-  <lib desc="file#/raid/user/skaven/mycpu2/interrupt_handler.circ" name="20"/>
+  <lib desc="file#/main_memory.circ" name="12"/>
+  <lib desc="file#/register.circ" name="13"/>
+  <lib desc="file#/program_counter.circ" name="14"/>
+  <lib desc="file#/stack_pointer.circ" name="15"/>
+  <lib desc="file#/sequence_counter.circ" name="16"/>
+  <lib desc="file#/instruction_register.circ" name="17"/>
+  <lib desc="file#/immediate_register.circ" name="18"/>
+  <lib desc="file#/alu.circ" name="19"/>
+  <lib desc="file#/interrupt_handler.circ" name="20"/>
   <main name="mycpu"/>
   <options>
     <a name="gateUndefined" val="ignore"/>
