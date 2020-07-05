@@ -195,15 +195,15 @@ end TCL_Generic;
   </lib>
   <lib desc="#BFH-Praktika" name="10"/>
   <lib desc="#Logisim ITA components" name="11"/>
-  <lib desc="file#/main_memory.circ" name="12"/>
-  <lib desc="file#/register.circ" name="13"/>
-  <lib desc="file#/program_counter.circ" name="14"/>
-  <lib desc="file#/stack_pointer.circ" name="15"/>
-  <lib desc="file#/sequence_counter.circ" name="16"/>
-  <lib desc="file#/instruction_register.circ" name="17"/>
-  <lib desc="file#/immediate_register.circ" name="18"/>
-  <lib desc="file#/alu.circ" name="19"/>
-  <lib desc="file#/interrupt_handler.circ" name="20"/>
+  <lib desc="file#main_memory.circ" name="12"/>
+  <lib desc="file#register.circ" name="13"/>
+  <lib desc="file#program_counter.circ" name="14"/>
+  <lib desc="file#stack_pointer.circ" name="15"/>
+  <lib desc="file#sequence_counter.circ" name="16"/>
+  <lib desc="file#instruction_register.circ" name="17"/>
+  <lib desc="file#immediate_register.circ" name="18"/>
+  <lib desc="file#alu.circ" name="19"/>
+  <lib desc="file#interrupt_handler.circ" name="20"/>
   <main name="mycpu"/>
   <options>
     <a name="gateUndefined" val="ignore"/>
