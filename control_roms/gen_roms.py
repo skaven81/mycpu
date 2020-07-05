@@ -21,9 +21,70 @@ class ControlSignal:
     def get_binmask(self):
         return bin(self.mask).lstrip('0b').zfill(8)
 
-    def __str__(self):
-        return "Signal {:6} default {} ROM {} mask 0x{:02x}/0b{:08b}".format(self.signal, self.default, self.romid, self.mask, self.mask)
+    def get_masked_value(self, val):
+        """
+        The mask should be all zeroes with some contiguous ones
+        inside.  The number of zeroes to the right of the ones
+        is how many times the value needs to be shifted left.
 
+        mask = 0b00111000
+
+        Three zeroes to the right of the ones, so shift the value
+        left three times:
+
+        1 << 3 => 0b00001000
+        2 << 3 => 0b00010000
+        3 << 3 => 0b00011000
+        """
+        shift = 7 - self.get_binmask().rfind('1')
+        return val << shift
+
+    def __str__(self):
+        return "Signal {:6} default {}/0b{:08b} ROM {} mask 0x{:02x}/0b{:08b}".format(self.signal, self.default, self.get_masked_value(self.default), self.romid, self.mask, self.mask)
+
+class RomByte:
+    def __init__(self, id):
+        self.id = id
+        self.signals = dict()
+
+    def add_signal(self, signal):
+        if signal.romid != self.id:
+            raise ValueError("ERROR: Cannot add signal for ROM ID {} to RomByte with ID {}".format(signal.romid, self.id))
+        self.signals[signal.signal] = signal
+
+    def get_default_byte(self):
+        byte = 0
+        for s in self.signals.values():
+            byte = byte | s.get_masked_value(s.default)
+        return byte
+
+    def get_byte(self, override_signals):
+        byte = self.get_default_byte()
+        for override_signal_name, override_signal_value in override_signals.items():
+            if override_signal_name not in self.signals:
+                raise SyntaxError("ERROR: Attempt to assert undefined signal {} in ROM {}".format(override_signal_name, self.id))
+            if override_signal_value == -1:
+                # This only works for Boolean values
+                if self.signals[override_signal_name].get_binmask().count("1") != 1:
+                    raise SyntaxError("ERROR: attempt to use toggle for multi-bit signal {} in ROM {}".format(override_signal_name, self.id))
+                # toggle the default
+                if self.signals[override_signal_name].default == 0:
+                    byte = byte | self.signals[override_signal_name].get_masked_value(1)
+                else:
+                    byte = byte & ~self.signals[override_signal_name].get_masked_value(1)
+            else:
+                # reset the signal's bits
+                byte = byte & (~self.signals[override_signal_name].mask)
+                # set the new value
+                byte = byte | (self.signals[override_signal_name].get_masked_value(override_signal_value))
+        return byte
+
+    def __str__(self):
+        ret = "RomByte {}: default ".format(self.id)
+        ret += "0b{:08b}".format(self.get_default_byte())
+        ret += " "
+        ret += " ".join(["{}={}".format(s.signal, s.default) for s in self.signals.values()])
+        return ret
 
 class Macro:
     @classmethod
@@ -42,6 +103,8 @@ class Macro:
             signal, i, i = signal.partition('#') # strip comments
             signal = signal.rstrip()
             signal, i, val = signal.partition('=')
+            if not signal:
+                continue
             if val:
                 self.signals[signal] = int(val)
             else:
@@ -80,7 +143,7 @@ class Opcode:
             if m:
                 uop = {
                     "sequence": int(m.group(2), 16),
-                    "signals": set(m.group(3).split(' ')),
+                    "macros": set(m.group(3).split(' ')),
                     "zero": None,
                     "equal": None,
                     "over": None,
@@ -124,6 +187,7 @@ class Opcode:
         return ret
 
     def get_uop(self, sequence, zero, equal, over):
+        matches = [ ]
         for uop in self.micro_ops:
             if uop["sequence"] != sequence:
                 continue
@@ -133,12 +197,18 @@ class Opcode:
                 continue
             if (uop["over"] is True and not over) or (uop["over"] is False and over):
                 continue
-            return uop
+            matches.append(uop)
+        if len(matches) > 1:
+            raise SyntaxError("ERROR: Opcode {} has multiple uops that match sequence {} with flags {}".format(self.name, sequence, self.flag_str(matches[0])))
+        elif len(matches) == 1:
+            return matches[0]
+        else:
+            return None
 
     def __str__(self):
         ret = "Opcode 0x{:02x}: {} {}".format(self.code, self.name, " ".join(self.args))
         for op in self.micro_ops:
-            ret += "\n  {:>3} {:1x} {}".format(self.flag_str(op), op['sequence'], ' '.join(op['signals']))
+            ret += "\n  {:>3} {:1x} {}".format(self.flag_str(op), op['sequence'], ' '.join(op['macros']))
         return ret
 
 if __name__ == "__main__":
@@ -206,19 +276,77 @@ if __name__ == "__main__":
             opcodes[opcode.code] = opcode
 
     #####
-    # Data is loaded, now enumerate all 32k signal combinations
-    for opcode_num in range(0, 3): #XXX 256 when ready
+    # Create a mapping between macros and signals
+    macro_map = { }
+    for m in macros.values():
+        macro_map[m.name] = { }
+        for signal_name, signal_value in m.signals.items():
+            if signal_name not in control_signals:
+                raise SyntaxError("ERROR: Macro {} refers to undefined signal {}".format(m.name, signal_name))
+            macro_map[m.name][signal_name] = signal_value
+
+    #####
+    # Instantiate our RomByte objects
+    rombytes = [ RomByte(0), RomByte(1) ]
+    for signal in control_signals.values():
+        rombytes[signal.romid].add_signal(signal)
+    for r in rombytes:
+        print(r)
+
+    #####
+    # Final data for each ROM
+    roms = [ list() for i in rombytes ]
+
+    #####
+    # Enumerate all 32k input signal combinations
+    for opcode_num in range(0, 256):
         if opcode_num in opcodes:
             opcode = opcodes[opcode_num]
         else:
             opcode = opcodes[0] # NOP by default
-        print("### {} ###".format(opcode.name))
-        print("  {:2} {:3} {:1} {:8} {:8}".format("OP", "F=0", "#", "ROM0","ROM1"))
+        if((opcode.name == "NOP" and opcode_num == 0) or (opcode.name != "NOP")):
+            print("### {} ###".format(opcode.name))
+            print("  {:2} {:3} {:1} {:8} {:8}".format("OP", "F=0", "#", "ROM0","ROM1"))
+        found_uops = dict()
         for flag_num in range(0, 8):
             flag_zero = bool(flag_num & 0b001)
             flag_equal = bool(flag_num & 0b010)
             flag_over = bool(flag_num & 0b100)
             for sequence_num in range(0, 16):
+                # get_uop will raise an exception if multiple uops match this combination
                 uop = opcode.get_uop(sequence=sequence_num, zero=flag_zero, equal=flag_equal, over=flag_over)
+                op_signals = [ dict() for i in rombytes ]
                 if uop:
-                    print("0x{:02x} {:03b} {:1x} {:08b} {:08b} # {}".format(opcode_num, flag_num, sequence_num, 0, 0, uop['signals']))
+                    found_uops[sequence_num] = True
+                    for m in uop['macros']:
+                        if m not in macro_map:
+                            raise SyntaxError("ERROR: micro-op uses macro {} that does not exist".format(s))
+                        for signal_name, signal_value in macro_map[m].items():
+                            signal = control_signals[signal_name]
+                            op_signals[signal.romid][signal_name] = signal_value
+                    if((opcode.name == "NOP" and opcode_num == 0) or (opcode.name != "NOP")):
+                        print("0x{:02x} {:03b} {:1x} {:08b} {:08b} # {} => {}".format(opcode_num, flag_num, sequence_num,
+                                rombytes[0].get_byte(op_signals[0]), rombytes[1].get_byte(op_signals[1]),
+                                uop['macros'], op_signals))
+                for romidx in range(0, len(rombytes)):
+                    roms[romidx].append(rombytes[romidx].get_byte(op_signals[romidx]))
+        # Sanity check that every opcode has contiguous
+        # sequence numbers, without any skipped codes
+        expected_seq = 0
+        for found_seq_num in sorted([ *found_uops.keys() ]):
+            if found_seq_num != expected_seq:
+                raise SyntaxError("ERROR: Missing sequence number {} in opcode {}".format(expected_seq, opcode.name))
+            expected_seq += 1
+
+    # Sanity check that we computed all 32k combinations
+    for romidx in range(0, len(roms)):
+        if(len(roms[romidx]) != 32768):
+            raise ValueError("ROM {} has length other than 32k".format(romidx))
+
+    # Write hex files
+    for romidx in range(0, len(roms)):
+        filename = "control_rom_{}.hex".format(romidx)
+        print("Writing {}".format(filename))
+        with open(filename, mode='wb') as fh:
+            fh.write(bytes(roms[romidx]))
+
