@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # vim: syntax=python ts=4 sts=4 sw=4 expandtab
 
-import binascii
-
 class ControlSignal:
     @classmethod
     def match_header(cls, line):
