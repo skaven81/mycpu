@@ -1,0 +1,2400 @@
+#!/usr/bin/wish -f
+#Fix the path above.
+
+#Fix the path below.
+source /raid/user/skaven/mycpu2/bitmapfont/completion.tcl
+
+# TTD
+# BACKUP FILE BEFORE SAVE!!!!
+# problem - setgrid doesn't handle metadata of char well:
+#   it sets character data instead of just currchar data
+#   e.g. name, dwidth
+# to make it publishable:
+#   defaults, .bdfeditrc (default size, default comment, default foundry...)
+#
+# display modified state (i.e. save needed or not)
+# set up hint markers for marking grid (e.g. lower case ascent height)
+# allow in-place editing of character name (instead of pop-up)
+# help
+#
+# shift drag == OR
+# control drag == XOR
+# mode for swapping chars (including char names)
+# drag FROM grid
+# load font - interactive file selection
+# support vertical fonts
+# clear whole clipboard
+# resize:
+#   scale
+#   max save
+# support xmag/bitmap cut-n-paste selection
+#
+# select area
+#   flip l-r, u-d
+#   rotate 180
+#   slide left, right, up, down, diagonals
+#   invert
+#   copy/paste
+#   autotile
+# 
+# line
+# circle
+# rectangle
+# flood fill
+# undo
+# paste (from X11)
+# resize; rescale; alter baseline; alter margin
+# 
+
+set hex2bin(0) {0 0 0 0}
+set hex2bin(1) {0 0 0 1}
+set hex2bin(2) {0 0 1 0}
+set hex2bin(3) {0 0 1 1}
+set hex2bin(4) {0 1 0 0}
+set hex2bin(5) {0 1 0 1}
+set hex2bin(6) {0 1 1 0}
+set hex2bin(7) {0 1 1 1}
+set hex2bin(8) {1 0 0 0}
+set hex2bin(9) {1 0 0 1}
+set hex2bin(a) {1 0 1 0}
+set hex2bin(b) {1 0 1 1}
+set hex2bin(c) {1 1 0 0}
+set hex2bin(d) {1 1 0 1}
+set hex2bin(e) {1 1 1 0}
+set hex2bin(f) {1 1 1 1}
+foreach key [array names hex2bin] {
+  set bin2hex($hex2bin($key)) $key
+}
+set hex2bin(A) {1 0 1 0}
+set hex2bin(B) {1 0 1 1}
+set hex2bin(C) {1 1 0 0}
+set hex2bin(D) {1 1 0 1}
+set hex2bin(E) {1 1 1 0}
+set hex2bin(F) {1 1 1 1}
+
+set default(WIDTH) 9
+set default(HEIGHT) 12
+set default(DESCENT) -3
+set default(FOUNDRY) "Fine"
+set default(COMMENT) {
+ This font is copyrighted by its author, who reserves all rights under
+ national and international copyright laws.
+
+ Produced with bdfedit, a tcl/tk font editing program
+   written by Thomas A. Fine
+   Email to my last name at head.cfa.harvard.edu
+   http://hea-www.harvard.edu/~fine/
+}
+
+set GPAD 20
+set GTOP 200
+set GLEFT 60
+set GMARGIN 1
+set GBOX 12
+set FLEFT 15
+set FRIGHT 30
+set FTOP 15
+set FBOTTOM 30
+
+set resize(gsz) 10
+set resize(gleft) 50
+set resize(gtop) 50
+set holdserial(last) 0
+set pickstate ""
+
+set BG #00BE74
+set currfile ""
+. config -bg $BG
+option add *[tk appname]*background $BG 90
+
+frame .top -bd 2 -relief raised
+pack .top -fill x
+menubutton .top.file -text File -menu .top.file.m -underline 0
+menu .top.file.m
+.top.file.m add command -label New -command new
+.top.file.m add command -label Load -command load
+.top.file.m add command -label "Import bitmap" -command importxbm
+.top.file.m add command -label Save -command save
+.top.file.m add command -label "Save As" -command saveas
+.top.file.m add separator
+.top.file.m add command -label Properties -command properties
+.top.file.m add command -label "Edit Comment" -command comment
+.top.file.m add command -label Resize -command resize
+.top.file.m add command -label "Convert to Fixed" -command fixall
+.top.file.m add separator
+.top.file.m add command -label Quit -command exit
+pack .top.file -side left
+menubutton .top.edit -text Edit -menu .top.edit.m -underline 0
+menu .top.edit.m
+.top.edit.m add command -label "Flip up/down" -command flipud
+.top.edit.m add command -label "Flip left/right" -command fliplr
+.top.edit.m add command -label "Rotate 180" -command rot180
+.top.edit.m add command -label "Invert black/white" -command invert
+pack .top.edit -side left
+label .top.fname -font fixed -textvar currfile
+pack .top.fname -side right
+
+#using two canvas vastly speeds things up, because when you try to change the
+#grid rectangles, you aren't searching through the thousands of objects
+#created to draw the entire font
+canvas .fc -width 500 -height 200 -bg white -highlightthickness 0
+pack .fc
+canvas .c -width 500 -height 300 -bg white -highlightthickness 0
+pack .c
+
+button .c.clear -text Clear -command clearwork -highlightthickness 0 -padx 1 -pady 1
+button .c.apply -text Apply -command applywork -highlightthickness 0 -padx 1 -pady 1
+button .c.reset -text Reset -command resetwork -highlightthickness 0 -padx 1 -pady 1
+button .c.orig -text Orig -command origwork -highlightthickness 0 -padx 1 -pady 1
+button .c.hold -text Hold -command {hold work} -highlightthickness 0 -padx 1 -pady 1
+
+proc resetall {} {
+  global WIDTH HEIGHT chardata fontinfo origdata holddata holdserial default
+  global FLEFT FTOP FRIGHT FBOTTOM
+  
+  set WIDTH 0
+  set HEIGHT 0
+  foreach elem [array names fontinfo] {
+    unset fontinfo($elem)
+  }
+  foreach elem [array names chardata] {
+    unset chardata($elem)
+  }
+  foreach elem [array names origdata] {
+    unset origdata($elem)
+  }
+  #don't delete hold data - it gets resized by new and loadbdffont
+
+  .c delete all
+  .fc delete all
+  set fontinfo(foundry) $default(FOUNDRY)
+  set fontinfo(family) ""
+  set fontinfo(weight) "Medium"
+  set fontinfo(slant) "R"
+  set fontinfo(widthname) "Normal"
+  set fontinfo(copyright) "Designer of this font retains full rights under the law"
+  set holdserial(last) 0
+}
+
+#convert font to fixed-width
+proc fixall {} {
+  global chardata WIDTH
+  for {set encod 0} {$encod<256} {incr encod} {
+    if ([info exists chardata($encod)]) {
+      set chardata(dwidth,$encod) $WIDTH
+    }
+  }
+}
+
+proc properties {} {
+  showprops
+  set x [winfo pointerx .]
+  set y [winfo pointery .]
+  set x [expr $x-[winfo reqwidth .propdialog]/2]
+  set y [expr $y-[winfo reqheight .propdialog]/2]
+  wm geometry .propdialog +$x+$y
+  wm deiconify .propdialog
+  grab .propdialog
+}
+
+proc showprops {} {
+  global proplist fontinfo
+  .propdialog.labels config -state normal
+  .propdialog.labels delete 0.0 end
+  .propdialog.values delete 0.0 end
+  set maxval 0
+  set maxlab 0
+  foreach prop $proplist {
+    .propdialog.labels insert insert "$prop\n"
+    .propdialog.values insert insert "$fontinfo($prop)\n"
+    if [string length $fontinfo($prop)]>$maxval {
+      set maxval [string length $fontinfo($prop)]
+    }
+    if [string length $prop]>$maxlab {
+      set maxlab [string length $prop]
+    }
+  }
+  .propdialog.values config -width $maxval
+  .propdialog.labels config -width $maxlab -state disabled
+}
+
+proc setpropwidth {} {
+  set numlines [.propdialog.values index "end -1l"]
+  set winwidth [.propdialog.values cget -width]
+  set max 0
+  for {set i 1} {$i<$numlines} {incr i} {
+    scan [.propdialog.values index $i.end] %d.%d linenum linewidth
+    if $linewidth>$max { set max $linewidth }
+  }
+  #we really want to be doing this function after the current key event is
+  #processed, but its simpler just to add a fudge to the needed with to
+  #make sure the text will always fit:
+  #(adding 2 instead of 1 prevents jitter (text wrap, unwrap after resize))
+  incr max 2
+  if (($max>$winwidth)||($max<$winwidth&&$max>=10)) {
+    .propdialog.values config -width $max
+  }
+}
+
+proc changeprops {} {
+  global proplist fontinfo
+  set line 1
+  foreach prop $proplist {
+    set fontinfo($prop) [.propdialog.values get $line.0 $line.end]
+    incr line
+  }
+  wm withdraw .propdialog
+  grab release .propdialog
+}
+
+proc comment {} {
+  global fontinfo default
+  .commdialog.t delete 0.0 end
+  if ![info exists fontinfo(COMMENT)] {
+    set fontinfo(COMMENT) $default(COMMENT)
+  }
+  .commdialog.t insert 0.0 $fontinfo(COMMENT)
+  #this creates an extra blank line at the end, so get rid of it
+  .commdialog.t delete "end -1 line lineend" end
+  set x [winfo pointerx .]
+  set y [winfo pointery .]
+  set x [expr $x-[winfo reqwidth .commdialog]/2]
+  set y [expr $y-[winfo reqheight .commdialog]/2]
+  wm geometry .commdialog +$x+$y
+  wm deiconify .commdialog
+  grab .commdialog
+}
+
+proc changecomment {newcomm} {
+  global fontinfo
+  set fontinfo(COMMENT) [.commdialog.t get 0.0 end]
+  wm withdraw .commdialog
+  grab release .commdialog
+}
+
+proc resize {} {
+  global resize WIDTH HEIGHT
+
+  set resize(gsz) 10
+  set w [expr $WIDTH*$resize(gsz)+20*$resize(gsz)]
+  set h [expr $HEIGHT*$resize(gsz)+20*$resize(gsz)]
+  if ($w<300) { set w 300 }
+  if ($h<300) { set h 300 }
+  set resize(gleft) [expr 10*$resize(gsz)]
+  set resize(gtop) [expr 10*$resize(gsz)]
+  .resizedialog.c config -width $w -height $h
+  set x [winfo pointerx .]
+  set y [winfo pointery .]
+  set x [expr $x-[winfo reqwidth .resizedialog]/2]
+  set y [expr $y-[winfo reqheight .resizedialog]/2]
+  wm geometry .resizedialog +$x+$y
+  wm deiconify .resizedialog
+  grab .resizedialog
+  update
+  drawresizer
+}
+
+proc new {} {
+  set x [winfo pointerx .]
+  set y [winfo pointery .]
+  set x [expr $x-[winfo reqwidth .newdialog]/2]
+  set y [expr $y-[winfo reqheight .newdialog]/2]
+  wm geometry .newdialog +$x+$y
+  wm deiconify .newdialog
+  grab .newdialog
+}
+
+proc load {} {
+  set x [winfo pointerx .]
+  set y [winfo pointery .]
+  set x [expr $x-[winfo reqwidth .loaddialog]/2]
+  set y [expr $y-[winfo reqheight .loaddialog]/2]
+  wm geometry .loaddialog +$x+$y
+  wm deiconify .loaddialog
+  grab .loaddialog
+}
+
+proc importxbm {} {
+  set x [winfo pointerx .]
+  set y [winfo pointery .]
+  set x [expr $x-[winfo reqwidth .importdialog]/2]
+  set y [expr $y-[winfo reqheight .importdialog]/2]
+  wm geometry .importdialog +$x+$y
+  wm deiconify .importdialog
+  if [string length [.importdialog.offset.x get]]==0 {
+    .importdialog.offset.x insert end 0
+  }
+  if [string length [.importdialog.offset.y get]]==0 {
+    .importdialog.offset.y insert end 0
+  }
+  #grab .importdialog
+}
+
+proc save {} {
+  global currfile
+  if [string length $currfile] {
+    dosave $currfile 0
+  } else {
+    saveas
+  }
+}
+
+proc saveas {} {
+  set x [winfo pointerx .]
+  set y [winfo pointery .]
+  set x [expr $x-[winfo reqwidth .savedialog]/2]
+  set y [expr $y-[winfo reqheight .savedialog]/2]
+  wm geometry .savedialog +$x+$y
+  wm deiconify .savedialog
+  focus .savedialog.e
+  grab .savedialog
+}
+
+proc renamechar {} {
+  global currchar chardata
+  .chardialog.e delete 0 end
+  if [info exists chardata(name,$currchar)] {
+    .chardialog.e insert 0 $chardata(name,$currchar)
+  }
+  set x [winfo pointerx .]
+  set y [winfo pointery .]
+  set x [expr $x-[winfo reqwidth .chardialog]/2]
+  set y [expr $y-[winfo reqheight .chardialog]/2]
+  wm geometry .chardialog +$x+$y
+  wm deiconify .chardialog
+  grab .chardialog
+}
+
+proc showmess {message} {
+  set x [winfo pointerx .]
+  set y [winfo pointery .]
+  set x [expr $x-[winfo reqwidth .messdialog]/2]
+  set y [expr $y-[winfo reqheight .messdialog]/2]
+  .messdialog.m config -text $message
+  wm geometry .messdialog +$x+$y
+  wm deiconify .messdialog
+}
+
+proc setcharname {name} {
+  global currchar chardata
+  set chardata(name,$currchar) $name
+  wm withdraw .chardialog
+  grab release .chardialog
+  set txt [format "%d (%c) %s" $currchar $currchar $name]
+  .c itemconfig charlabel -text $txt
+}
+
+proc drawresizer {} {
+  global currchar chardata WIDTH HEIGHT fontinfo resize
+  set c .resizedialog.c
+  set w [winfo width .resizedialog.c]
+  set h [winfo height .resizedialog.c]
+  set gsz $resize(gsz)
+  set left $resize(gleft)
+  set top $resize(gtop)
+
+
+  $c delete all
+  for {set i 0} {$i<$w} {incr i $gsz} { $c create line $i 0 $i $h -fill grey}
+  for {set i 0} {$i<$h} {incr i $gsz} { $c create line 0 $i $w $i -fill grey}
+  $c create rectangle $left $top [expr $left+$WIDTH*$gsz] [expr $top+$HEIGHT*$gsz]
+  $c create line $left [expr $top+($HEIGHT+$fontinfo(yorigin))*$gsz] [expr $left+$WIDTH*$gsz] [expr $top+($HEIGHT+$fontinfo(yorigin))*$gsz]
+  $c create line [expr $left-$fontinfo(xorigin)*$gsz] $top [expr $left-$fontinfo(xorigin)*$gsz] [expr $top+$HEIGHT*$gsz]
+
+  set resize(left) 0
+  set resize(right) $WIDTH
+  set resize(top) 0
+  set resize(bottom) $HEIGHT
+  set resize(yorigin) [expr $HEIGHT+$fontinfo(yorigin)]
+  set resize(xorigin) [expr 0-$fontinfo(xorigin)]
+
+  $c create line 0 0 0 0 -fill skyblue -width 3 -tags yorigin
+  $c create line 0 0 0 0 -fill skyblue -width 3 -tags xorigin
+  $c create line 0 0 0 0 -fill green -width 3 -tags left
+  $c create line 0 0 0 0 -fill green -width 3 -tags right
+  $c create line 0 0 0 0 -fill green -width 3 -tags top
+  $c create line 0 0 0 0 -fill green -width 3 -tags bottom
+
+  fix_resizers
+
+  $c bind left      <1> "pick_resizers left      %x %y"
+  $c bind right     <1> "pick_resizers right     %x %y"
+  $c bind top       <1> "pick_resizers top       %x %y"
+  $c bind bottom    <1> "pick_resizers bottom    %x %y"
+  $c bind yorigin   <1> "pick_resizers yorigin   %x %y"
+  $c bind xorigin   <1> "pick_resizers xorigin   %x %y"
+  $c bind left      <B1-Motion> "change_resizers left      %x %y"
+  $c bind right     <B1-Motion> "change_resizers right     %x %y"
+  $c bind top       <B1-Motion> "change_resizers top       %x %y"
+  $c bind bottom    <B1-Motion> "change_resizers bottom    %x %y"
+  $c bind yorigin   <B1-Motion> "change_resizers yorigin   %x %y"
+  $c bind xorigin   <B1-Motion> "change_resizers xorigin   %x %y"
+
+}
+
+proc pick_resizers {which x y} {
+  global resize
+  set nx [expr ($x-$resize(gleft)+($resize(gsz)/2))/$resize(gsz)]
+  set ny [expr ($y-$resize(gtop)+($resize(gsz)/2))/$resize(gsz)]
+  set resize(which) $which
+  set resize(lastx) $nx
+  set resize(lasty) $ny
+}
+
+proc change_resizers {which x y} {
+  global resize
+  set nx [expr ($x-$resize(gleft)+($resize(gsz)/2))/$resize(gsz)]
+  set ny [expr ($y-$resize(gtop)+($resize(gsz)/2))/$resize(gsz)]
+  if ($nx==$resize(lastx)&&$ny==$resize(lasty)) return
+  set resize(lastx) $nx
+  set resize(lasty) $ny
+  switch -- $which {
+    left {
+      if ($nx>=$resize(right)) { set nx [expr $resize(right)-1] }
+      set resize(left) $nx
+    }
+    right {
+      if ($nx<=$resize(left)) { set nx [expr $resize(left)+1] }
+      set resize(right) $nx
+    }
+    top {
+      if ($ny>=$resize(bottom)) { set ny [expr $resize(bottom)-1] }
+      set resize(top) $ny
+    }
+    bottom {
+      if ($ny<=$resize(top)) { set ny [expr $resize(top)+1] }
+      set resize(bottom) $ny
+    }
+    yorigin {
+      if ($ny<$resize(top)) { set ny [expr $resize(top)] }
+      if ($ny>$resize(bottom)) { set ny [expr $resize(bottom)] }
+      set resize(yorigin) $ny
+    }
+    xorigin {
+      if ($nx<$resize(left)) { set nx [expr $resize(left)] }
+      if ($nx>$resize(right)) { set nx [expr $resize(right)] }
+      set resize(xorigin) $nx
+    }
+  }
+  fix_resizers
+}
+
+proc fix_resizers {} {
+  global resize
+
+  set lx [expr $resize(left)*$resize(gsz)+$resize(gleft)]
+  set rx [expr $resize(right)*$resize(gsz)+$resize(gleft)]
+  set ty [expr $resize(top)*$resize(gsz)+$resize(gtop)]
+  set by [expr $resize(bottom)*$resize(gsz)+$resize(gtop)]
+  set yoy [expr $resize(yorigin)*$resize(gsz)+$resize(gtop)]
+  set xox [expr $resize(xorigin)*$resize(gsz)+$resize(gleft)]
+
+  set c .resizedialog.c
+  $c coords left   $lx $ty $lx $by
+  $c coords right  $rx $ty $rx $by
+  $c coords top    $lx $ty $rx $ty
+  $c coords bottom $lx $by $rx $by
+  $c coords yorigin [expr $lx-$resize(gsz)] $yoy [expr $rx+$resize(gsz)] $yoy
+  $c coords xorigin $xox [expr $ty-$resize(gsz)] $xox [expr $by+$resize(gsz)]
+
+  set w [expr $resize(right)-$resize(left)]
+  set h [expr $resize(bottom)-$resize(top)]
+  set base [expr $resize(yorigin)-$resize(bottom)]
+  .resizedialog.l config -text "Size: ${w}x${h}  Baseline: $base"
+}
+
+proc doresize {} {
+  global fontinfo chardata origdata holddata resize
+  global FLEFT FRIGHT FTOP FBOTTOM WIDTH HEIGHT
+  set dleft   [expr 0-$resize(left)]
+  set dright  [expr $resize(right)-$WIDTH]
+  set dtop    [expr 0-$resize(top)]
+  set dbottom [expr $resize(bottom)-$HEIGHT]
+  set newyorg [expr $resize(yorigin)-$resize(bottom)]
+  set newxorg [expr $resize(left)-$resize(xorigin)]
+
+  set newwidth [expr $WIDTH+($dleft)+($dright)]
+  set newheight [expr $HEIGHT+($dtop)+($dbottom)]
+  for {set encod 0} {$encod<256} {incr encod} {
+    if ([info exists chardata($encod)]) {
+      set chardata($encod) \
+	  [resizedata $chardata($encod) $dleft $dright $dtop $dbottom]
+    }
+    if ([info exists origdata($encod)]) {
+      set origdata($encod) \
+	  [resizedata $origdata($encod) $dleft $dright $dtop $dbottom]
+    }
+  }
+  for {set encod 0} {$encod<32} {incr encod} {
+    if ([info exists holddata($encod)]) {
+      set holddata($encod) \
+	  [resizedata $holddata($encod) $dleft $dright $dtop $dbottom]
+    }
+  }
+  set chardata(work) [resizedata $chardata(work) $dleft $dright $dtop $dbottom]
+  set WIDTH $newwidth
+  set HEIGHT $newheight
+  set FLEFT 15
+  set FTOP 15
+  set FRIGHT [expr $FLEFT+32*$WIDTH]
+  set FBOTTOM [expr $FTOP+8*$HEIGHT]
+  set fontinfo(width) $newwidth
+  set fontinfo(height) $newheight
+  set fontinfo(yorigin) $newyorg
+  set fontinfo(xorigin) $newxorg
+  wm withdraw .resizedialog
+  grab release .resizedialog
+  .c delete all
+  .fc delete all
+  makegrid $WIDTH $HEIGHT $fontinfo(xorigin) $fontinfo(yorigin)
+  clearsel
+  showfont
+  setgrid chardata work
+}
+
+#all numbers are positive for row/column of data being added
+proc resizedata {data dleft dright dtop dbottom} {
+  set orig_width [llength [lindex $data 0]]
+  set orig_height [llength $data]
+  set newwidth [expr $orig_width+($dleft)+($dright)]
+  set newheight [expr $orig_height+($dtop)+($dbottom)]
+  set blankrow ""
+  for {set i 0} {$i<$newwidth} {incr i} { lappend blankrow 0 }
+  set newdata ""
+
+  if ($dtop>0) {
+    for {set i 0} {$i<$dtop} {incr i} {
+      lappend newdata $blankrow
+    }
+    set startrow 0
+  } else {
+    set startrow [expr 0-$dtop]
+  }
+  if ($dbottom<0) {
+    set endrow [expr $orig_height+$dbottom]
+  } else {
+    set endrow $orig_height
+  }
+
+  for {set i $startrow} {$i<$endrow} {incr i} {
+    set row [lindex $data $i]
+    #do the right side first, because changes are based on width of rowdata
+    #(if left changed first, it would screw up changes on right)
+    if ($dright>0) {
+      for {set j 0} {$j<$dright} {incr j} { lappend row 0 }
+    } elseif ($dright<0) {
+      set row [lreplace $row [expr $orig_width+$dright] end]
+    }
+    if ($dleft>0) {
+      for {set j 0} {$j<$dleft} {incr j} { set row [linsert $row 0 0] }
+    } elseif ($dleft<0) {
+      set row [lreplace $row 0 [expr 0-$dleft-1]]
+    }
+    lappend newdata $row
+  }
+
+  if ($dbottom>0) {
+    for {set i 0} {$i<$dbottom} {incr i} {
+      lappend newdata $blankrow
+    }
+  }
+  return $newdata
+}
+
+proc doimportxbm {filename xoff yoff} {
+  global currchar WIDTH HEIGHT chardata fontinfo currfile
+  if [info exists chardata($currchar)] {
+    if [checkhold $chardata($currchar) $chardata(work)] {
+      hold $currchar
+    }
+  }
+  clearwork
+  if [catch "open $filename r" fh] {
+    showmess "Couldn't open bitmap $filename: $fh"
+    return
+  }
+  set indata 0
+  set cn 0
+  set x 0
+  set y 0
+  set bits_per_chunk 0
+  set chunks_per_line 0
+  set xend [expr $xoff+$WIDTH]
+  set yend [expr $yoff+$HEIGHT]
+  while {[gets $fh line]>-1} {
+    if ($indata) {
+      foreach chunk $line {
+	regsub {^0x([0-9a-fA-F]+)[,\};]+} $chunk {\1} hex
+	if !$chunks_per_line {
+	  set bits_per_chunk [expr [string length $hex]*4]
+	  set chunks_per_line [expr ($bmw+$bits_per_chunk-1)/$bits_per_chunk]
+	}
+	for {set i 0} {$i<$bits_per_chunk} {incr i} {
+	  if ($y>=$yoff&&$y<$yend) {
+	    if ($x>=$xoff&&$x<$xend) {
+	      if [expr 0x$hex&1<<$i] {
+		on [expr $x-$xoff] [expr $y-$yoff]
+	      }
+	    }
+	  }
+	  incr x
+	}
+	if [incr cn]==$chunks_per_line {
+	  set cn 0
+	  set x 0
+	  incr y
+	}
+      }
+    } elseif [regexp {^#define [0-9a-zA-Z_]+_width [0-9]+$} $line] {
+      set bmw [lindex $line 2]
+    } elseif [regexp {^#define [0-9a-zA-Z_]+_height [0-9]+$} $line] {
+      set bmh [lindex $line 2]
+    } elseif [regexp {^#define [0-9a-zA-Z_]+_x_hot [0-9]+$} $line] {
+      set bmx [lindex $line 2]
+    } elseif [regexp {^#define [0-9a-zA-Z_]+_y_hot [0-9]+$} $line] {
+      set bmy [lindex $line 2]
+    } elseif [regexp {^static char [0-9a-zA-Z_]+_bits\[\] = \{$} $line] {
+      set indata 1
+    } else {
+puts $line
+      showmess "Unrecognized bitmap format, giving up."
+      close $fh
+      return
+    }
+  }
+
+  close $fh
+  wm withdraw .importdialog
+  #grab release .importdialog
+}
+
+proc doload {filename} {
+  global currchar WIDTH HEIGHT chardata fontinfo currfile
+  if [string first @ $filename]>=0 {
+    set fontname [string range $filename 0 [expr [string first @ $filename]-1]]
+    set server [string range $filename [expr [string first @ $filename]+1] end]
+    if [string length $server]==0 {
+      set server "localhost:7100"
+    }
+    if [string first : $server]<0 {
+      set server "$server:7100"
+    }
+    if [catch "open \"|fstobdf -server $server -fn $fontname\" r" fh] {
+      showmess "Couldn't open $filename: $fh"
+      return
+    }
+  } else {
+    if [catch "open $filename r" fh] {
+      showmess "Couldn't open $filename: $fh"
+      return
+    }
+  }
+  wm withdraw .loaddialog
+  grab release .loaddialog
+  if ![loadbdffont $fh] {
+    close $fh
+    return
+  }
+  if [info exists fontname] {
+    set currfile "$fontname.bdf"
+  } else {
+    set currfile $filename
+  }
+  .savedialog.e delete 0 end
+  .savedialog.e insert 0 $filename
+  catch "close $fh" err
+  set currchar 65
+  if [info exists chardata(65)] {
+    set chardata(work) $chardata(65)
+    set chardata(dwidth,work) $chardata(dwidth,65)
+  } else {
+    set chardata(work) [blankchar $WIDTH $HEIGHT]
+    set chardata(dwidth,work) $WIDTH
+  }
+  makegrid $WIDTH $HEIGHT $fontinfo(xorigin) $fontinfo(yorigin)
+  clearsel
+  showfont
+  setgrid chardata work
+}
+
+proc dosave {filename newflag} {
+  global currfile
+  if [file exists $filename] {
+    if ($newflag) {
+      if [tk_dialog .yorn "BDFedit Warning" "File exists; overwrite it?" question "" Yes No] { return }
+    }
+    if [catch "file rename -force -- $filename ${filename}~" err] {
+      #tk_messageBox???
+      showmess "Couldn't rename overwritten file $filename: $fh"
+      return
+    }
+  }
+  if [catch "open $filename w" fh] {
+    showmess "Couldn't open $filename: $fh"
+    return
+  }
+  showstatus 0 100 "Saving $filename..."
+  set st_x [winfo pointerx .]
+  set st_y [winfo pointery .]
+  set st_x [expr $st_x-[winfo reqwidth .status]/2]
+  set st_y [expr $st_y-[winfo reqheight .status]/2]
+  wm geometry .status +$st_x+$st_y
+  wm deiconify .status
+  . config -cursor watch
+  if [string length [grab current]]==0 { grab .status }
+  savebdffont $fh
+  if [catch "close $fh" err] {
+    showmess "Couldn't CLOSE $filename: $fh"
+    return
+  }
+  . config -cursor ""
+  wm withdraw .savedialog
+  wm withdraw .status
+  grab release [grab current]
+  set currfile $filename
+}
+
+proc clearwork {} {
+  global chardata WIDTH HEIGHT fontinfo
+  set chardata(work) [blankchar $WIDTH $HEIGHT]
+  set chardata(dwidth,work) [expr $WIDTH+$fontinfo(xorigin)]
+  #don't change the char name when clearing
+  #set chardata(name,work) ""
+  setgrid chardata work
+}
+
+proc applywork {} {
+  global WIDTH HEIGHT chardata currchar
+  if [info exists chardata($currchar)] {
+    if [checkhold $chardata($currchar) $chardata(work)] {
+      hold $currchar
+    }
+  }
+  set chardata($currchar) $chardata(work)
+  showfontchar $currchar
+  set chardata(dwidth,$currchar) $chardata(dwidth,work)
+}
+
+proc resetwork {} {
+  global WIDTH HEIGHT chardata currchar
+  if [info exists chardata($currchar)] {
+    set chardata(work) $chardata($currchar)
+  } else {
+    set chardata(work) [blankchar $WIDTH $HEIGHT]
+  }
+  if [info exists chardata(dwidth,$currchar)] {
+    set chardata(dwidth,work) $chardata(dwidth,$currchar)
+  } else {
+    set chardata(dwidth,work) $WIDTH
+  }
+  if [info exists chardata(name,$currchar)] {
+    set chardata(name,work) $chardata(name,$currchar)
+  } else {
+    set chardata(name,work) ""
+  }
+  setgrid chardata work
+}
+
+proc origwork {} {
+  global chardata WIDTH HEIGHT origdata currchar
+  if [info exists origdata($currchar)] {
+    set chardata(work) $origdata($currchar)
+  } else {
+    set chardata(work) [blankchar $WIDTH $HEIGHT]
+  }
+  if [info exists origdata(dwidth,$currchar)] {
+    set chardata(dwidth,work) $origdata(dwidth,$currchar)
+  } else {
+    set chardata(dwidth,work) $WIDTH
+  }
+  if [info exists origdata(name,$currchar)] {
+    set chardata(name,work) $origdata(name,$currchar)
+  } else {
+    set chardata(name,work) ""
+  }
+  setgrid chardata work
+}
+
+proc checkhold {savedata compdata} {
+  global WIDTH HEIGHT
+  set nonblank 0
+  set diff 0
+  for {set i 0} {$i<$HEIGHT} {incr i} {
+    set saverow [lindex $savedata $i]
+    set comprow [lindex $compdata $i]
+    for {set j 0} {$j<$WIDTH} {incr j} {
+      set savebit [lindex $saverow $j]
+      set compbit [lindex $comprow $j]
+      if $savebit { incr nonblank }
+      if $savebit!=$compbit { incr diff }
+    }
+  }
+  return [expr $diff && $nonblank]
+}
+
+proc hold {key} {
+  global chardata holddata holdserial HLEFT HTOP WIDTH HEIGHT
+  set data $chardata($key)
+  set dwidth $chardata(dwidth,$key)
+  #find a free spot
+  set spot -1
+  set oldest -1
+  set oldserial 999999999
+  for {set i 0} {$i<32} {incr i} {
+    if ![info exists holddata($i)] {
+      set spot $i
+      break
+    }
+    if $holdserial($i)<$oldserial {
+      set oldserial $holdserial($i)
+      set oldest $i
+    }
+  }
+  #if no spot, remove oldest to make space
+  if $spot==-1 {
+    set spot $oldest
+  }
+  #put it there
+  .fc delete HOLD$spot
+  set holddata($spot) $data
+  set holddata(dwidth,$spot) $dwidth
+  set holdserial($spot) [incr holdserial(last)]
+  showchardata .fc [expr $HLEFT+$WIDTH*$spot] $HTOP $data HOLD$spot
+}
+
+proc showchardata {canv x y data tag} {
+  set ox $x
+  $canv delete $tag
+  foreach row $data {
+    foreach bit $row {
+      if $bit {
+	$canv create rectangle $x $y $x $y -fill black -outline "" -tags $tag
+      }
+      incr x
+    }
+    set x $ox
+    incr y
+  }
+}
+
+proc showfontchar {num} {
+  global chardata WIDTH HEIGHT FTOP FLEFT FRIGHT FBOTTOM
+  set x [expr $FLEFT+($num%32)*$WIDTH]
+  set y [expr $FTOP+(int($num/32))*$HEIGHT]
+  if [info exists chardata($num)] {
+    showchardata .fc $x $y $chardata($num) "NUM$num"
+  } else {
+    .fc delete NUM$num
+    .fc create rectangle $x $y [expr $x+$WIDTH-1] [expr $y+$HEIGHT-1] \
+	    -fill skyblue -outline "" -tags NUM$num
+  }
+}
+
+proc showholdchar {num} {
+  global holddata WIDTH HEIGHT HTOP HLEFT
+  set x [expr $HLEFT+$num*$WIDTH]
+  set y $HTOP
+  if [info exists holddata($num)] {
+    showchardata .fc $x $y $holddata($num) "HOLD$num"
+  } else {
+    .fc delete HOLD$num
+    .fc create rectangle $x $y [expr $x+$WIDTH-1] [expr $y+$HEIGHT-1] \
+	    -fill pink -outline "" -tags HOLD$num
+  }
+}
+
+proc showfont {} {
+  global currchar chardata fontinfo WIDTH HEIGHT FTOP FLEFT FRIGHT FBOTTOM
+  .fc delete whichchar
+  .fc delete draghilite
+  for {set i 0} {$i<256} {incr i} {
+    showfontchar $i
+    update
+  }
+  for {set i 0} {$i<32} {incr i} {
+    showholdchar $i
+    update
+  }
+  set x1 [expr ($currchar%32)*$WIDTH-3+$FLEFT]
+  set y1 [expr ($currchar/32)*$HEIGHT-3+$FTOP]
+  .fc create rectangle $x1 $y1 [expr $x1+$WIDTH+6] [expr $y1+$HEIGHT+6] -tags whichchar -outline red
+  .fc create rectangle -5 -5 -5 -5 -tags draghilite -outline green
+}
+
+set WIDTH 12
+set HEIGHT 24
+
+proc setchar {charnum} {
+  global WIDTH HEIGHT FBOTTOM FLEFT FTOP FRIGHT
+  global chardata currchar
+
+  if [info exists chardata($currchar)] {
+    if [checkhold $chardata(work) $chardata($currchar)] {
+      hold work
+    }
+  }
+
+  set currchar $charnum
+  if ![info exists chardata($currchar)] {
+    set chardata(work) [blankchar $WIDTH $HEIGHT]
+  } else {
+    set chardata(work) $chardata($currchar)
+  }
+  if [info exists chardata(dwidth,$currchar)] {
+    #set chardata(dwidth,$currchar) $chardata(dwidth,$currchar)
+    set chardata(dwidth,work) $chardata(dwidth,$currchar)
+  } else {
+    #set chardata(dwidth,$currchar) $WIDTH
+    set chardata(dwidth,work) $WIDTH
+  }
+  setgrid chardata work
+  set x1 [expr ($currchar%32)*$WIDTH-3+$FLEFT]
+  set y1 [expr ($currchar/32)*$HEIGHT-3+$FTOP]
+  .fc coords whichchar $x1 $y1 [expr $x1+$WIDTH+6] [expr $y1+$HEIGHT+6]
+  .fc raise whichchar
+}
+
+proc selectleft {} {
+  global currchar
+  if ($currchar) {
+    setchar [expr $currchar-1]
+  }
+}
+
+proc selectright {} {
+  global currchar
+  if ($currchar<255) {
+    setchar [expr $currchar+1]
+  }
+}
+
+proc selectup {} {
+  global currchar
+  if ($currchar>=32) {
+    setchar [expr $currchar-32]
+  }
+}
+
+proc selectdown {} {
+  global currchar
+  if ($currchar<=223) {
+    setchar [expr $currchar+32]
+  }
+}
+
+proc nukechar {x y} {
+  global WIDTH HEIGHT FBOTTOM FLEFT FTOP FRIGHT HLEFT HTOP
+  global chardata currchar holddata
+  set fx [expr ($x-$FLEFT)/($WIDTH)]
+  set fy [expr ($y-$FTOP)/($HEIGHT)]
+  set hx [expr ($x-$HLEFT)/($WIDTH)]
+  set hy [expr ($y-$HTOP)/($HEIGHT)]
+  if {$fx>=0 && $fx<32 && $fy>=0 && $fy<8} {
+    set num [expr $fx+$fy*32]
+    if [info exists chardata($num)] {
+      hold $num
+      unset chardata($num)
+      unset chardata(dwidth,$num)
+      .fc delete NUM$num
+      set x [expr $fx*$WIDTH+$FLEFT]
+      set y [expr $fy*$HEIGHT+$FTOP]
+      .fc create rectangle $x $y [expr $x+$WIDTH-1] [expr $y+$HEIGHT-1] \
+	      -fill skyblue -outline "" -tags NUM$num
+    }
+  } elseif {$hx>=0 && $hx<32 && $hy==0} {
+    if [info exists holddata($hx)] {
+      unset holddata($hx)
+      unset holddata(dwidth,$hx)
+      .fc delete HOLD$hx
+      set x [expr $hx*$WIDTH+$HLEFT]
+      set y [expr $hy*$HEIGHT+$HTOP]
+      .fc create rectangle $x $y [expr $x+$WIDTH-1] [expr $y+$HEIGHT-1] \
+	      -fill pink -outline "" -tags HOLD$hx
+    }
+  }
+}
+
+proc pickchar {x y} {
+  global WIDTH HEIGHT FBOTTOM FLEFT FTOP FRIGHT HLEFT HTOP
+  global chardata currchar holddata
+  global pickchar pickstate
+  set fx [expr ($x-$FLEFT)/($WIDTH)]
+  set fy [expr ($y-$FTOP)/($HEIGHT)]
+  set hx [expr ($x-$HLEFT)/($WIDTH)]
+  set hy [expr ($y-$HTOP)/($HEIGHT)]
+  set pickchar -1
+  if {$fx>=0 && $fx<32 && $fy>=0 && $fy<8} {
+    if [string first after $pickstate]==0 {
+      after cancel $pickstate
+    }
+    set pickstate nogrid
+    set pickchar [expr $fx+$fy*32]
+    if [info exists chardata($pickchar)] {
+      set chardata(pick) $chardata($pickchar)
+      set chardata(dwidth,pick) $chardata(dwidth,$pickchar)
+      make_drag_cursor $WIDTH $HEIGHT [expr $WIDTH/2] [expr $HEIGHT/2] $chardata(pick)
+      . config -cursor "@/tmp/drag_cursor.bm /tmp/drag_cursor.bm black white"
+      bind .c <Enter> "checkdrop %x %y"
+      set pickstate [after 1000 "set pickstate gridok"]
+    }
+  } elseif {$hx>=0 && $hx<32 && $hy==0} {
+    set pickchar hold
+    set pickstate gridok
+    if [info exists holddata($hx)] {
+      set chardata(pick) $holddata($hx)
+      set chardata(dwidth,pick) $holddata(dwidth,$hx)
+      make_drag_cursor $WIDTH $HEIGHT [expr $WIDTH/2] [expr $HEIGHT/2] $chardata(pick)
+      . config -cursor "@/tmp/drag_cursor.bm /tmp/drag_cursor.bm black white"
+      bind .c <Enter> "checkdrop %x %y"
+    }
+  }
+}
+
+proc dragchar {x y} {
+  global WIDTH HEIGHT FBOTTOM FLEFT FTOP FRIGHT HLEFT HTOP
+  global pickchar pickstate oldcurrent
+  set fx [expr ($x-$FLEFT)/($WIDTH)]
+  set fy [expr ($y-$FTOP)/($HEIGHT)]
+  set hx [expr ($x-$HLEFT)/($WIDTH)]
+  set hy [expr ($y-$HTOP)/($HEIGHT)]
+  if {$fx>=0 && $fx<32 && $fy>=0 && $fy<8} {
+    if [string compare $pickstate gridok]==0 {
+      .fc coords draghilite [expr $FLEFT+$fx*$WIDTH-2] [expr $FTOP+$fy*$HEIGHT-2] [expr $FLEFT+($fx+1)*$WIDTH+2] [expr $FTOP+($fy+1)*$HEIGHT+2]
+    }
+  } elseif {$hx>=0 && $hx<32 && $hy==0} {
+    if [string compare $pickchar hold]!=0 {
+      .fc coords draghilite [expr $HLEFT-2] [expr $HTOP-2] [expr $HLEFT+32*$WIDTH+2] [expr $HTOP+$HEIGHT+2]
+    }
+  } else {
+    .fc coords draghilite -5 -5 -5 -5
+  }
+}
+
+proc enddragchar {x y} {
+  global WIDTH HEIGHT FBOTTOM FLEFT FTOP FRIGHT HLEFT HTOP
+  global chardata currchar
+  global pickchar pickstate
+
+  after 100 {bind .c <Enter> ""}
+  . config -cursor {}
+  .fc coords draghilite -5 -5 -5 -5
+  update
+  set fx [expr ($x-$FLEFT)/($WIDTH)]
+  set fy [expr ($y-$FTOP)/($HEIGHT)]
+  set hx [expr ($x-$HLEFT)/($WIDTH)]
+  set hy [expr ($y-$HTOP)/($HEIGHT)]
+  set newchar [expr $fx+$fy*32]
+  if [string compare $pickchar $newchar]==0 {
+    setchar $pickchar
+  } elseif {$fx>=0 && $fx<32 && $fy>=0 && $fy<8} {
+    if [string compare $pickstate gridok]==0 {
+      set dropchar [expr $fx+$fy*32]
+      if [info exists chardata($dropchar)] {
+	if [checkhold $chardata($dropchar) $chardata(pick)] {
+	  hold $dropchar
+	}
+      }
+      set chardata($dropchar) $chardata(pick)
+      set chardata(dwidth,$dropchar) $chardata(dwidth,pick)
+      showfontchar $dropchar
+      if $dropchar==$currchar {
+	setgrid chardata pick
+	set chardata(work) $chardata(pick)
+	set chardata(dwidth,work) $chardata(dwidth,pick)
+      }
+    }
+  } elseif {$hx>=0 && $hx<32 && $hy==0} {
+    if [string compare $pickchar hold]!=0 {
+      hold pick
+    }
+  }
+}
+
+proc checkdrop {x y} {
+  global GLEFT GTOP WIDTH HEIGHT GBOX GMARGIN chardata
+  set left [expr $GLEFT-3]
+  set right [expr $GLEFT+$WIDTH+3]
+  set top [expr $GTOP-$HEIGHT-15-3]
+  set bottom [expr $GTOP-15+3]
+  set gright [expr $GLEFT+$WIDTH*($GBOX+$GMARGIN)]
+  set gbottom [expr $GTOP+$HEIGHT*($GBOX+$GMARGIN)]
+  if {$x>= $left && $x <= $right && $y >= $top && $y <= $bottom} {
+    setgrid chardata pick
+    set chardata(work) $chardata(pick)
+    set chardata(dwidth,work) $chardata(dwidth,pick)
+  } elseif {$x>= $GLEFT && $x <= $gright && $y >= $GTOP && $y <= $gbottom} {
+    setgrid chardata pick
+    set chardata(work) $chardata(pick)
+    set chardata(dwidth,work) $chardata(dwidth,pick)
+  }
+}
+
+proc click {x y action} {
+  global GTOP GLEFT GMARGIN GBOX WIDTH HEIGHT
+  global ogx ogy
+  if [lsearch -exact [.c gettags [.c find withtag current]] dwidth]>=0 {
+    set ogx dwidth
+    return
+  }
+  set gx [expr ($x-$GLEFT)/($GBOX+$GMARGIN)]
+  set gy [expr ($y-$GTOP)/($GBOX+$GMARGIN)]
+  set gxmarg [expr ($x-$GLEFT)%($GBOX+$GMARGIN)]
+  set gymarg [expr ($y-$GTOP)%($GBOX+$GMARGIN)]
+  set faredge [expr $GBOX+$GMARGIN-1]
+  if ($gxmarg==0||$gxmarg==$faredge||$gymarg==0||$gymarg==$faredge) {
+    set ogx -1
+    set ogy -1
+    return
+  }
+  if {$gx>=0 && $gx<$WIDTH && $gy>=0 && $gy<$HEIGHT} {
+    $action $gx $gy
+  }
+  set ogx $gx
+  set ogy $gy
+}
+
+proc bmotion {x y action} {
+  global GTOP GLEFT GMARGIN GBOX WIDTH HEIGHT
+  global ogx ogy
+  if [string compare $ogx dwidth]==0 {
+    adjustdwidth $x $y
+    return
+  }
+  set gx [expr ($x-$GLEFT)/($GBOX+$GMARGIN)]
+  set gy [expr ($y-$GTOP)/($GBOX+$GMARGIN)]
+  set gxmarg [expr ($x-$GLEFT)%($GBOX+$GMARGIN)]
+  set gymarg [expr ($y-$GTOP)%($GBOX+$GMARGIN)]
+  if ($gxmarg==0||$gxmarg==$WIDTH||$gymarg==0||$gymarg==$WIDTH) {
+    return
+  }
+  if {$gx>=0 && $gx<$WIDTH && $gy>=0 && $gy<$HEIGHT} {
+    if {$gx!=$ogx || $gy!=$ogy} {
+      $action $gx $gy
+      set ogx $gx
+      set ogy $gy
+    }
+  }
+}
+
+proc startsel {x y} {
+  global GTOP GLEFT GMARGIN GBOX WIDTH HEIGHT
+  global selx1 sely1 selx2 sely2
+  clearsel
+  set selx1 [expr ($x-$GLEFT)/($GBOX+$GMARGIN)]
+  set sely1 [expr ($y-$GTOP)/($GBOX+$GMARGIN)]
+  if ($selx1<0) { set selx1 0 } elseif ($selx1>$WIDTH) { set selx1 $WIDTH }
+  if ($sely1<0) { set sely1 0 } elseif ($sely1>$HEIGHT) { set sely1 $HEIGHT }
+  set selx2 $selx1
+  set sely2 $sely1
+  set cx1 [expr $selx1*($GBOX+$GMARGIN)+$GLEFT]
+  set cy1 [expr $sely1*($GBOX+$GMARGIN)+$GTOP]
+  set cx2 [expr $selx2*($GBOX+$GMARGIN)+$GLEFT]
+  set cy2 [expr $sely2*($GBOX+$GMARGIN)+$GTOP]
+  .c create rectangle $cx1 $cy1 $cx2 $cy2 -width 2 -outline red \
+      -tags selectbox
+}
+
+proc changesel {x y} {
+  global GTOP GLEFT GMARGIN GBOX WIDTH HEIGHT
+  global selx1 sely1 selx2 sely2
+  set selx2 [expr ($x-$GLEFT)/($GBOX+$GMARGIN)]
+  set sely2 [expr ($y-$GTOP)/($GBOX+$GMARGIN)]
+  if ($selx2<0) { set selx2 0 } elseif ($selx2>$WIDTH) { set selx2 $WIDTH }
+  if ($sely2<0) { set sely2 0 } elseif ($sely2>$HEIGHT) { set sely2 $HEIGHT }
+  set cx1 [expr $selx1*($GBOX+$GMARGIN)+$GLEFT]
+  set cy1 [expr $sely1*($GBOX+$GMARGIN)+$GTOP]
+  set cx2 [expr $selx2*($GBOX+$GMARGIN)+$GLEFT]
+  set cy2 [expr $sely2*($GBOX+$GMARGIN)+$GTOP]
+  .c coords selectbox $cx1 $cy1 $cx2 $cy2
+}
+
+proc endsel {x y} {
+  global selx1 sely1 selx2 sely2
+  if ($selx1==$selx2||$sely1==$sely2) {
+    clearsel
+    return
+  }
+  changesel $x $y
+  if ($selx2<$selx1) {
+    set hold $selx1
+    set selx1 $selx2
+    set selx2 $hold
+  }
+  if ($sely2<$sely1) {
+    set hold $sely1
+    set sely1 $sely2
+    set sely2 $hold
+  }
+}
+
+proc clearsel {} {
+  .c delete selectbox
+  global WIDTH HEIGHT
+  global selx1 sely1 selx2 sely2
+  set selx1 0
+  set sely1 0
+  set selx2 $WIDTH
+  set sely2 $HEIGHT
+}
+
+proc makegrid {width height xorg yorg} {
+  global GTOP GLEFT GMARGIN GBOX WIDTH HEIGHT FTOP FBOTTOM FLEFT FRIGHT GPAD
+  global HLEFT HTOP
+  set GTOP [expr $GPAD+$HEIGHT]
+  .c delete all
+  .c create rectangle [expr $GLEFT-3] [expr $GTOP-$HEIGHT-15-3] [expr $GLEFT+$WIDTH+3] [expr $GTOP-15+3]
+  for {set y 0} {$y<$height} {incr y} {
+    for {set x 0} {$x<$width} {incr x} {
+      set x1 [expr $GLEFT+$x*($GMARGIN+$GBOX)]
+      set x2 [expr $x1+$GBOX]
+      set y1 [expr $GTOP+$y*($GMARGIN+$GBOX)]
+      set y2 [expr $y1+$GBOX]
+      .c create rectangle $x1 $y1 $x2 $y2 -fill white -outline gray -tags $x,$y
+    }
+  }
+
+  set HLEFT $FLEFT
+  set HTOP [expr $FBOTTOM+$FTOP]
+
+  #vertical line for marking font origin
+  set x [expr $GLEFT-$xorg*($GMARGIN+$GBOX)]
+  set y1 [expr $GTOP]
+  set y2 [expr $GTOP+$height*($GMARGIN+$GBOX)]
+  .c create line $x $y1 $x $y2 -width 2 -fill skyblue
+
+  #horizontal line of font origin
+  set x1 [expr $GLEFT]
+  set x2 [expr $GLEFT+$width*($GMARGIN+$GBOX)]
+  set y [expr $GTOP+($height+$yorg)*($GMARGIN+$GBOX)]
+  .c create line $x1 $y $x2 $y -width 2 -fill skyblue
+
+  .c create text [expr $GLEFT+$width+20] [expr $GTOP-$height-15-3] \
+	    -anchor nw -text "" -tags charlabel
+  .c create window 10 [expr $GTOP-20] -window .c.apply -anchor w
+  .c create window 10 [expr $GTOP-20+30] -window .c.reset -anchor w
+  .c create window 10 [expr $GTOP-20+60] -window .c.orig -anchor w
+  .c create window 10 [expr $GTOP-20+90] -window .c.clear -anchor w
+  .c create window 10 [expr $GTOP-20+120] -window .c.hold -anchor w
+  .c config -width [expr $FRIGHT+$FLEFT]
+  .c config -height [expr $GTOP+($GMARGIN+$GBOX)*$HEIGHT+$GPAD]
+  .fc config -width [expr $FRIGHT+$FLEFT]
+  #.fc config -height [expr $FBOTTOM+$FTOP]
+  .fc config -height [expr $HTOP+$HEIGHT+$FTOP]
+
+  set x [expr $GLEFT+$width*($GMARGIN+$GBOX)]
+  set y1 [expr $GTOP-($GMARGIN+$GBOX)]
+  set y2 [expr $GTOP+($height+1)*($GMARGIN+$GBOX)]
+  .c create line $x $y1 $x $y2 -width 2 -fill green -tags dwidth
+
+  set xbase [expr $GLEFT+($width-1)*($GMARGIN+$GBOX)+$GMARGIN]
+  set xpoint [expr $GLEFT+$width*($GMARGIN+$GBOX)]
+  set ypoint [expr $GTOP+($height+$yorg)*($GMARGIN+$GBOX)]
+  set ybase1 [expr $ypoint-$GMARGIN*4]
+  set ybase2 [expr $ypoint+$GMARGIN*4]
+  .c create polygon $xbase $ybase1 $xbase $ybase2 $xpoint $ypoint -fill skyblue -tags dwidth
+
+  .c bind charlabel <1> renamechar
+
+  wm geometry . ""
+}
+
+proc adjustdwidth {x y} {
+  global GTOP GLEFT GMARGIN GBOX WIDTH HEIGHT chardata currchar fontinfo
+  set newx [expr ($x+($GMARGIN+$GBOX)/2-$GLEFT)/($GMARGIN+$GBOX)]
+  set newx [expr $newx+$fontinfo(xorigin)]
+  #if ($newx<0) { set newx 0 }
+  #if ($newx>$WIDTH) { set newx $WIDTH }
+  showdwidth $newx
+  set chardata(dwidth,work) $newx
+}
+
+proc showdwidth {d} {
+  global GTOP GLEFT GMARGIN GBOX WIDTH HEIGHT fontinfo
+  .c delete dwidth
+
+  set x [expr $GLEFT+($d-$fontinfo(xorigin))*($GMARGIN+$GBOX)]
+  set y1 [expr $GTOP-($GMARGIN+$GBOX)]
+  set y2 [expr $GTOP+($HEIGHT+1)*($GMARGIN+$GBOX)]
+  .c create line $x $y1 $x $y2 -width 2 -fill green -tags dwidth
+
+  set xbase [expr $GLEFT+($d-1-$fontinfo(xorigin))*($GMARGIN+$GBOX)+$GMARGIN]
+  set xpoint [expr $GLEFT+($d-$fontinfo(xorigin))*($GMARGIN+$GBOX)]
+  set ypoint [expr $GTOP+($HEIGHT+$fontinfo(yorigin))*($GMARGIN+$GBOX)]
+  set ybase1 [expr $ypoint-$GMARGIN*4]
+  set ybase2 [expr $ypoint+$GMARGIN*4]
+  .c create polygon $xbase $ybase1 $xbase $ybase2 $xpoint $ypoint -fill skyblue -tags dwidth
+}
+
+proc oldsetgrid {data} {
+  global GTOP GLEFT GMARGIN GBOX WIDTH HEIGHT
+  for {set y 0} {$y<$HEIGHT} {incr y} {
+    for {set x 0} {$x<$WIDTH} {incr x} {
+      if [lindex [lindex $data $y] $x] {
+	.c itemconfig $x,$y -fill black
+      } else {
+	.c itemconfig $x,$y -fill white
+      }
+    }
+  }
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $data view
+}
+
+proc setgrid {varname key} {
+  global GTOP GLEFT GMARGIN GBOX WIDTH HEIGHT chardata currchar
+  global $varname
+  set data [set ${varname}($key)]
+  set x 0
+  set y 0
+  foreach row $data {
+    foreach bit $row {
+      if $bit {
+	.c itemconfig $x,$y -fill black
+      } else {
+	.c itemconfig $x,$y -fill white
+      }
+      incr x
+    }
+    set x 0
+    incr y
+  }
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $data view
+  set name ""
+  if [info exists ${varname}(name,$key)] {
+    set name [set ${varname}(name,$key)]
+  } elseif [info exists chardata(name,$currchar)] {
+    set name $chardata(name,$currchar)
+  }
+  if [info exists ${varname}(dwidth,$key)] {
+    showdwidth [set ${varname}(dwidth,$key)]
+  } elseif [info exists chardata(dwidth,$currchar)] {
+    showdwidth $chardata(dwidth,$currchar)
+  } else {
+    showdwidth $WIDTH
+  }
+  set txt [format "%d (%c) %s" $currchar $currchar $name]
+  .c itemconfig charlabel -text $txt
+}
+
+#
+#
+#
+
+proc on {x y} {
+  global GTOP GLEFT GMARGIN GBOX HEIGHT
+  global chardata currchar
+  .c itemconfig $x,$y -fill black
+  set chardata(work) [lreplace $chardata(work) $y $y [lreplace [lindex $chardata(work) $y] $x $x 1]]
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc off {x y} {
+  global GTOP GLEFT GMARGIN GBOX HEIGHT
+  global chardata currchar
+  .c itemconfig $x,$y -fill white
+  set chardata(work) [lreplace $chardata(work) $y $y [lreplace [lindex $chardata(work) $y] $x $x 0]]
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc toggle {x y} {
+  global GTOP GLEFT GMARGIN GBOX HEIGHT
+  global chardata currchar
+  if [lindex [lindex $chardata(work) $y] $x] {
+    .c itemconfig $x,$y -fill white
+    set chardata(work) [lreplace $chardata(work) $y $y [lreplace [lindex $chardata(work) $y] $x $x 0]]
+  } else {
+    .c itemconfig $x,$y -fill black
+    set chardata(work) [lreplace $chardata(work) $y $y [lreplace [lindex $chardata(work) $y] $x $x 1]]
+  }
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc slidedown {} {
+  global GTOP GLEFT GBOX HEIGHT
+  global chardata currchar
+  global selx1 sely1 selx2 sely2
+  if ($sely1+1==$sely2) return
+  set lastx [expr $selx2-1]
+  set oldrow [lindex $chardata(work) [expr $sely2-1]]
+  for {set y $sely1} {$y<$sely2} { incr y } {
+    set row [lindex $chardata(work) $y]
+    set holdrow $row
+    for {set x $selx1} {$x<$selx2} { incr x } {
+      set row [lreplace $row $x $x [lindex $oldrow $x]]
+    }
+    set chardata(work) [lreplace $chardata(work) $y $y $row]
+    set oldrow $holdrow
+  }
+  #set last [expr $HEIGHT-1]
+  #set row [lindex $chardata(work) $last]
+  #set chardata(work) [lreplace $chardata(work) $last $last]
+  #set chardata(work) [linsert $chardata(work) 0 $row]
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc slideup {} {
+  global GTOP GLEFT GBOX HEIGHT
+  global chardata currchar
+  global selx1 sely1 selx2 sely2
+  if ($sely1+1==$sely2) return
+  set lastx [expr $selx2-1]
+  set oldrow [lindex $chardata(work) $sely1]
+  for {set y [expr $sely2-1]} {$y>=$sely1} { incr y -1 } {
+    set row [lindex $chardata(work) $y]
+    set holdrow $row
+    for {set x $selx1} {$x<$selx2} { incr x } {
+      set row [lreplace $row $x $x [lindex $oldrow $x]]
+    }
+    set chardata(work) [lreplace $chardata(work) $y $y $row]
+    set oldrow $holdrow
+  }
+  #set row [lindex $chardata(work) 0]
+  #set chardata(work) [lreplace $chardata(work) 0 0]
+  #lappend chardata(work) $row
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc slideright {} {
+  global GTOP GLEFT GBOX HEIGHT WIDTH
+  global chardata currchar
+  global selx1 sely1 selx2 sely2
+  set lastx [expr $selx2-1]
+  for {set y $sely1} {$y<$sely2} { incr y } {
+    set row [lindex $chardata(work) $y]
+    set bit [lindex $row $lastx]
+    set row [lreplace $row $lastx $lastx]
+    set row [linsert $row $selx1 $bit]
+    set chardata(work) [lreplace $chardata(work) $y $y $row]
+  }
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc slideleft {} {
+  global GTOP GLEFT GBOX HEIGHT
+  global chardata currchar
+  global selx1 sely1 selx2 sely2
+  for {set y $sely1} {$y<$sely2} { incr y } {
+    set row [lindex $chardata(work) $y]
+    set bit [lindex $row $selx1]
+    set row [lreplace $row $selx1 $selx1]
+    set row [linsert $row [expr $selx2-1] $bit]
+    set chardata(work) [lreplace $chardata(work) $y $y $row]
+  }
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc dither4 {color} {
+  global GTOP GLEFT GBOX WIDTH HEIGHT
+  global chardata currchar
+  set newdata ""
+  for  {set j 0} {$j<$HEIGHT} {incr j} {
+    set row [lindex $chardata(work) $j]
+    set newrow ""
+    for {set i 0} {$i<$WIDTH} {incr i} {
+      if {$i%2==0 && $j%2==0} {
+        lappend newrow $color
+      } else {
+        lappend newrow [lindex $row $i]
+      }
+    }
+    lappend newdata $newrow
+  }
+  set chardata(work) $newdata
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc dither2 {color} {
+  global GTOP GLEFT GBOX WIDTH HEIGHT
+  global chardata currchar
+  set newdata ""
+  for  {set j 0} {$j<$HEIGHT} {incr j} {
+    set row [lindex $chardata(work) $j]
+    set newrow ""
+    for {set i 0} {$i<$WIDTH} {incr i} {
+      if {$j%2==0} {
+	if {$i%2==0} {
+	  lappend newrow $color
+	} else {
+	  lappend newrow [lindex $row $i]
+	}
+      } else {
+	if {$i%2==1} {
+	  lappend newrow $color
+	} else {
+	  lappend newrow [lindex $row $i]
+	}
+      }
+    }
+    lappend newdata $newrow
+  }
+  set chardata(work) $newdata
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc flipud {} {
+  global GTOP GLEFT GBOX WIDTH HEIGHT
+  global chardata currchar
+  global selx1 sely1 selx2 sely2
+  #make a copy
+  set newdata ""
+  for {set j 0} {$j<$HEIGHT} {incr j} {
+    lappend newdata [lindex $chardata(work) $j]
+  }
+  #make changes to the copy
+  for {set n 0; set j $sely1} {$j<$sely2} {incr j; incr n} {
+    set oldrow [lindex $chardata(work) [expr $sely2-$n-1]]
+    set newrow [lindex $newdata $j]
+    for {set i $selx1} {$i<$selx2} {incr i} {
+      set newrow [lreplace $newrow $i $i [lindex $oldrow $i]]
+    }
+    set newdata [lreplace $newdata $j $j $newrow]
+  }
+  set chardata(work) $newdata
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc fliplr {} {
+  global GTOP GLEFT GBOX WIDTH HEIGHT
+  global chardata currchar
+  global selx1 sely1 selx2 sely2
+  #make a copy
+  set newdata ""
+  for {set j 0} {$j<$HEIGHT} {incr j} {
+    lappend newdata [lindex $chardata(work) $j]
+  }
+  #make changes to the copy
+  for {set j $sely1} {$j<$sely2} {incr j} {
+    set oldrow [lindex $chardata(work) $j]
+    set newrow [lindex $newdata $j]
+    for {set n 1; set i $selx1} {$i<$selx2} {incr i; incr n} {
+      set newrow [lreplace $newrow $i $i [lindex $oldrow [expr $selx2-$n]]]
+    }
+    set newdata [lreplace $newdata $j $j $newrow]
+  }
+  set chardata(work) $newdata
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc rot180 {} {
+  global GTOP GLEFT GBOX WIDTH HEIGHT
+  global chardata currchar
+  global selx1 sely1 selx2 sely2
+  #make a copy
+  set newdata ""
+  for {set j 0} {$j<$HEIGHT} {incr j} {
+    lappend newdata [lindex $chardata(work) $j]
+  }
+  #make changes to the copy
+  for {set n 0; set j $sely1} {$j<$sely2} {incr j; incr n} {
+    set oldrow [lindex $chardata(work) [expr $sely2-$n-1]]
+    set newrow [lindex $newdata $j]
+    for {set m 1; set i $selx1} {$i<$selx2} {incr i; incr m} {
+      set newrow [lreplace $newrow $i $i [lindex $oldrow [expr $selx2-$m]]]
+    }
+    set newdata [lreplace $newdata $j $j $newrow]
+  }
+  set chardata(work) $newdata
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc invert {} {
+  global GTOP GLEFT GBOX WIDTH HEIGHT
+  global chardata currchar
+  global selx1 sely1 selx2 sely2
+  set newdata ""
+  for {set j 0} {$j<$HEIGHT} {incr j} {
+    set row [lindex $chardata(work) $j]
+    if ($j>=$sely1&&$j<$sely2) {
+      for {set i $selx1} {$i<$selx2} {incr i} {
+	set row [lreplace $row $i $i [expr abs([lindex $row $i]-1)]]
+      }
+    }
+    lappend newdata $row
+  }
+  set chardata(work) $newdata
+  setgrid chardata work
+  showchardata .c $GLEFT [expr $GTOP-$HEIGHT-15] $chardata(work) view
+}
+
+proc blankchar {width height} {
+  set data ""
+  for {set y 0} {$y<$height} {incr y} {
+    set row ""
+    for {set x 0} {$x<$width} {incr x} {
+      lappend row 0
+    }
+    lappend data $row
+  }
+  return $data
+}
+
+proc newfont {width height baseline} {
+  global chardata fontinfo origdata currchar currfile holddata
+  global WIDTH HEIGHT FLEFT FTOP FRIGHT FBOTTOM
+
+  #resize clipboard
+  for {set encod 0} {$encod<32} {incr encod} {
+    if ([info exists holddata($encod)]) {
+      #do the resize so data remains same relative to baseline
+      set holddata($encod) [resizedata $holddata($encod) \
+	  0 [expr $width-$WIDTH] \
+	  [expr ($height+$baseline)-($HEIGHT+$fontinfo(yorigin))] \
+	  [expr $fontinfo(yorigin)-$baseline] ]
+    }
+  }
+  resetall
+  set WIDTH $width
+  set HEIGHT $height
+  set fontinfo(width) $width
+  set fontinfo(height) $height
+  set fontinfo(yorigin) $baseline
+  set fontinfo(xorigin) 0
+  set fontinfo(fontname) UNTITLED
+  set fontinfo(pointsize) [expr int($WIDTH*1.5)]
+  set fontinfo(xres) 72
+  set fontinfo(yres) 72
+  set FLEFT 15
+  set FTOP 15
+  set FRIGHT [expr $FLEFT+32*$WIDTH]
+  set FBOTTOM [expr $FTOP+8*$HEIGHT]
+  set currfile ""
+  .savedialog.e delete 0 end
+
+  set currchar 65
+  set chardata(work) [blankchar $WIDTH $HEIGHT]
+  set chardata(dwidth,work) $WIDTH
+  makegrid $WIDTH $HEIGHT $fontinfo(xorigin) $fontinfo(yorigin)
+  clearsel
+  showfont
+  setgrid chardata work
+  wm withdraw .newdialog
+  grab release .newdialog
+}
+
+proc loadbdffont {fh} {
+  global WIDTH HEIGHT chardata fontinfo origdata holddata
+  global FLEFT FTOP FRIGHT FBOTTOM
+  global hex2bin
+  set saveprops 1
+  set inproperties 0
+
+  set oldbase $fontinfo(yorigin)
+  set oldwidth $WIDTH
+  set oldheight $HEIGHT
+  if [gets $fh line]<=-1 {
+    showmess "Couldn't read from file\n (is it empty?)"
+    return 0
+  }
+  if [string first "STARTFONT " $line]<0 {
+    showmess "This is not a BDF file"
+    return 0
+  }
+  resetall
+  while {[gets $fh line]>-1} {
+    if [regexp {^[0-9a-fA-F][0-9a-fA-F]+$} $line] {
+      set row ""
+      if !$ready { puts "unexpected" }
+      scan $line %x decimal
+      #pad left edge of char
+      set max [expr $cx-$fontinfo(xorigin)]
+      for {set i 0} {$i<$max} {incr i} {
+	lappend row 0
+      }
+      #fill in data
+      incr max $cwd
+      foreach hex [split $line ""] {
+	foreach digit $hex2bin($hex) {
+	  lappend row $digit
+	  if ([incr i]>=$max) break
+	}
+        if ($i>=$max) break
+      }
+      #pad right edge of char
+      for {} {$i<$WIDTH} {incr i} {
+	lappend row 0
+      }
+      lappend chardata($encod) $row
+      incr rownum
+    } elseif [string first "COMMENT " $line]==0 {
+      if [info exists fontinfo(COMMENT)] {
+	set fontinfo(COMMENT) $fontinfo(COMMENT)[string range $line [expr [string first " " $line]+1] end]\n
+      } else {
+	set fontinfo(COMMENT) [string range $line [expr [string first " " $line]+1] end]\n
+      }
+    } elseif [string first "COPYRIGHT " $line]==0 {
+      set chardata(COPYRIGHT) [string range $line [expr [string first " " $line]+1] end]
+      set fontinfo(copyright) [string trim $chardata(COPYRIGHT) {"}]
+    } elseif [string first "FOUNDRY " $line]==0 {
+      set chardata(FOUNDRY) [string range $line [expr [string first " " $line]+1] end]
+      set fontinfo(foundry) [string trim $chardata(FOUNDRY) {"}]
+    } elseif [string first "FAMILY_NAME " $line]==0 {
+      set chardata(FAMILY_NAME) [string range $line [expr [string first " " $line]+1] end]
+      set fontinfo(family) [string trim $chardata(FAMILY_NAME) {"}]
+    } elseif [string first "WEIGHT_NAME " $line]==0 {
+      set chardata(WEIGHT_NAME) [string range $line [expr [string first " " $line]+1] end]
+      set fontinfo(weight) [string trim $chardata(WEIGHT_NAME) {"}]
+    } elseif [string first "SLANT " $line]==0 {
+      set chardata(SLANT) [string range $line [expr [string first " " $line]+1] end]
+      set fontinfo(slant) [string trim $chardata(SLANT) {"}]
+    } elseif [string first "SETWIDTH_NAME " $line]==0 {
+      set chardata(SETWIDTH_NAME) [string range $line [expr [string first " " $line]+1] end]
+      set fontinfo(widthname) [string trim $chardata(SETWIDTH_NAME) {"}]
+    } elseif [string first "FONT " $line]==0 {
+      if (!$inproperties) {
+	set chardata(FONT) [string range $line [expr [string first " " $line]+1] end]
+	set fontinfo(fontname) $chardata(FONT)
+      }
+    } elseif [string first "FONTBOUNDINGBOX " $line]==0 {
+      #width height -xorigin -yorigin
+      set fontinfo(width) [lindex $line 1]
+      set fontinfo(height) [lindex $line 2]
+      set fontinfo(xorigin) [lindex $line 3]
+      set fontinfo(yorigin) [lindex $line 4]
+      set chardata(FONTBOUNDINGBOX) [string range $line [expr [string first " " $line]+1] end]
+      set WIDTH [lindex $line 1]
+      set HEIGHT [lindex $line 2]
+      #resize clipboard
+      for {set encod 0} {$encod<32} {incr encod} {
+	if ([info exists holddata($encod)]) {
+	  #do the resize so data remains same relative to baseline
+	  set holddata($encod) [resizedata $holddata($encod) \
+	    0 [expr $WIDTH-$oldwidth] \
+	    [expr ($HEIGHT+$fontinfo(yorigin))-($oldheight+$oldbase)] \
+	    [expr $oldbase-$fontinfo(yorigin)]]
+	}
+      }
+    } elseif [string first "SIZE " $line]==0 {
+      set chardata(SIZE) [string range $line [expr [string first " " $line]+1] end]
+      set fontinfo(pointsize) [lindex $line 1]
+      set fontinfo(xres) [lindex $line 2]
+      set fontinfo(yres) [lindex $line 3]
+    } elseif [string first "CHARS " $line]==0 {
+      set total [string range $line [expr [string first " " $line]+1] end]
+      set chardata(CHARS) $total
+      set count 0
+      set st_x [winfo pointerx .]
+      set st_y [winfo pointery .]
+      set st_x [expr $st_x-[winfo reqwidth .status]/2]
+      set st_y [expr $st_y-[winfo reqheight .status]/2]
+      wm geometry .status +$st_x+$st_y
+      wm deiconify .status
+      . config -cursor watch
+      if [string length [grab current]]==0 { grab .status }
+      showstatus $count $total "Loading font..."
+    } elseif [string first "STARTPROPERTIES " $line]==0 {
+      set inproperties 1
+    } elseif [string first "ENDPROPERTIES" $line]==0 {
+      set inproperties 0
+    } elseif [string first "STARTCHAR " $line]==0 {
+      set char [string range $line [expr [string first " " $line]+1] end]
+    } elseif [string first "ENCODING " $line]==0 {
+      set encod [string range $line [expr [string first " " $line]+1] end]
+      set chardata(name,$encod) $char
+      set origdata(name,$encod) $char
+    } elseif [string first "DWIDTH " $line]==0 {
+      set chardata(dwidth,$encod) [lindex $line 1]
+      set origdata(dwidth,$encod) [lindex $line 1]
+    } elseif [string first "BBX " $line]==0 {
+      #width height startx starty
+      set cwd [lindex $line 1]
+      set cht [lindex $line 2]
+      set cx [lindex $line 3]
+      set cy [lindex $line 4]
+      set chardata(width,$encod) $cwd
+      set chardata(height,$encod) $cht
+      set chardata(xorigin,$encod) $cx
+      set chardata(yorigin,$encod) $cy
+    } elseif [string compare "ENDPROPERTIES" $line]==0 {
+      set saveprops 0
+    } elseif [string compare "ENDCHAR" $line]==0 {
+      set ready 0
+      for {} {$rownum<$HEIGHT} {incr rownum} {
+	set row ""
+	for {set i 0} {$i<$WIDTH} {incr i} {
+	  lappend row 0
+	}
+        lappend chardata($encod) $row
+      }
+      set origdata($encod) $chardata($encod)
+      incr count
+      showstatus $count $total
+    } elseif [string compare "BITMAP" $line]==0 {
+      set ready 1
+      set chardata($encod) ""
+      for {set rownum 0} {$rownum<[expr $HEIGHT-$cht-($cy-$fontinfo(yorigin))]} {incr rownum} {
+	set row ""
+	for {set i 0} {$i<$WIDTH} {incr i} {
+	  lappend row 0
+	}
+        lappend chardata($encod) $row
+      }
+    } elseif [string compare "COMMENT" $line]==0 {
+      if [info exists fontinfo(COMMENT)] {
+	set fontinfo(COMMENT) "$fontinfo(COMMENT)\n"
+      } else {
+	set fontinfo(COMMENT) "\n"
+      }
+    } elseif [string compare "ENDFONT" $line]==0 {
+      grab release .status
+      . config -cursor ""
+      after 300 "wm withdraw .status"
+    } else {
+      if [string first " " $line]==-1 {
+	puts $line
+      } elseif $saveprops {
+	set firstword [string range $line 0 [expr [string first " " $line]-1]]
+	set rest [string range $line [expr [string first " " $line]+1] end]
+	set fontinfo($firstword) $rest
+      }
+    }
+  }
+  set FLEFT 15
+  set FTOP 15
+  set FRIGHT [expr $FLEFT+32*$WIDTH]
+  set FBOTTOM [expr $FTOP+8*$HEIGHT]
+  return 1
+}
+
+proc savebdffont {fh} {
+  global fontinfo chardata default
+  #skip empty characters ??
+  #skip unset characters
+  #reduce saved data to appropriate bounding box
+
+  . config -cursor watch
+  if (![info exists fontinfo(pointsize)]) {
+    set fontinfo(pointsize) [expr int($fontinfo(width)*1.5)]
+  }
+  set numchars 0
+  for {set encod 0} {$encod<256} {incr encod} {
+    if (![info exists chardata($encod)]) continue
+    incr numchars
+  }
+  if $numchars==0 {
+    showmess "No characters to save!"
+    . config -cursor ""
+    return
+  }
+
+  puts $fh "STARTFONT 2.1"
+  if (![info exists fontinfo(COMMENT)]) {
+    set fontinfo(COMMENT) $default(COMMENT)
+  }
+  foreach line [lreplace [split $fontinfo(COMMENT) \n] end end] {
+    if [string length $line]==0 {
+      puts $fh COMMENT
+    } else {
+      puts $fh "COMMENT $line"
+    }
+  }
+  #CONTENTVERSION
+  puts $fh "FONT $fontinfo(fontname)"
+  puts $fh "SIZE $fontinfo(pointsize) $fontinfo(xres) $fontinfo(yres)"
+  puts $fh "FONTBOUNDINGBOX $fontinfo(width) $fontinfo(height) $fontinfo(xorigin) $fontinfo(yorigin)"
+  puts $fh "STARTPROPERTIES 11"
+  #FONTNAME_REGISTRY
+  puts $fh "FOUNDRY \"$fontinfo(foundry)\""
+  puts $fh "FAMILY_NAME \"$fontinfo(family)\""
+  puts $fh "WEIGHT_NAME \"$fontinfo(weight)\""
+  puts $fh "SLANT \"$fontinfo(slant)\""
+  puts $fh "SETWIDTH_NAME \"$fontinfo(widthname)\""
+  #ADD_STYLE_NAME
+  #PIXEL_SIZE
+  #POINT_SIZE
+  #RESOLUTION_X
+  #RESOLUTION_Y
+  puts $fh {SPACING "c"}
+  #AVERAGE_WIDTH ??
+  puts $fh {CHARSET_REGISTRY "ISO-8859"}
+  puts $fh {CHARSET_ENCODING "1"}
+  #COPYRIGHT 
+  puts $fh "COPYRIGHT \"$fontinfo(copyright)\""
+  #FONT (same as non-property font line, but with quotes)
+  #WEIGHT num?
+  #RESOLUTION ?
+  #X_HEIGHT ?
+  #QUAD_WIDTH ?
+  #DEFAULT_CHAR ? (32)
+  puts $fh "FONT_ASCENT  [expr $fontinfo(height)+$fontinfo(yorigin)]"
+  puts $fh "FONT_DESCENT [expr 0-$fontinfo(yorigin)]"
+  puts $fh "ENDPROPERTIES"
+  puts $fh "CHARS $numchars"
+  showstatus 0 $numchars
+  set count 0
+  for {set encod 0} {$encod<256} {incr encod} {
+    if (![info exists chardata($encod)]) continue
+    #would we want to make this a save option?
+    #glyph_save_full $fh $encod
+    glyph_save_minimal $fh $encod
+    incr count
+    showstatus $count $numchars
+  }
+  puts $fh "ENDFONT"
+  . config -cursor ""
+}
+
+proc glyph_save_full {fh encod} {
+  global chardata fontinfo bin2hex
+  if [info exists chardata(name,$encod)] {
+    set name $chardata(name,$encod)
+  } else {
+    set name [format "C%03o" $encod]
+  }
+  puts $fh "STARTCHAR $name"
+  puts $fh "ENCODING $encod"
+  if [info exists chardata(dwidth,$encod)] {
+    #SWIDTH is DWIDTH*1000/pointsize
+    puts $fh "SWIDTH [expr int(1000*$chardata(dwidth,$encod)/$fontinfo(pointsize))] 0"
+    puts $fh "DWIDTH $chardata(dwidth,$encod) 0"
+  } else {
+    #SWIDTH is DWIDTH*1000/pointsize
+    puts $fh "SWIDTH [expr int(1000*$fontinfo(width)/$fontinfo(pointsize))] 0"
+    puts $fh "DWIDTH $fontinfo(width) 0"
+  }
+  set width $fontinfo(width)
+  set height $fontinfo(height)
+  set xoff $fontinfo(xorigin)
+  set yoff $fontinfo(yorigin)
+  set left 0
+  set right [expr $fontinfo(width)-1]
+  set top 0
+  set bottom [expr $fontinfo(height)-1]
+  puts $fh "BBX $width $height $xoff $yoff"
+  puts $fh "BITMAP"
+  for {set y $top} {$y<=$bottom} { incr y } {
+    #for wish8, something like this will do the same thing:
+    #binary scan [binary format B* [join [lrange $row $left $right] ""]] H* out
+    #
+    set row [lindex $chardata($encod) $y]
+    set hex ""
+    for {set x $left} {$x<=$right} { incr x 4 } {
+      set tmpbin ""
+      for {set i 0} {$i<4} {incr i} {
+	if ([expr $i+$x]>$right) {
+	  lappend tmpbin 0
+	} else {
+	  lappend tmpbin [lindex $row [expr $x+$i]]
+	}
+      }
+      set hex "${hex}$bin2hex($tmpbin)"
+    }
+    if [expr [string length $hex]%2] { set hex "${hex}0" }
+    puts $fh $hex
+  }
+  puts $fh "ENDCHAR"
+}
+
+proc glyph_save_minimal {fh encod} {
+  global chardata fontinfo bin2hex
+  if [info exists chardata(name,$encod)] {
+    set name $chardata(name,$encod)
+  } else {
+    set name [format "C%03o" $encod]
+  }
+  puts $fh "STARTCHAR $name"
+  puts $fh "ENCODING $encod"
+  if [info exists chardata(dwidth,$encod)] {
+    #SWIDTH is DWIDTH*1000/pointsize
+    puts $fh "SWIDTH [expr int(1000*$chardata(dwidth,$encod)/$fontinfo(pointsize))] 0"
+    puts $fh "DWIDTH $chardata(dwidth,$encod) 0"
+  } else {
+    #SWIDTH is DWIDTH*1000/pointsize
+    puts $fh "SWIDTH [expr int(1000*$fontinfo(width)/$fontinfo(pointsize))] 0"
+    puts $fh "DWIDTH $fontinfo(width) 0"
+  }
+  set top -1
+  set bottom -1
+  set left 1000
+  set right -1
+  set y 0
+  foreach row $chardata($encod) {
+    set first -1
+    set last -1
+    set x 0
+    foreach elem $row {
+      if ($elem==1) {
+	if ($first<0) { set first $x }
+	set last $x
+      }
+      incr x
+    }
+    if ($first!=-1) {
+      if ($top<0) { set top $y }
+      set bottom $y
+      if ($first<$left) { set left $first }
+      if ($last>$right) { set right $last }
+    }
+    incr y
+  }
+  set width [expr $right-$left+1]
+  set height [expr $bottom-$top+1]
+  set xoff [expr $left+$fontinfo(xorigin)]
+  set yoff [expr ($fontinfo(height)-1-$bottom)+$fontinfo(yorigin)]
+  if ($top==-1) {
+    set width 0
+    set height 0
+    set xoff 0
+    set yoff 0
+    #this keeps the save loop below from saving a single empty line
+    set bottom [expr $top-1]
+  }
+  puts $fh "BBX $width $height $xoff $yoff"
+  puts $fh "BITMAP"
+  for {set y $top} {$y<=$bottom} { incr y } {
+    #for wish8, something like this will do the same thing:
+    #binary scan [binary format B* [join [lrange $row $left $right] ""]] H* out
+    #
+    set row [lindex $chardata($encod) $y]
+    set hex ""
+    for {set x $left} {$x<=$right} { incr x 4 } {
+      set tmpbin ""
+      for {set i 0} {$i<4} {incr i} {
+	if ([expr $i+$x]>$right) {
+	  lappend tmpbin 0
+	} else {
+	  lappend tmpbin [lindex $row [expr $x+$i]]
+	}
+      }
+      set hex "${hex}$bin2hex($tmpbin)"
+    }
+    if [expr [string length $hex]%2] { set hex "${hex}0" }
+    puts $fh $hex
+  }
+  puts $fh "ENDCHAR"
+}
+
+#
+# haven't bothered putting pid intofilename because of low probability of
+# collisions
+#
+proc make_drag_cursor {width height hotx hoty data} {
+  if [catch "open /tmp/drag_cursor.bm w" fh] {
+    return 0
+  }
+  puts $fh "#define dragc_width $width"
+  puts $fh "#define dragc_height $height"
+  puts $fh "#define dragc_x_hot $hotx"
+  puts $fh "#define dragc_y_hot $hoty"
+  puts $fh "static char dragc_bits\[\] = {"
+  puts -nonewline $fh "  "
+  set bwidth [expr ($width+7)/8]
+  set pixels ""
+
+  for {set y 0} {$y<$height} {incr y} {
+    for {set x 0} {$x<$bwidth} {incr x} {
+      set byte 0
+      set startbit [expr $x*8]
+      set endbit [expr ($x+1)*8]
+      if ($endbit>$width) { set endbit $width }
+      for {set i $startbit} {$i<$endbit} { incr i } {
+	if [lindex [lindex $data $y] $i] {
+	  set byte [expr $byte+(1<<($i-$startbit))]
+	}
+      }
+      lappend pixels [format %02x $byte]
+    }
+  }
+  #dump it to a file
+  set col 2
+  foreach pix $pixels {
+    puts -nonewline $fh " 0x$pix,"
+    if {[incr col 6]>70} {
+      puts $fh ""
+      puts -nonewline $fh "  "
+      set col 2
+    }
+  }
+  puts $fh "};"
+  close $fh
+  return 1
+}
+
+proc showstatus {sofar all args} {
+  if [string length $args] {
+    .status.l config -text [lindex $args 0]
+  }
+  set x [expr 201*$sofar/$all]
+  .status.bar.c coords bar 0 0 $x 21
+  update
+}
+
+proc readrc {} {
+  global env default
+  set rcfile $env(HOME)/.bdfeditrc
+  if [file exists $rcfile] {
+    if [catch "source $rcfile" err] {
+      showmess "Error reading rc file ($rcfile):\n$err"
+    }
+  }
+}
+
+#
+toplevel .status
+wm withdraw .status
+wm transient .status .
+wm group .status .
+label .status.l -text "Loading font..."
+pack .status.l -side top
+frame .status.bar -bd 2 -relief sunken
+pack .status.bar -side top -padx 30 -pady 30
+canvas .status.bar.c -width 200 -height 20 -highlightthickness 0 -bg white
+pack .status.bar.c
+.status.bar.c create rectangle 0 0 0 0 -fill skyblue -tags bar -outline skyblue
+
+#
+toplevel .resizedialog
+wm withdraw .resizedialog
+wm group .resizedialog .
+wm group .resizedialog .
+label .resizedialog.l
+pack .resizedialog.l -side top
+canvas .resizedialog.c -bg white -width 200 -height 200 -bd 2 -relief sunken
+pack .resizedialog.c -side top -pady 5
+frame .resizedialog.butts
+button .resizedialog.butts.resize -command doresize \
+  -text "Resize" -highlightthickness 0
+button .resizedialog.butts.cancel -text Cancel -highlightthickness 0 \
+	  -command "wm withdraw .resizedialog; grab release .resizedialog"
+pack .resizedialog.butts.resize -side left -padx 20
+pack .resizedialog.butts.cancel -side right -padx 20
+pack .resizedialog.butts -side top -fill x -pady 10
+
+#
+toplevel .newdialog
+wm withdraw .newdialog
+wm transient .newdialog .
+wm group .newdialog .
+frame .newdialog.wh
+pack .newdialog.wh -side top
+label .newdialog.wh.l1 -text "Size:"
+pack .newdialog.wh.l1 -side left
+entry .newdialog.wh.w -width 4
+pack .newdialog.wh.w -side left
+label .newdialog.wh.l2 -text "x"
+pack .newdialog.wh.l2 -side left
+entry .newdialog.wh.h -width 4
+pack .newdialog.wh.h -side left
+frame .newdialog.b
+pack .newdialog.b -side top
+label .newdialog.b.l -text "Baseline:"
+pack .newdialog.b.l -side left
+entry .newdialog.b.b -width 4
+pack .newdialog.b.b -side left
+frame .newdialog.butts
+button .newdialog.butts.new -command {newfont [.newdialog.wh.w get] [.newdialog.wh.h get] [.newdialog.b.b get]} \
+  -text "Do it" -highlightthickness 0
+button .newdialog.butts.cancel -text Cancel -highlightthickness 0 \
+	  -command "wm withdraw .newdialog; grab release .newdialog"
+pack .newdialog.butts.new -side left -padx 20
+pack .newdialog.butts.cancel -side right -padx 20
+pack .newdialog.butts -side top -fill x -pady 10
+
+#
+toplevel .savedialog
+wm withdraw .savedialog
+wm transient .savedialog .
+wm group .savedialog .
+label .savedialog.l -text "Save file as:"
+pack .savedialog.l -side top
+entry .savedialog.e -width 50
+completion_bindings .savedialog.e
+pack .savedialog.e -side top
+frame .savedialog.butts
+button .savedialog.butts.save -command {dosave [.savedialog.e get] 1} \
+	  -text Save -highlightthickness 0
+button .savedialog.butts.cancel -text Cancel -highlightthickness 0 \
+	  -command "wm withdraw .savedialog; grab release .savedialog"
+pack .savedialog.butts.save -side left -padx 20
+pack .savedialog.butts.cancel -side right -padx 20
+pack .savedialog.butts -side top -fill x -pady 10
+bind .savedialog.e <Return> ".savedialog.butts.save invoke"
+
+#
+toplevel .loaddialog
+wm withdraw .loaddialog
+wm transient .loaddialog .
+wm group .loaddialog .
+label .loaddialog.l -text "Load file:"
+pack .loaddialog.l -side top
+entry .loaddialog.e -width 50
+completion_bindings .loaddialog.e
+pack .loaddialog.e -side top
+frame .loaddialog.butts
+button .loaddialog.butts.load -command {doload [.loaddialog.e get]} \
+	  -text Load -highlightthickness 0
+button .loaddialog.butts.cancel -text Cancel -highlightthickness 0 \
+	  -command "wm withdraw .loaddialog; grab release .loaddialog"
+pack .loaddialog.butts.load -side left -padx 20
+pack .loaddialog.butts.cancel -side right -padx 20
+pack .loaddialog.butts -side top -fill x -pady 10
+bind .loaddialog.e <Return> ".loaddialog.butts.load invoke"
+
+#
+toplevel .importdialog
+wm withdraw .importdialog
+wm transient .importdialog .
+wm group .importdialog .
+label .importdialog.l -text "Import bitmap file:"
+pack .importdialog.l -side top
+entry .importdialog.e -width 50
+completion_bindings .importdialog.e
+pack .importdialog.e -side top
+frame .importdialog.offset
+label .importdialog.offset.l1 -text "Offset: "
+pack .importdialog.offset.l1 -side left
+entry .importdialog.offset.x -width 3
+pack .importdialog.offset.x -side left
+label .importdialog.offset.l2 -width 1 -text ","
+pack .importdialog.offset.l2 -side left
+entry .importdialog.offset.y -width 3
+pack .importdialog.offset.y -side left
+pack .importdialog.offset -side top
+frame .importdialog.butts
+button .importdialog.butts.import \
+	  -command {doimportxbm [.importdialog.e get] [.importdialog.offset.x get] [.importdialog.offset.y get] } \
+	  -text Import -highlightthickness 0
+button .importdialog.butts.cancel -text Cancel -highlightthickness 0 \
+	  -command "wm withdraw .importdialog; grab release .importdialog"
+pack .importdialog.butts.import -side left -padx 20
+pack .importdialog.butts.cancel -side right -padx 20
+pack .importdialog.butts -side top -fill x -pady 10
+bind .importdialog.e <Return> ".importdialog.butts.import invoke"
+
+#
+toplevel .chardialog
+wm withdraw .chardialog
+wm transient .chardialog .
+wm group .chardialog .
+label .chardialog.l -text "Character name:"
+pack .chardialog.l -side top
+entry .chardialog.e
+pack .chardialog.e -side top
+frame .chardialog.butts
+button .chardialog.butts.apply -text Apply -highlightthickness 0 \
+	  -command { setcharname [.chardialog.e get] }
+button .chardialog.butts.cancel -text Cancel -highlightthickness 0 \
+	  -command "wm withdraw .chardialog; grab release .chardialog"
+pack .chardialog.butts.apply -side left -padx 20
+pack .chardialog.butts.cancel -side right -padx 20
+pack .chardialog.butts -side top -fill x -pady 10
+bind .chardialog.e <Return> ".chardialog.butts.apply invoke"
+
+#
+toplevel .messdialog
+wm withdraw .messdialog
+wm transient .messdialog .
+wm group .messdialog .
+message .messdialog.m -aspect 10000
+pack .messdialog.m -side top
+button .messdialog.ok -command "wm withdraw .messdialog" \
+	  -text Ok -highlightthickness 0
+pack .messdialog.ok -side top
+
+#
+toplevel .commdialog
+wm withdraw .commdialog
+wm transient .commdialog .
+wm group .commdialog .
+label .commdialog.l -text "Comment:"
+pack .commdialog.l -side top
+text .commdialog.t -bg white
+pack .commdialog.t -side top
+frame .commdialog.butts
+button .commdialog.butts.apply -text Apply -highlightthickness 0 \
+	  -command { changecomment [.commdialog.t get 0.0 end] }
+button .commdialog.butts.cancel -text Cancel -highlightthickness 0 \
+	  -command "wm withdraw .commdialog; grab release .commdialog"
+pack .commdialog.butts.apply -side left -padx 20
+pack .commdialog.butts.cancel -side right -padx 20
+pack .commdialog.butts -side top -fill x -pady 10
+
+#Properties:
+#  font name
+#  comments?
+#  point size?
+#  proportional
+#  parts of font name
+#
+set proplist [list fontname pointsize foundry family weight slant widthname copyright]
+toplevel .propdialog
+wm withdraw .propdialog
+wm transient .propdialog .
+wm group .propdialog .
+frame .propdialog.butts
+button .propdialog.butts.apply -command changeprops \
+	  -text Apply -highlightthickness 0
+button .propdialog.butts.cancel -text Cancel -highlightthickness 0 \
+	  -command "wm withdraw .propdialog; grab release .propdialog"
+pack .propdialog.butts.apply -side left -padx 20
+pack .propdialog.butts.cancel -side right -padx 20
+pack .propdialog.butts -side bottom -fill x -pady 10
+text .propdialog.labels -width 15 -height 10 -bg $BG -relief flat \
+      -highlightthickness 0
+pack .propdialog.labels -side left
+text .propdialog.values -width 50 -height 10 -bg white
+pack .propdialog.values -side right
+bind .propdialog.values <Any-Key> setpropwidth
+
+. config -width 0 -height 0
+bind .c <1> "click %x %y on"
+bind .c <2> "click %x %y toggle"
+bind .c <3> "click %x %y off"
+bind .c <B1-Motion> "bmotion %x %y on"
+bind .c <B2-Motion> "bmotion %x %y toggle"
+bind .c <B3-Motion> "bmotion %x %y off"
+bind .c <Shift-Button-1> "startsel %x %y"
+bind .c <Shift-B1-Motion> "changesel %x %y"
+bind .c <Shift-ButtonRelease-1> "endsel %x %y"
+bind . <KeyPress-Shift_L> "clearsel"
+bind . <KeyPress-Shift_R> "clearsel"
+
+bind .fc <1> "pickchar %x %y"
+bind .fc <Control-3> "nukechar %x %y"
+bind .fc <B1-Motion> "dragchar %x %y"
+bind .fc <ButtonRelease-1> "enddragchar %x %y"
+
+focus .
+bind . <Left> slideleft
+bind . <Right> slideright
+bind . <Up> slideup
+bind . <Down> slidedown
+bind . <Control-Left> selectleft
+bind . <Control-Right> selectright
+bind . <Control-Up> selectup
+bind . <Control-Down> selectdown
+bind . <Return> applywork
+
+readrc
+
+if [llength $argv]>1 {
+  puts "usage: bdfedit \[filename\]"
+} elseif [llength $argv]==1 {
+  update
+  set fontinfo(yorigin) $default(DESCENT)
+  set WIDTH $default(WIDTH)
+  set HEIGHT $default(HEIGHT)
+  if [string compare $argv -]==0 {
+    loadbdffont stdin
+    set chardata(work) $chardata(65)
+    makegrid $WIDTH $HEIGHT $fontinfo(xorigin) $fontinfo(yorigin)
+    clearsel
+    showfont
+    setgrid chardata work
+  } else {
+    doload $argv
+  }
+} else {
+  newfont $default(WIDTH) $default(HEIGHT) $default(DESCENT)
+  makegrid $WIDTH $HEIGHT $fontinfo(xorigin) $fontinfo(yorigin)
+  clearsel
+  showfont
+  setgrid chardata work
+}

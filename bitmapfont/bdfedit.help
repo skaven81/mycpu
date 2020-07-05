@@ -1,0 +1,247 @@
+bdfedit version 1.3 user documentation
+
+Usage:
+
+  bdfedit [font]
+
+Running bdfedit brings up the font editing window.  If a font was specified
+on the command line, this font is loaded.  The font must be a BDF font,
+and can be specified as a filename.  It may also be the name of a font, and
+a fontserver, in one of the following forms:
+  font@server:port
+  font@server           (defaults to port 7100)
+  font@                 (defaults to localhost:7100
+and "font" should be the name of the font.
+(In order to use this method, you must have "fstobdf" installed on your
+system and in your PATH, and you must have a fontserver running somewhere.)
+
+Fonts loaded this way will assume the filename is the same as the fontname
+(without the server or port), with ".bdf" appended.
+
+This method of specifying fonts may also be used when opening fonts with
+the "Load" option in the "File" menu (see below).
+
+Files
+-----
+The following operations are available under the "File" menu.
+
+"New" clears out current font information, and lets you start work on
+a new, empty font of a size you specify.  A window comes up requesting
+width, height, and baseline.  This command will destroy existing font
+data, and will NOT warn you if it hasn't been saved.
+
+"Load" loads in a new font, replacing all existing font information.
+This command will destroy existing font data, and will NOT warn you if
+it hasn't been saved.
+
+"Import bitmap" will read an X bitmap file (only in XBM format), and
+place the data into the current work area.  Previous data in the work
+area will be moved to the hold buffer (see below).  If the bitmap data
+is wider or taller than the existing font allows, excess data will be
+trimmed from the right and/or bottom of the bitmap.  Because of this,
+the dialog allows you to specify x and y offsets into the bitmap, so
+that you can load the part of the bitmap you need.
+
+"Save" saves the current data into the current filename.  If there is no
+current filename set (from a Load, a command line filename, or a previous
+"Save As", then a "Save As" is performed instead of a "Save".
+
+"Save As" lets you enter a filename, saves the current font information to
+that file, and attempts to set the current filename.  If the current filename
+is not set, it just does it.  If it is set, bdfedit asks you if you want to
+continue editing under the old name or the new name.
+
+When you are specifying a filename wifh the Load, Save As, or Import dialogs,
+you can use tab completion similar to most Unix shells:  Hit the tab key at
+any point and it will try to complete the current part of the path you are
+typing, or present a list of possible completions to you.
+
+
+Character Selection
+-------------------
+To select a character, click with mouse button 1 on the character in the
+grid at the top.  The decimal character number and the character name will
+be displayed above the editing area at the bottom of the window.  A red box
+highlights the current character in the font grid.
+
+Control- with the arrow keys will also alter the currently selected character.
+
+
+Character Editing
+-----------------
+In the editing area, the mouse has the following actions:
+  button 1:  draw
+  button 2:  invert
+  button 3:  erase
+
+The arrow keys will move the entire editing area up or down, left or right.
+As bits scroll off of one side, they appear again on the opposite side.
+The editing area can also be flipped and rotated by using the menu items
+under "Edit".
+
+The area that is affected by the arrow keys, and by the Edit menu items is
+normally the entire image area.  However, this area can be limited by
+selecting a smaller rectangle by holding the Shift key and dragging out
+an area with button 1.  This area will be shown in red, and arrow keys
+and Edit items will only apply to this area.  To clear the selected area
+and reset it to the whole character, press the Shift key.
+
+To apply the changes to the current character, click the "Apply" button.
+Prior to applying, you can use the "Reset" button to restore the editing
+area to the current value of the character.  You can also use the "Orig"
+button to set the editing area to the value of the character when
+the font was originally loaded.  You can also save your current version
+to the Hold buffer by clicking the "Hold" button.
+
+To rename the character, click on the character name above the editing
+area, and you'll get a window that will let you edit the name.
+
+
+Hold Buffer
+-----------
+The line of characters (initially pink boxes) between the font and the
+editing area is a hold space for temporarily storing characters you are
+working on.  This area is updated automatically whenever you switch
+characters without saving the character you are working on.  It also
+saves the previous version every time you apply changes.
+
+When the buffer fills up, the oldest character in the hold buffer is
+overwritten.  This area isn't intended for long-term storage, because
+things will quickly be overwritten automatically.  The area is intended
+for an easy way to undo, and extra space if you want to re-order some
+of the characters.
+
+
+Drag and Drop
+-------------
+Characters can be dragged from anywhere except the editing area.  They
+can be dropped anywhere including the editing area.  Characters dropped
+onto the editing area replace the current data, but do not alter the
+currently selected character.  Characters dropped onto the hold space
+will occupy the least recently used hold space (rather than the space
+under your mouse).
+
+If you are dragging from one spot in the font grid to another spot in
+the font grid, there will be a delay before the drop is allowed.  This
+is done to prevent accidentally dragging and dropping while you are
+simply trying to select a new character in the font.  Wait a couple of
+seconds, and a green box will appear as you move the mouse to show you
+that you can now drop on this character.
+
+Note that this does NOT do a swap operation between the two characters,
+rather it does a copy.  If you need to do a swap, remember that the
+copy you just did will also force the overwritten character to be saved
+to the hold buffer.  You can then drag that character from the hold
+buffer to the first character where you started the drag.
+
+
+Deleting Characters
+-------------------
+If you want to make a character undefined, use Control-mouse button 3 on the
+character in the font.  This same method can also be used to clean up slots
+in the hold buffer.
+
+
+Resizing the Font
+-----------------
+Select "Resize" from the "File" menu.  A new window will appear with a
+grid, a green box, and a blue line.  You can grab any edge of the green
+box and move it.  When you do this, you'll see that the original font
+size is left underneath as black lines.  Keep in mind that the edge you
+move determines where data will be added or deleted.  For instance, if
+you move the left edge one pixel to the right, you will lose the left
+column of data off of all of your characters after the resize.
+
+The blue lines control the location of the font origin.  The y-axis is
+normally the baseline of the font, letters sit on it and descenders
+fall below it.  The x-axis is usuall the left edge, but if the font
+characters should overlap, this is one way to achieve that (another
+way is to set the individual character display widths, see below
+in "Proportional (Variable) Width Characters").
+
+When done, click "Resize" and wait a few seconds while your font is
+resized.  Be careful, there is no undo for this.  (The hold buffer will
+also be resized!)
+
+If you can't drag the lines far enough in the resize window to make the
+font as big as you want, just make it as big as you can.  If you resize
+again, the resize window will be bigger.
+
+
+Proportional (Variable) Width Characters
+----------------------------------------
+To use proportional width characters, simply use the mouse to move the green
+bar in the editing area to the desired width for that character.  This bar
+represents the _display_ width of the character, i.e. the next character's
+origin will be drawn where the green bar is.  The character data can extend
+to the right of the green bar (this would be typical for italic fonts).
+For fixed width fonts, leave this bar all the way to the right.
+
+A proportional font can be quickly converted to fixed width by using the
+"Convert to Fixed" menu item in the "File" menu.  Beware:  there is no
+way to undo this operation.
+
+
+Font Properties and Comment
+---------------------------
+The Font Properties and Comment can be edited by selected these options
+from the "File" menu.  The Comment is a field that contains various
+comments, usually including copyright and licensing information.
+
+The Font Properties includes the name of the font used by X11 (this is
+NOT the same as the filename where you store the font), and also
+some items often used to describe X11 fonts.
+
+
+Customization
+-------------
+bdfedit will read from a configuration file in your home directory called
+.bdfeditrc, if it exists.  Currently this is simply a Tcl/Tk script which
+is sourced.  In theory you can do all sorts of fun things, but most
+likely you'll just want to set up a default comment field that says that
+you are the font author.  A sample .bdfeditrc was included with this
+distribution.
+
+
+
+Using X11 Fonts
+===============
+
+So what do you do with a BDF file?
+Below is a summary of what to do the first time you install a BDF font.
+For more complete information, see
+  http://hea-www.harvard.edu/~fine/Tech/font-howto.html
+
+> mkdir $HOME/fonts
+> cd $HOME/fonts
+> chmod 755 .
+> mv somebdffont.bdf .
+> mkfontdir
+> chmod 644 *
+> xset fp+ $HOME/fonts
+> xset fp rehash
+
+Now you can use this font.  You will be using it by the name found within
+the file, NOT by the filename.  Each time you add a font to the font
+directory you will need to do the mkfontdir command (in the fonts directory)
+and the "xset fp rehash" command.
+
+Make sure you don't put in two font files that have the same fontname
+in them (the default font name is UNTITLED, so this can easily happen).
+If you do, mkfontdir will fail.  Use the "File" menu "Properties"
+dialog to change the font name.
+
+You will probably also want to put the two xset commands into your X11
+startup files (possibly .xinitrc or .xsession) so that these fonts will
+be available to you every time you log in.
+
+
+Bugs, Complaints, Ideas, Comments, Praise
+=========================================
+
+Please send any bug reports, questions, or comments to:
+  fine@head-cfa.harvard.edu
+
+You can register for future updates using the following URL:
+  http://hea-www.harvard.edu/~fine/cgi/tomregister.cgi?bdfedit=on
+

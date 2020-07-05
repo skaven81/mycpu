@@ -1,0 +1,116 @@
+bdfedit Version 1.3
+
+bdfedit Home page:
+http://hea-www.harvard.edu/~fine/Tech/bdfedit.html
+
+Copyright © 2000 Thomas A. Fine
+
+This distribution may be used and redistributed in whole or in part for
+any purpose provided only that notice of this license and the original
+author and copyright holder (Thomas A. Fine) is preserved.
+
+
+This distribution contains:
+
+README.bdfedit
+  this is the file you are reading now.  (geesh!)
+
+bdfedit.samprc
+  this is a sample configuration file.  This file is not required
+  but may be useful.
+
+bdfedit.help
+  Contains full (I hope) instructions on how to use bdfedit.
+
+bdfedit
+  This is the actual tcl/tk program.
+
+completion.tcl
+  This package implements tab-completion of filenames.
+
+How to Install
+--------------
+
+0.  You must have wish7.6 or later installed.  (Check out www.tcl.tk)
+
+1.  unpack the tar file
+
+2.  Move things around to where you want them.
+    a) bdfedit should go where you keep other programs (often $HOME/bin).
+    b) completion.tcl can go in the same directory, or in a
+       directory with tcl libraries
+
+3.  Make sure bdfedit is executable: chmod +x bdfedit
+
+3.  Edit the first line of bdfedit so that it contains the path to the wish
+    that you want it to run.
+    You may be able to determine this location by using "which wish".
+
+4.  Edit the fifth line of bdfedit so that it contains the path to the
+    completion.tcl file.
+
+
+5.  You are now ready to edit fonts!  Just run "bdfedit" (If you still get
+    "Command not found" you may need to run "rehash").
+
+Take a look at the file bdfedit.help for instructions on how to use the
+software.
+
+Have fun, send complaints and compliments to:
+  fine@head-cfa.harvard.edu
+
+You can register for future updates using the following URL:
+  http://hea-www.harvard.edu/~fine/cgi/tomregister.cgi?bdfedit=on
+
+Changes from version 1.2.1
+--------------------------
+Editing (shift, flip, invert) of less than the full bitmap area.
+Use shift-button1 to select an area, press shift again to clear it.
+
+Importing of bitmaps.  X11 XBM format only.
+
+Dialogs pop up under your pointer.
+
+Warns you about overwriting existing files during Save As.
+
+Changes from version 1.1
+------------------------
+Selection of empty character slots no longer causes a blank character to
+be saved.
+
+Bugs relating to saving and loading wide characters (25 pixels or wider)
+have been corrected.  I think its slightly faster, too.
+
+Correct implementation of font origin and display width.  Fonts with an
+x origin (left edge) that is not the left edge of the font data is now
+handled.  Characters can now be wider than their display width, and the
+data will not be truncated.
+
+The resize widget has been altered to allow adjustment of the x origin.
+It has also been made larger, to allow for making bigger fonts.
+
+Fonts are now saved with minimum-sized bitmaps, instead of saving entire
+drawing area for each glyph.
+
+Copyright field was added to the properties window.
+
+I remembered to actually include completion.tcl in the tar file.  Geesh,
+is anyone actually using this software?
+
+
+Future Plans
+------------
+The best way to get a change is to request it.  The reality is I don't
+make changes unless someone requests it, or unless I specifically need
+the change myself.  But here are some things that are on my mind:
+
+  I'll probably bump the requirement to wish8.x, so that I can use various
+  convenient features of wish8.
+
+  For really large fonts, scrollbars are needed on the font display area
+  in order to fit the entire window on the screen.  I also
+  need to speed things up for large fonts.
+
+  Some basic drawing functions like line drawing, ellipse drawing, cut,
+  copy, paste, and undo would be very convenient.
+

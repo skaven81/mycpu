@@ -1,0 +1,55 @@
+STARTFONT 2.1
+COMMENT
+COMMENT  This font is copyrighted by its author, who reserves all rights under
+COMMENT  national and international copyright laws.
+COMMENT
+COMMENT  Produced with bdfedit, a tcl/tk font editing program
+COMMENT    written by Thomas A. Fine
+COMMENT    Email to my last name at head.cfa.harvard.edu
+COMMENT    http://hea-www.harvard.edu/~fine/
+FONT UNTITLED
+SIZE 13 72 72
+FONTBOUNDINGBOX 8 8 0 1
+STARTPROPERTIES 11
+FOUNDRY "Fine"
+FAMILY_NAME ""
+WEIGHT_NAME "Medium"
+SLANT "R"
+SETWIDTH_NAME "Normal"
+SPACING "c"
+CHARSET_REGISTRY "ISO-8859"
+CHARSET_ENCODING "1"
+COPYRIGHT "Designer of this font retains full rights under the law"
+FONT_ASCENT  9
+FONT_DESCENT -1
+ENDPROPERTIES
+CHARS 2
+STARTCHAR C042
+ENCODING 34
+SWIDTH 615 0
+DWIDTH 8 0
+BBX 8 8 0 1
+BITMAP
+ff
+ff
+ff
+ff
+ff
+ff
+ff
+ff
+ENDCHAR
+STARTCHAR C147
+ENCODING 103
+SWIDTH 615 0
+DWIDTH 8 0
+BBX 5 6 2 1
+BITMAP
+70
+88
+88
+78
+08
+70
+ENDCHAR
+ENDFONT
