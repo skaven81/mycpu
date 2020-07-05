@@ -14,7 +14,7 @@
 #   e nor z nor f matter, then "x" is a stand-in for "no status bits matter".
 #
 #   After this comes the sequence number,
-#   from 0-f.  After this is a list of macros and/or signals that will be
+#   from 0-f.  After this is a list of macros that will be
 #   ORed to form the control signals for this microcode entry.
 
 ###### Phase 1 ######
@@ -39,7 +39,7 @@ x 0 NextInstruction
 
 # Store to RAM: store the specified byte at
 # the given address.
-[0x01] SR @addr $data
+[0x10] ST @addr $data
 x 0 IncrementPC
 # PC now points to high byte of target address
 x 1 AddrBusPC WriteTAH IncrementPC
@@ -49,8 +49,28 @@ x 3 AddrBusPC WriteTD IncrementPC
 x 4 AddrBusTA DataBusTD WriteRAM
 x 5 NextInstruction
 
+# Store to RAM from TD register
+[0x11] ST_TD @addr
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to next instruction
+x 3 AddrBusTA DataBusTD WriteRAM
+x 4 NextInstruction
+
+# Load from RAM to TD register
+[0x20] LD_TD @addr
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to next instruction
+x 3 AddrBusTA WriteTD
+x 4 NextInstruction
+
 # Jump: unconditional jump to specified address
-[0x02] JMP @addr
+[0x30] JMP @addr
 x 0 IncrementPC
 # PC now points to high byte of target address
 x 1 AddrBusPC WriteTD IncrementPC
