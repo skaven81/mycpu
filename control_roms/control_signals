@@ -1,0 +1,33 @@
+# (CTLSIG) default ROMid bitmask - signals should have names no longer
+#                                  than six characters so they match
+#                                  logic analyzer labels
+
+# Program counter function select
+# 0: do nothing
+# 1: increment PC
+# 2: Load low from data bus
+# 3: Load high from data bus
+# 4: do nothing
+# 5: Put PC on address bus
+# 6: Put low on data bus
+# 7: Put high on data bus
+(PCSEL)  0 0 0x07
+
+# Instruction & Sequence
+(/NEWOP) 1 0 0x08 # write to opcode register and reset the sequence counter on the next clock
+(/WSTAT) 1 0 0x10 # write to status register on the next clock
+
+# RAM
+(/WRAM)  1 0 0x20 # write to RAM on the next clock
+
+# Transfer register write select
+# 0: do nothing
+# 1: write to TD
+# 2: write to TAL
+# 3: write to TAH
+(TWSEL)  0 0 0xc0
+
+# Transfer register read select
+(/TRADR) 1 1 0x01 # put TAL+TAH on the address bus
+(/TRDTA) 1 1 0x02 # put TD on the data bus
+

@@ -1,0 +1,44 @@
+# {macro-name} - shorthand for a collection of ORed signals
+# SIGNAL - if signal is Boolean, asserts the inverse of the default
+# SIGNAL=<num> - force the signal to a particular value
+#
+
+{IncrementPC}
+PCSEL=1
+
+{WritePCL}
+PCSEL=2
+
+{WritePCH}
+PCSEL=3
+
+{AddrBusPC}
+PCSEL=5
+
+{DataBusPCL}
+PCSEL=6
+
+{DataBusPCH}
+PCSEL=7
+
+{WriteTD}
+TWSEL=1
+
+{WriteTAL}
+TWSEL=2
+
+{WriteTAH}
+TWSEL=3
+
+{NextInstruction}
+PCSEL=5
+/NEWOP
+
+{AddrBusTA}
+/TRADR
+
+{DataBusTD}
+/TRDTA
+
+{WriteRAM}
+/WRAM

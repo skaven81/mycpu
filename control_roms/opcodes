@@ -1,0 +1,63 @@
+# [opcode] NAME <arguments> - @arg = 16bit $arg = 8bit
+#   opcode is the hexadecimal opcode, 0x00 - 0xff
+#   NAME is the assembler name
+#   arguments is a list of expected bytes after the opcode in the program,
+#   @arg represents a 16-bit value (2 bytes), $arg represents an 8-bit
+#   value (1 byte).
+#
+#   The microcode is written as a series of control sequences.  Each line
+#   starts with one or two characters, (x,e,E,z,Z,f,F) that indicate that this
+#   microcode entry should be executed for any flags (x), when the equal
+#   flag is set (E) or clear (e), or the zero flag is set (Z) or clear (z),
+#   or the overflow flag is set (F) or clear (f), or a combination (eZ, ZE),
+#   etc.  A missing character means its value does not matter.  If neither
+#   e nor z nor f matter, then "x" is a stand-in for "no status bits matter".
+#
+#   After this comes the sequence number,
+#   from 0-f.  After this is a list of macros and/or signals that will be
+#   ORed to form the control signals for this microcode entry.
+
+###### Phase 1 ######
+# Program counter
+# ROM (0x0000-0x3fff)
+# RAM (0x4000-0xbfff)
+# Opcode register + Status register + Sequence counter 
+# Transfer registers
+# Control ROMs
+
+# No-op: does nothing
+[0x00] NOP
+x 0 IncrementPC 
+x 1 NextInstruction
+
+# Halt: goes into infinite loop of loading the program
+# counter address into the opcode register, but never
+# incrementing the program counter.  So the CPU just
+# runs HLT in an endless loop.
+[0xff] HLT
+x 0 NextInstruction
+
+# Store to RAM: store the specified byte at
+# the given address.
+[0x01] SR @addr $data
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to data byte
+x 3 AddrBusPC WriteTD IncrementPC
+x 4 AddrBusTA DataBusTD WriteRAM
+x 5 NextInstruction
+
+# Jump: unconditional jump to specified address
+[0x02] JMP @addr
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+x 2 AddrBusPC WritePCL
+x 3 DataBusTD WritePCH
+x 4 NextInstruction
+
+
