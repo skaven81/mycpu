@@ -31,7 +31,7 @@ TWSEL=2
 TWSEL=3
 
 {NextInstruction}
-PCWSEL=1
+PCRSEL=1
 /NEWOP
 
 {AddrBusTA}
