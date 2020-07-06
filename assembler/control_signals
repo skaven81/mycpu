@@ -2,16 +2,19 @@
 #                                  than six characters so they match
 #                                  logic analyzer labels
 
-# Program counter function select
+# Program counter read select
+# 0: do nothing
+# 1: Put PC on address bus
+# 2: Put PC-low on data bus
+# 3: Put PC-high on data bus
+(PCRSEL) 0 0 0x03
+
+# Program counter write select
 # 0: do nothing
 # 1: increment PC
-# 2: Load low from data bus
-# 3: Load high from data bus
-# 4: do nothing
-# 5: Put PC on address bus
-# 6: Put low on data bus
-# 7: Put high on data bus
-(PCSEL)  0 0 0x07
+# 2: Load PC-low from data bus
+# 3: Load PC-high from data bus
+(PCWSEL) 0 1 0x0c
 
 # Instruction & Sequence
 (/NEWOP) 1 0 0x08 # write to opcode register and reset the sequence counter on the next clock

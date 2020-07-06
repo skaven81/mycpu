@@ -4,22 +4,22 @@
 #
 
 {IncrementPC}
-PCSEL=1
+PCWSEL=1
 
 {WritePCL}
-PCSEL=2
+PCWSEL=2
 
 {WritePCH}
-PCSEL=3
+PCWSEL=3
 
 {AddrBusPC}
-PCSEL=5
+PCRSEL=1
 
 {DataBusPCL}
-PCSEL=6
+PCRSEL=2
 
 {DataBusPCH}
-PCSEL=7
+PCRSEL=3
 
 {WriteTD}
 TWSEL=1
@@ -31,7 +31,7 @@ TWSEL=2
 TWSEL=3
 
 {NextInstruction}
-PCSEL=5
+PCWSEL=1
 /NEWOP
 
 {AddrBusTA}
