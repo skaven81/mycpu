@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # vim: syntax=python ts=4 sts=4 sw=4 expandtab
 
+import re
+
 class ControlSignal:
     @classmethod
     def match_header(cls, line):
@@ -128,7 +130,7 @@ class Opcode:
         if m:
             self.code = int(m.group(1), 16)
             self.name = m.group(2)
-            self.args = m.group(3).split(' ')
+            self.args = [ i for i in m.group(3).split(' ') if i ]
         else:
             raise SyntaxError("ERROR: {} line {} looks like an opcode, but does not match regex".format(fileinput.filename(), fileinput.filelineno()))
         self.micro_ops = [ ]
@@ -212,7 +214,6 @@ class Opcode:
 if __name__ == "__main__":
     import sys
     import fileinput
-    import re
 
     # Read STDIN, or the file(s) specified on the command line, 
     # and create control signal, macro, and opcode objects
