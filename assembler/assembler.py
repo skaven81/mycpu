@@ -260,10 +260,12 @@ for idx, a in enumerate(assembly):
         final_assembly.append(a['val'])
 
 # Write output
-if args.output == '-':
+if args.output == '-' or args.verbose >= 1:
+    if args.output != '-':
+        print("Final assembly")
     for idx, a in enumerate(final_assembly):
         print("{:04x} {:02x} # {}".format(idx, a, assembly[idx]['msg']))
-else:
+if args.output != '-':
     logging.info("Writing {} bytes to {}".format(len(final_assembly), args.output))
     with open(args.output, mode='wb') as fh:
         fh.write(bytes(final_assembly))
