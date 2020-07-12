@@ -61,8 +61,10 @@ with open(args.opcodes, 'r') as fh:
 comment = Regex('#.*')
 # Labels at the beginning of the line mark addresses, or can be used
 # in places where a 16-bit word argument is required.
-label = Word(".", alphanums+"_"+"-")
+label = Word(".", alphanums+"_")
 label.setName('label')
+labeloffset = Word(".", alphanums+"_-+")
+labeloffset.setName('labeloffset')
 # Bytes can be represented in binary, hex, char, or a number (0-255 or -128-127)
 binbyte = Combine(Literal('0b') + Char('01') * 8)
 binbyte.setName('binbyte')
@@ -85,7 +87,7 @@ binword.setParseAction(lambda t: [int(t[0], 2)])
 hexword = Combine(Literal('0x') + Char(srange("[0-9a-fA-F]")) * 4)
 hexword.setName('hexword')
 hexword.setParseAction(lambda t: [int(t[0], 16)])
-word = binword | hexword | label | number
+word = binword | hexword | labeloffset | label | number
 word.setName('word')
 # Data can be represented as a label followed by a double-quoted string, or a series of bytes or words
 data = label + (QuotedString(quoteChar='"', unquoteResults=True) | byte[1, ...] | word[1, ...])
@@ -231,8 +233,18 @@ final_assembly = [ ]
 for idx, a in enumerate(assembly):
     if type(a['val']) is str:
         hl, label = a['val'].split(':')
+        offset = 0
+        if '-' in label:
+            label, offval = label.split('-')
+            offset = -1 * int(offval)
+        elif '+' in label:
+            label, offval = label.split('+')
+            offset = int(offval)
+
         if label in labels:
-            addr = labels[label]
+            addr = labels[label] + offset
+            if offset:
+                logging.debug("Label {} with offset {} resolved to {}".format(a['val'], offset, addr))
             if hl == 'high':
                 val = (addr >> 8)
             elif hl == 'low':
