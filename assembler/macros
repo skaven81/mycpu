@@ -40,5 +40,18 @@ PCRSEL=1
 {DataBusTD}
 /TRDTA
 
+{DataBusTAL}
+/TALDT
+
 {WriteRAM}
 /WRAM
+
+{AddrBusSP}
+/SPADR
+
+{IncrementSP}
+SPSEL=2
+
+{DecrementSP}
+SPSEL=3
+

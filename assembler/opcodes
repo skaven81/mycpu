@@ -80,4 +80,59 @@ x 2 AddrBusPC WritePCL
 x 3 DataBusTD WritePCH
 x 4 NextInstruction
 
+# Push: put a static value on the stack
+[0x40] PUSH $data
+x 0 IncrementPC IncrementSP
+# PC now points to data; SP points to target address
+x 1 AddrBusPC WriteTD
+# TD now contains the data to be written to the stack
+x 2 AddrBusSP DataBusTD WriteRAM IncrementPC
+# PC now points to next instruction
+x 3 NextInstruction
+
+# Push TD onto the stack
+[0x41] PUSH_TD
+x 0 IncrementPC IncrementSP
+# PC now points to next instruction; SP points to target address
+x 1 AddrBusSP DataBusTD WriteRAM # write TD to stack
+x 2 NextInstruction
+
+# Peek: fetch the data from the top of the stack
+# into TD, but don't remove it
+[0x48] PEEK_TD
+x 0 AddrBusSP WriteTD IncrementPC
+x 1 NextInstruction
+
+# Pop into TD
+[0x49] POP_TD
+x 0 AddrBusSP WriteTD DecrementSP IncrementPC
+x 1 NextInstruction
+
+# Call subroutine: push next instruction address onto
+# the stack, then jump to the given address
+[0x50] CALL @addr
+x 0 IncrementPC
+# PC now points to high byte of subroutine address;
+# Write high byte to TAL (TAL can present to data bus)
+x 1 AddrBusPC WriteTAL IncrementPC
+# PC now points to low byte of subroute address;
+# Write low byte to TD
+x 2 AddrBusPC WriteTD IncrementPC IncrementSP
+# PC now points to next instruction address;
+# Write low byte to stack
+x 3 AddrBusSP DataBusPCL WriteRAM IncrementSP
+# Write high byte to stack
+x 4 AddrBusSP DataBusPCH WriteRAM
+# Load next instruction address from TAL & TD
+x 5 DataBusTAL WritePCH
+x 6 DataBusTD WritePCL
+x 7 NextInstruction
+
+# Return from subroutine: pop the next instruction
+# address from the stack, jump to that address
+[0x5f] RET
+x 0 AddrBusSP WritePCH DecrementSP
+x 1 AddrBusSP WritePCL DecrementSP
+x 2 NextInstruction
+
 

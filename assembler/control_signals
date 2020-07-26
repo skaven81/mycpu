@@ -33,4 +33,14 @@
 # Transfer register read select
 (/TRADR) 1 1 0x01 # put TAL+TAH on the address bus
 (/TRDTA) 1 1 0x02 # put TD on the data bus
+(/TALDT) 1 1 0x40 # put TAL on the data bus
 
+# Stack pointer read select
+(/SPADR) 1 0 0x04 # Put SP on the address bus
+
+# Stack pointer increment/decrement
+# 0: do nothing
+# 1: do nothing
+# 2: increment
+# 3: decrement
+(SPSEL)  0 1 0x30
