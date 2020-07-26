@@ -52,30 +52,26 @@
 # 3: put A-high on ALU-A bus
 (ARSEL)  0 2 0x03
 
-# Register A write select
-# 0: do nothing
-# 1: do nothing
-# 2: load A-low from data bus
-# 3: load A-high from data bus
-(AWSEL)  0 2 0x0c
-
 # Register B read select
 # 0: do nothing
 # 1: put B on address bus
-# 2: put B-low on BLU-B bus
-# 3: put B-high on BLU-B bus
-(BRSEL)  0 2 0x30
+# 2: put B-low on ALU-B bus
+# 3: put B-high on ALU-B bus
+(BRSEL)  0 2 0x0c
 
-# Register B write select
-# 0: do nothing
-# 1: do nothing
-# 2: load B-low from data bus
-# 3: load B-high from data bus
-(BWSEL)  0 2 0xc0
+# Registers A/B write select
+(/AWH)   1 2 0x10
+(/AWL)   1 2 0x20
+(/BWH)   1 2 0x40
+(/BWL)   1 2 0x80
 
 # ALU operation (5 bits)
 (ALUOP)  0 3 0x1f
+
 # ALU to data bus
-(/ALUDT) 1 1 0x80
+(/ALUD)  1 1 0x80
 
-
+# Remaining signals
+# ROM3 0x20
+# ROM3 0x40
+# ROM3 0x80
