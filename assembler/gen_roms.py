@@ -286,7 +286,7 @@ if __name__ == "__main__":
 
     #####
     # Instantiate our RomByte objects
-    rombytes = [ RomByte(0), RomByte(1) ]
+    rombytes = [ RomByte(0), RomByte(1), RomByte(2), RomByte(3) ]
     for signal in control_signals.values():
         rombytes[signal.romid].add_signal(signal)
     for r in rombytes:
@@ -305,7 +305,7 @@ if __name__ == "__main__":
             opcode = opcodes[0] # NOP by default
         if((opcode.name == "NOP" and opcode_num == 0) or (opcode.name != "NOP")):
             print("### {} ###".format(opcode.name))
-            print("  {:2} {:3} {:1} {:8} {:8}".format("OP", "F=0", "#", "ROM0","ROM1"))
+            print("  {:2} {:3} {:1} {:8} {:8} {:8} {:8}".format("OP", "F=0", "#", "ROM0","ROM1","ROM2","ROM3"))
         found_uops = dict()
         for flag_num in range(0, 8):
             flag_zero = bool(flag_num & 0b001)
@@ -326,8 +326,11 @@ if __name__ == "__main__":
                                 raise SyntaxError("ERROR: {} micro-op seq {} asserts signal {} multiple times".format(opcode.name, sequence_num, signal_name))
                             op_signals[signal.romid][signal_name] = signal_value
                     if((opcode.name == "NOP" and opcode_num == 0) or (opcode.name != "NOP")):
-                        print("0x{:02x} {:03b} {:1x} {:08b} {:08b} # {} => {}".format(opcode_num, flag_num, sequence_num,
-                                rombytes[0].get_byte(op_signals[0]), rombytes[1].get_byte(op_signals[1]),
+                        print("0x{:02x} {:03b} {:1x} {:08b} {:08b} {:08b} {:08b} # {} => {}".format(opcode_num, flag_num, sequence_num,
+                                rombytes[0].get_byte(op_signals[0]),
+                                rombytes[1].get_byte(op_signals[1]),
+                                rombytes[2].get_byte(op_signals[2]),
+                                rombytes[3].get_byte(op_signals[3]),
                                 uop['macros'], op_signals))
                 for romidx in range(0, len(rombytes)):
                     roms[romidx].append(rombytes[romidx].get_byte(op_signals[romidx]))
