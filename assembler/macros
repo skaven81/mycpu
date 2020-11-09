@@ -21,6 +21,9 @@ PCRSEL=2
 {DataBusPCH}
 PCRSEL=3
 
+{WriteStatus}
+/WSTAT
+
 {WriteTD}
 TWSEL=1
 
@@ -55,3 +58,26 @@ SPSEL=2
 {DecrementSP}
 SPSEL=3
 
+{WriteALUop}
+/ALUOPW
+
+{AddrBusA}
+/AADR
+
+{AddrBusB}
+/BADR
+
+{DataBusALU}
+/ALUD
+
+{WriteAH}
+/AWH
+
+{WriteAL}
+/AWL
+
+{WriteBH}
+/BWH
+
+{WriteBL}
+/BWL

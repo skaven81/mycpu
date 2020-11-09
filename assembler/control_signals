@@ -45,19 +45,17 @@
 # 3: decrement
 (SPSEL)  0 1 0x30
 
-# Register A read select
-# 0: do nothing
-# 1: put A on address bus
-# 2: put A-low on ALU-A bus
-# 3: put A-high on ALU-A bus
-(ARSEL)  0 2 0x03
+# ALU to data bus
+(/ALUD)  1 1 0x80
 
-# Register B read select
-# 0: do nothing
-# 1: put B on address bus
-# 2: put B-low on ALU-B bus
-# 3: put B-high on ALU-B bus
-(BRSEL)  0 2 0x0c
+# Register A to address bus
+(/AADR)  1 2 0x01
+
+# Register B to address bus
+(/BADR)  1 2 0x02
+
+# Write to ALUOP register
+(/ALUOPW) 1 3 0x04
 
 # Registers A/B write select
 (/AWH)   1 2 0x10
@@ -65,13 +63,15 @@
 (/BWH)   1 2 0x40
 (/BWL)   1 2 0x80
 
-# ALU operation (5 bits)
-(ALUOP)  0 3 0x1f
+# Remaining ROM2 signals
+# (SIG)  0 2 0x08
 
-# ALU to data bus
-(/ALUD)  1 1 0x80
-
-# Remaining signals
-# ROM3 0x20
-# ROM3 0x40
-# ROM3 0x80
+# Remaining ROM3 signals
+# (SIG)  0 3 0x01
+# (SIG)  0 3 0x02
+# (SIG)  0 3 0x04
+# (SIG)  0 3 0x08
+# (SIG)  0 3 0x10
+# (SIG)  0 3 0x20
+# (SIG)  0 3 0x40
+# (SIG)  0 3 0x80
