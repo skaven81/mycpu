@@ -55,7 +55,7 @@
 (/BADR)  1 2 0x02
 
 # Write to ALUOP register
-(/ALUOPW) 1 3 0x04
+(/ALUOPW) 1 2 0x04
 
 # Registers A/B write select
 (/AWH)   1 2 0x10
