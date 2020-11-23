@@ -160,7 +160,7 @@ x 1 AddrBusPC WriteAH IncrementPC
 x 2 NextInstruction
 
 # Store immediate byte into AL
-[0x63] LDI_AL
+[0x63] LDI_AL $byte
 x 0 IncrementPC
 x 1 AddrBusPC WriteAL IncrementPC
 x 2 NextInstruction
@@ -172,7 +172,7 @@ x 1 AddrBusPC WriteBH IncrementPC
 x 2 NextInstruction
 
 # Store immediate byte into AL
-[0x65] LDI_BL
+[0x65] LDI_BL $byte
 x 0 IncrementPC
 x 1 AddrBusPC WriteBL IncrementPC
 x 2 NextInstruction
@@ -217,6 +217,35 @@ x 2 AddrBusPC WriteTAL IncrementPC
 x 3 AddrBusTA WriteBL
 x 4 NextInstruction
 
+# Load from RAM@A into BH
+[0x6a] LDA_BH
+x 0 IncrementPC AddrBusA WriteBH
+x 1 NextInstruction
+
+# Load from RAM@A into BL
+[0x6b] LDA_BL
+x 0 IncrementPC AddrBusA WriteBL
+x 1 NextInstruction
+
+# Load from RAM@B into AH
+[0x6c] LDB_AH
+x 0 IncrementPC AddrBusB WriteAH
+x 1 NextInstruction
+
+# Load from RAM@B into AL
+[0x6d] LDB_AL
+x 0 IncrementPC AddrBusB WriteAL
+x 1 NextInstruction
+
+# Store AH into RAM@B
+
+# Store AL into RAM@B
+
+# Store BH into RAM@A
+
+# Store BL into RAM@A
+
+
 ### ALU operations have the following format for $op
 ### bits 4-0 (mask 0x1f) = 5-bit opcode
 ### bit  5   (mask 0x20) = carry-in bit
@@ -224,7 +253,7 @@ x 4 NextInstruction
 ### bit  7   (mask 0x80) = B bus hi(1)/lo(0)
 
 # set flags only (do not store result)
-[0x70] ALUOP_STATUS $op
+[0x74] ALUOP_STATUS $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -232,7 +261,7 @@ x 1 AddrBusPC WriteALUop IncrementPC
 x 2 WriteStatus NextInstruction
 
 # store ALU result in TD
-[0x71] ALUOP_TD $op
+[0x75] ALUOP_TD $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -241,7 +270,7 @@ x 2 DataBusALU WriteTD WriteStatus
 x 3 NextInstruction
 
 # store ALU result in TAH
-[0x72] ALUOP_TAH $op
+[0x76] ALUOP_TAH $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -250,7 +279,7 @@ x 2 DataBusALU WriteTAH WriteStatus
 x 3 NextInstruction
 
 # store ALU result in TAL
-[0x73] ALUOP_TAL $op
+[0x77] ALUOP_TAL $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -259,7 +288,7 @@ x 2 DataBusALU WriteTAL WriteStatus
 x 3 NextInstruction
 
 # store ALU result in AH
-[0x74] ALUOP_AH $op
+[0x78] ALUOP_AH $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -268,7 +297,7 @@ x 2 DataBusALU WriteAH WriteStatus
 x 3 NextInstruction
 
 # store ALU result in AL
-[0x75] ALUOP_AL $op
+[0x79] ALUOP_AL $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -277,7 +306,7 @@ x 2 DataBusALU WriteAL WriteStatus
 x 3 NextInstruction
 
 # store ALU result in BH
-[0x76] ALUOP_BH $op
+[0x7a] ALUOP_BH $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -286,7 +315,7 @@ x 2 DataBusALU WriteBH WriteStatus
 x 3 NextInstruction
 
 # store ALU result in BL
-[0x77] ALUOP_BL $op
+[0x7b] ALUOP_BL $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -295,7 +324,7 @@ x 2 DataBusALU WriteBL WriteStatus
 x 3 NextInstruction
 
 # store ALU result in RAM at @addr
-[0x78] ALUOP_ADDR $op @addr
+[0x7c] ALUOP_ADDR $op @addr
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -307,7 +336,7 @@ x 4 DataBusALU AddrBusTA WriteRAM WriteStatus
 x 5 NextInstruction
 
 # store ALU result in RAM at A addr
-[0x79] ALUOP_ADDR_A $op
+[0x7d] ALUOP_ADDR_A $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -316,7 +345,7 @@ x 2 DataBusALU AddrBusA WriteRAM WriteStatus
 x 3 NextInstruction
 
 # store ALU result in RAM at B addr
-[0x7a] ALUOP_ADDR_B $op
+[0x7e] ALUOP_ADDR_B $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -325,7 +354,7 @@ x 2 DataBusALU AddrBusB WriteRAM WriteStatus
 x 3 NextInstruction
 
 # push ALU result onto stack
-[0x7b] ALUOP_PUSH $op
+[0x7f] ALUOP_PUSH $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC IncrementSP
