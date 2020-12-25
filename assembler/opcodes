@@ -6,24 +6,16 @@
 #   value (1 byte).
 #
 #   The microcode is written as a series of control sequences.  Each line
-#   starts with one or two characters, (x,e,E,z,Z,f,F) that indicate that this
+#   starts with one or two characters, (x,e,E,z,Z,o,O) that indicate that this
 #   microcode entry should be executed for any flags (x), when the equal
 #   flag is set (E) or clear (e), or the zero flag is set (Z) or clear (z),
 #   or the overflow flag is set (O) or clear (o), or a combination (eZ, ZE),
 #   etc.  A missing character means its value does not matter.  If neither
-#   e nor z nor f matter, then "x" is a stand-in for "no status bits matter".
+#   e nor z nor o matter, then "x" is a stand-in for "no status bits matter".
 #
 #   After this comes the sequence number,
 #   from 0-f.  After this is a list of macros that will be
 #   ORed to form the control signals for this microcode entry.
-
-###### Phase 1 ######
-# Program counter
-# ROM (0x0000-0x3fff)
-# RAM (0x4000-0xbfff)
-# Opcode register + Status register + Sequence counter 
-# Transfer registers
-# Control ROMs
 
 # No-op: does nothing
 [0x00] NOP
@@ -274,10 +266,6 @@ x 7 NextInstruction
 x 0 AddrBusSP WritePCH DecrementSP
 x 1 AddrBusSP WritePCL DecrementSP
 x 2 NextInstruction
-
-###### Phase 2 ######
-# AH/AL + BH/BL registers
-# ALU
 
 # Store immediate word into A
 [0x60] LDI_A @word
