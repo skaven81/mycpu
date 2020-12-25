@@ -11,7 +11,7 @@ from pyparsing import Word, alphanums, nums, Regex, Literal, QuotedString, Or, A
 parser = argparse.ArgumentParser(description='Assemble program ROM')
 parser.add_argument('--opcodes', default='opcodes', help='File containing opcodes')
 parser.add_argument('--verbose', '-v', action='count', default=0)
-parser.add_argument('--macros', '-m', action='append')
+parser.add_argument('--macros', '-m', action='append', default=['asm_macros'])
 parser.add_argument('source', help='Assembly source code')
 parser.add_argument('output', help='Output .hex file, or - for STDOUT')
 args = parser.parse_args()
