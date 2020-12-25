@@ -2,6 +2,7 @@
 # on the right in the ASM source before compliling.  Only
 # unquoted strings to the right of opcodes are evaluated.
 
+# flags
 %Cin%   0x20
 %AH%    0x40
 %AL%    0x00
@@ -16,11 +17,11 @@
 %B%           0x04
 
 # arithmetic
-%ADD%         0x05
-%SUB_AB%      0x06
-%SUB_BA%      0x07
-%SUB_A1%      0x08
-%SUB_B1%      0x09
+%A+B%         0x05
+%A-B%         0x06
+%B-A%         0x07
+%A-1%         0x08
+%B-1%         0x09
 
 # display helpers (only operate on A reg)
 %A_setblink%    0x2a
