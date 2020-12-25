@@ -1,0 +1,56 @@
+# The string on the left is replaced with exactly what is
+# on the right in the ASM source before compliling.  Only
+# unquoted strings to the right of opcodes are evaluated.
+
+%Cin%   0x20
+%AH%    0x40
+%AL%    0x00
+%BH%    0x80
+%BL%    0x00
+
+# identity
+%zero%        0x00
+%one%         0x01
+%negone%      0x02
+%A%           0x03
+%B%           0x04
+
+# arithmetic
+%ADD%         0x05
+%SUB_AB%      0x06
+%SUB_BA%      0x07
+%SUB_A1%      0x08
+%SUB_B1%      0x09
+
+# display helpers (only operate on A reg)
+%A_setblink%    0x2a
+%A_clrblink%    0x0a
+%A_tglblink%    0x0b
+%A_setcursor%   0x2c
+%A_clrcursor%   0x0c
+%A_tglcursor%   0x0d
+%A_setblcur%    0x2e
+%A_clrblcur%    0x0e
+%A_tglblcur%    0x0f
+
+# Logic
+%~A%          0x10
+%~B%          0x11
+%A&B%         0x12
+%A|B%         0x13
+%AxB%         0x14
+%A&~B%        0x15
+%B&~A%        0x16
+%A_popcount%  0x17
+%B_popcount%  0x18
+
+# Logical shifting
+%A<<1%        0x19
+%A>>1%        0x1a
+%B<<1%        0x1b
+%B>>1%        0x1c
+
+# Arithmetic shifting
+%A*2%         0x1d
+%A/2%         0x1e
+
