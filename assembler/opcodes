@@ -9,7 +9,7 @@
 #   starts with one or two characters, (x,e,E,z,Z,f,F) that indicate that this
 #   microcode entry should be executed for any flags (x), when the equal
 #   flag is set (E) or clear (e), or the zero flag is set (Z) or clear (z),
-#   or the overflow flag is set (F) or clear (f), or a combination (eZ, ZE),
+#   or the overflow flag is set (O) or clear (o), or a combination (eZ, ZE),
 #   etc.  A missing character means its value does not matter.  If neither
 #   e nor z nor f matter, then "x" is a stand-in for "no status bits matter".
 #
@@ -79,6 +79,146 @@ x 1 AddrBusPC WriteTD IncrementPC
 x 2 AddrBusPC WritePCL
 x 3 DataBusTD WritePCH
 x 4 NextInstruction
+
+# Jump if equal: jump to address if equal flag is set
+[0x31] JEQ @addr
+x 0 IncrementPC
+e 1 IncrementPC # skip over high @addr byte
+e 2 IncrementPC # skip over low @addr byte
+e 3 NextInstruction
+# PC now points to high byte of target address
+E 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+E 2 AddrBusPC WritePCL
+E 3 DataBusTD WritePCH
+E 4 NextInstruction
+
+# Jump if not equal: jump to address if equal flag is unset
+[0x32] JNE @addr
+x 0 IncrementPC
+E 1 IncrementPC # skip over high @addr byte
+E 2 IncrementPC # skip over low @addr byte
+E 3 NextInstruction
+# PC now points to high byte of target address
+e 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+e 2 AddrBusPC WritePCL
+e 3 DataBusTD WritePCH
+e 4 NextInstruction
+
+# Jump if zero: jump to address if zero flag is set
+[0x33] JZ @addr
+x 0 IncrementPC
+z 1 IncrementPC # skip over high @addr byte
+z 2 IncrementPC # skip over low @addr byte
+z 3 NextInstruction
+# PC now points to high byte of target address
+Z 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+Z 2 AddrBusPC WritePCL
+Z 3 DataBusTD WritePCH
+Z 4 NextInstruction
+
+# Jump if not zero: jump to address if zero flag is unset
+[0x34] JNZ @addr
+x 0 IncrementPC
+Z 1 IncrementPC # skip over high @addr byte
+Z 2 IncrementPC # skip over low @addr byte
+Z 3 NextInstruction
+# PC now points to high byte of target address
+z 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+z 2 AddrBusPC WritePCL
+z 3 DataBusTD WritePCH
+z 4 NextInstruction
+
+# Jump if overflow: jump to address if overflow flag is set
+[0x35] JO @addr
+x 0 IncrementPC
+o 1 IncrementPC # skip over high @addr byte
+o 2 IncrementPC # skip over low @addr byte
+o 3 NextInstruction
+# PC now points to high byte of target address
+O 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+O 2 AddrBusPC WritePCL
+O 3 DataBusTD WritePCH
+O 4 NextInstruction
+
+# Jump if not overflow: jump to address if overflow flag is unset
+[0x36] JNO @addr
+x 0 IncrementPC
+O 1 IncrementPC # skip over high @addr byte
+O 2 IncrementPC # skip over low @addr byte
+O 3 NextInstruction
+# PC now points to high byte of target address
+o 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+o 2 AddrBusPC WritePCL
+o 3 DataBusTD WritePCH
+o 4 NextInstruction
+
+# Jump if equal and not overflow: jump to address if equal flag is set and overflow flag is unset
+[0x37] JEQ_SAFE @addr
+x 0 IncrementPC
+e 1 IncrementPC # skip over high @addr byte
+e 2 IncrementPC # skip over low @addr byte
+e 3 NextInstruction
+# PC now points to high byte of target address
+Eo 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+Eo 2 AddrBusPC WritePCL
+Eo 3 DataBusTD WritePCH
+Eo 4 NextInstruction
+
+# Jump if not equal and not overflow: jump to address if equal flag is unset and overflow flag is unset
+[0x38] JNE_SAFE @addr
+x 0 IncrementPC
+E 1 IncrementPC # skip over high @addr byte
+E 2 IncrementPC # skip over low @addr byte
+E 3 NextInstruction
+# PC now points to high byte of target address
+eo 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+eo 2 AddrBusPC WritePCL
+eo 3 DataBusTD WritePCH
+eo 4 NextInstruction
+
+# Jump if zero and not overflow: jump to address if zero flag is set and overflow flag is unset
+[0x39] JZ_SAFE @addr
+x 0 IncrementPC
+z 1 IncrementPC # skip over high @addr byte
+z 2 IncrementPC # skip over low @addr byte
+z 3 NextInstruction
+# PC now points to high byte of target address
+Zo 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+Zo 2 AddrBusPC WritePCL
+Zo 3 DataBusTD WritePCH
+Zo 4 NextInstruction
+
+# Jump if not zero and not overflow: jump to address if zero flag is unset and overflow flag is unset
+[0x3a] JNZ_SAFE @addr
+x 0 IncrementPC
+Z 1 IncrementPC # skip over high @addr byte
+Z 2 IncrementPC # skip over low @addr byte
+Z 3 NextInstruction
+# PC now points to high byte of target address
+zo 1 AddrBusPC WriteTD IncrementPC
+# TD now contains high byte of target address and
+# PC points to low byte of target address
+zo 2 AddrBusPC WritePCL
+zo 3 DataBusTD WritePCH
+zo 4 NextInstruction
 
 # Push: put a static value on the stack
 [0x40] PUSH $data
@@ -237,14 +377,35 @@ x 1 NextInstruction
 x 0 IncrementPC AddrBusB WriteAL
 x 1 NextInstruction
 
-# Store AH into RAM@B
+# Store ALU Data Bus into RAM@A
+[0x6e] ST_ALU_ADDR_A
+x 0 IncrementPC AddrBusA DataBusALU WriteRAM
+x 1 NextInstruction
 
-# Store AL into RAM@B
+# Store ALU Data Bus into RAM@B
+[0x6f] ST_ALU_ADDR_B
+x 0 IncrementPC AddrBusB DataBusALU WriteRAM
+x 1 NextInstruction
 
-# Store BH into RAM@A
+# Store TD into RAM@A
+[0x70] ST_TD_ADDR_A
+x 0 IncrementPC AddrBusA DataBusTD WriteRAM
+x 1 NextInstruction
 
-# Store BL into RAM@A
+# Store TD into RAM@B
+[0x71] ST_TD_ADDR_B
+x 0 IncrementPC AddrBusB DataBusTD WriteRAM
+x 1 NextInstruction
 
+# Store TAL into RAM@A
+[0x72] ST_TAL_ADDR_A
+x 0 IncrementPC AddrBusA DataBusTAL WriteRAM
+x 1 NextInstruction
+
+# Store TAL into RAM@B
+[0x73] ST_TAL_ADDR_B
+x 0 IncrementPC AddrBusB DataBusTAL WriteRAM
+x 1 NextInstruction
 
 ### ALU operations have the following format for $op
 ### bits 4-0 (mask 0x1f) = 5-bit opcode
@@ -253,7 +414,7 @@ x 1 NextInstruction
 ### bit  7   (mask 0x80) = B bus hi(1)/lo(0)
 
 # set flags only (do not store result)
-[0x74] ALUOP_STATUS $op
+[0x74] ALUOP_FLAGS $op
 x 0 IncrementPC
 # PC now points to $op
 x 1 AddrBusPC WriteALUop IncrementPC
