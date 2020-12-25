@@ -139,7 +139,7 @@ class Opcode:
             seq = seq.rstrip()
             if not seq:
                 continue
-            m = re.match("([xfFzZeE]+)\s+([0-9a-fA-F])\s+(.*)", seq)
+            m = re.match("([xoOzZeE]+)\s+([0-9a-fA-F])\s+(.*)", seq)
             if m:
                 uop = {
                     "sequence": int(m.group(2), 16),
@@ -159,9 +159,9 @@ class Opcode:
                         uop["equal"] = False
                     elif f == 'E':
                         uop["equal"] = True
-                    elif f == 'f':
+                    elif f == 'o':
                         uop["over"] = False
-                    elif f == 'F':
+                    elif f == 'O':
                         uop["over"] = True
                 self.micro_ops.append(uop)
             else:
