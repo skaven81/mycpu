@@ -63,15 +63,35 @@
 (/BWH)   1 2 0x40
 (/BWL)   1 2 0x80
 
-# Remaining ROM2 signals
-# (SIG)  0 2 0x08
+# Remaining ROM2 signal
+#(SIG)   0 2 0x08
 
-# Remaining ROM3 signals
-# (SIG)  0 3 0x01
-# (SIG)  0 3 0x02
-# (SIG)  0 3 0x04
-# (SIG)  0 3 0x08
-# (SIG)  0 3 0x10
-# (SIG)  0 3 0x20
-# (SIG)  0 3 0x40
-# (SIG)  0 3 0x80
+# Registers C/D operations
+# 0: do nothing
+# 1: write to CL
+# 2: write to CH
+# 3: increment C
+# 4: decrement C
+# 5: CL to data bus
+# 6: CH to data bus
+# 7: C to address bus
+# 8: do nothing
+# 9: write to DL
+# a: write to DH
+# b: increment D
+# c: decrement D
+# d: DL to data bus
+# e: DH to data bus
+# f: D to address bus
+(CDSEL)     0 3 0x0f
+
+# IRQ masking signals
+(MINT)      0 3 0x10
+(UINT)      0 3 0x20
+
+# Data bus constants
+# 0: do nothing (bus pulls up to 0xff)
+# 1: zero
+# 2: IRQ vector 0x3f
+# 3: Peripheral (0xc0, 0xc8, 0xd0, etc.)
+(CONSEL)    0 3 0xc0

@@ -106,7 +106,7 @@ class Macro:
             if not signal:
                 continue
             if val:
-                self.signals[signal] = int(val)
+                self.signals[signal] = int(val, base=16)
             else:
                 self.signals[signal] = -1 # toggle
 
@@ -165,7 +165,7 @@ class Opcode:
                         uop["over"] = True
                 self.micro_ops.append(uop)
             else:
-                raise SyntaxError("ERROR: {} line {} looks like a micro-op, but does not match regex".format(fileinput.filename(), fileinput.filelineno()))
+                raise SyntaxError("ERROR: {} line {} looks like a micro-op, but does not match regex\n{}".format(fileinput.filename(), fileinput.filelineno(), seq))
 
     @classmethod
     def flag_str(cls, uop):
