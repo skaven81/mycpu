@@ -45,26 +45,49 @@ cat <<EOF
 x 0 IncrementPC 
 x 1 NextInstruction
 EOF
+let "opcode = opcode + 1"
 
-# Halt: goes into infinite loop of loading the program
-# counter address into the opcode register, but never
-# incrementing the program counter.  So the CPU just
-# runs HLT in an endless loop.
+# Call subroutine: push next instruction address onto
+# the stack, then jump to the given address
 cat <<EOF
 
-[0xff] HLT
-x 0 NextInstruction
+[0x01] CALL @addr
+x 0 IncrementPC
+# PC now points to high byte of subroutine address;
+# Write high byte to TAL (TAL can present to data bus)
+x 1 AddrBusPC WriteTAL IncrementPC
+# PC now points to low byte of subroute address;
+# Write low byte to TD
+x 2 AddrBusPC WriteTD IncrementPC IncrementSP
+# PC now points to next instruction address;
+# Write low byte to stack
+x 3 AddrBusSP DataBusPCL WriteRAM IncrementSP
+# Write high byte to stack
+x 4 AddrBusSP DataBusPCH WriteRAM
+# Load next instruction address from TAL & TD
+x 5 DataBusTAL WritePCH
+x 6 DataBusTD WritePCL
+x 7 NextInstruction
 EOF
 
-####
-# Load/store to RAM: 0x10 - 0x2f
-####
+# Return from subroutine: pop the next instruction
+# address from the stack, jump to that address
+cat <<EOF
+
+[0x02] RET
+x 0 AddrBusSP WritePCH DecrementSP
+x 1 AddrBusSP WritePCL DecrementSP
+x 2 NextInstruction
+EOF
+
+# Leave reserved instructions at the top of the range
+opcode=$(hex_to_dec 10)
 
 # Store to RAM: store the specified byte at
 # the given address.
 cat <<EOF
 
-[0x10] ST @addr $data
+[0x$(printf "%02x" $opcode)] ST @addr \$data
 x 0 IncrementPC
 # PC now points to high byte of target address
 x 1 AddrBusPC WriteTAH IncrementPC
@@ -74,9 +97,9 @@ x 3 AddrBusPC WriteTD IncrementPC
 x 4 AddrBusTA DataBusTD WriteRAM
 x 5 NextInstruction
 EOF
+let "opcode = opcode + 1"
 
 # Store to RAM at an immediate address, from a general-purpose register
-opcode=$(hex_to_dec 11)
 for from_reg in ${DATA_REGS[@]}; do
 [ "${from_reg}" = "TAL" ] && continue
 cat <<EOF
@@ -112,13 +135,13 @@ let "opcode = opcode + 1"
 done
 
 ####
-# Jumps: 0x30 - 0x3f
+# Jumps: 0x20 - 0x2f
 ####
 
 # Jump: unconditional jump to specified address
 cat <<EOF
 
-[0x30] JMP @addr
+[0x20] JMP @addr
 x 0 IncrementPC
 # PC now points to high byte of target address
 x 1 AddrBusPC WriteTD IncrementPC
@@ -132,7 +155,7 @@ EOF
 # Jump if equal: jump to address if equal flag is set
 cat <<EOF
 
-[0x31] JEQ @addr
+[0x21] JEQ @addr
 x 0 IncrementPC
 e 1 IncrementPC # skip over high @addr byte
 e 2 IncrementPC # skip over low @addr byte
@@ -149,7 +172,7 @@ EOF
 # Jump if not equal: jump to address if equal flag is unset
 cat <<EOF
 
-[0x32] JNE @addr
+[0x22] JNE @addr
 x 0 IncrementPC
 E 1 IncrementPC # skip over high @addr byte
 E 2 IncrementPC # skip over low @addr byte
@@ -166,7 +189,7 @@ EOF
 # Jump if zero: jump to address if zero flag is set
 cat <<EOF
 
-[0x33] JZ @addr
+[0x23] JZ @addr
 x 0 IncrementPC
 z 1 IncrementPC # skip over high @addr byte
 z 2 IncrementPC # skip over low @addr byte
@@ -183,7 +206,7 @@ EOF
 # Jump if not zero: jump to address if zero flag is unset
 cat <<EOF
 
-[0x34] JNZ @addr
+[0x24] JNZ @addr
 x 0 IncrementPC
 Z 1 IncrementPC # skip over high @addr byte
 Z 2 IncrementPC # skip over low @addr byte
@@ -200,7 +223,7 @@ EOF
 # Jump if overflow: jump to address if overflow flag is set
 cat <<EOF
 
-[0x35] JO @addr
+[0x25] JO @addr
 x 0 IncrementPC
 o 1 IncrementPC # skip over high @addr byte
 o 2 IncrementPC # skip over low @addr byte
@@ -217,7 +240,7 @@ EOF
 # Jump if not overflow: jump to address if overflow flag is unset
 cat <<EOF
 
-[0x36] JNO @addr
+[0x26] JNO @addr
 x 0 IncrementPC
 O 1 IncrementPC # skip over high @addr byte
 O 2 IncrementPC # skip over low @addr byte
@@ -231,82 +254,91 @@ o 3 DataBusTD WritePCH
 o 4 NextInstruction
 EOF
 
-# Jump if equal and not overflow: jump to address if equal flag is set and overflow flag is unset
+# Jump: unconditional jump to address in D
 cat <<EOF
 
-[0x37] JEQ_SAFE @addr
+[0x27] JMP_D
 x 0 IncrementPC
-e 1 IncrementPC # skip over high @addr byte
-e 2 IncrementPC # skip over low @addr byte
-e 3 NextInstruction
-# PC now points to high byte of target address
-Eo 1 AddrBusPC WriteTD IncrementPC
-# TD now contains high byte of target address and
-# PC points to low byte of target address
-Eo 2 AddrBusPC WritePCL
-Eo 3 DataBusTD WritePCH
-Eo 4 NextInstruction
+# PC now points to next instruction
+x 1 DataBusDH WritePCH
+x 2 DataBusDL WritePCL
+x 3 NextInstruction
 EOF
 
-# Jump if not equal and not overflow: jump to address if equal flag is unset and overflow flag is unset
+# Jump to addr in D if equal
 cat <<EOF
 
-[0x38] JNE_SAFE @addr
+[0x28] JEQ_D
 x 0 IncrementPC
-E 1 IncrementPC # skip over high @addr byte
-E 2 IncrementPC # skip over low @addr byte
+e 1 NextInstruction
+E 1 DataBusDH WritePCH
+E 2 DataBusDL WritePCL
 E 3 NextInstruction
-# PC now points to high byte of target address
-eo 1 AddrBusPC WriteTD IncrementPC
-# TD now contains high byte of target address and
-# PC points to low byte of target address
-eo 2 AddrBusPC WritePCL
-eo 3 DataBusTD WritePCH
-eo 4 NextInstruction
 EOF
 
-# Jump if zero and not overflow: jump to address if zero flag is set and overflow flag is unset
+# Jump to addr in D if not equal
 cat <<EOF
 
-[0x39] JZ_SAFE @addr
+[0x29] JNE_D
 x 0 IncrementPC
-z 1 IncrementPC # skip over high @addr byte
-z 2 IncrementPC # skip over low @addr byte
-z 3 NextInstruction
-# PC now points to high byte of target address
-Zo 1 AddrBusPC WriteTD IncrementPC
-# TD now contains high byte of target address and
-# PC points to low byte of target address
-Zo 2 AddrBusPC WritePCL
-Zo 3 DataBusTD WritePCH
-Zo 4 NextInstruction
+E 1 NextInstruction
+e 1 DataBusDH WritePCH
+e 2 DataBusDL WritePCL
+e 3 NextInstruction
 EOF
 
-# Jump if not zero and not overflow: jump to address if zero flag is unset and overflow flag is unset
+# Jump to addr in D if zero
 cat <<EOF
 
-[0x3a] JNZ_SAFE @addr
+[0x2a] JZ_D
 x 0 IncrementPC
-Z 1 IncrementPC # skip over high @addr byte
-Z 2 IncrementPC # skip over low @addr byte
+z 1 NextInstruction
+Z 1 DataBusDH WritePCH
+Z 2 DataBusDL WritePCL
 Z 3 NextInstruction
-# PC now points to high byte of target address
-zo 1 AddrBusPC WriteTD IncrementPC
-# TD now contains high byte of target address and
-# PC points to low byte of target address
-zo 2 AddrBusPC WritePCL
-zo 3 DataBusTD WritePCH
-zo 4 NextInstruction
+EOF
+
+# Jump to addr in D if not zero
+cat <<EOF
+
+[0x2b] JNZ_D
+x 0 IncrementPC
+Z 1 NextInstruction
+z 1 DataBusDH WritePCH
+z 2 DataBusDL WritePCL
+z 3 NextInstruction
+EOF
+
+# Jump to addr in D if overflow
+cat <<EOF
+
+[0x2c] JO_D
+x 0 IncrementPC
+o 1 NextInstruction
+O 1 DataBusDH WritePCH
+O 2 DataBusDL WritePCL
+O 3 NextInstruction
+EOF
+
+# Jump to addr in D if not overflow
+cat <<EOF
+
+[0x2d] JNO_D
+x 0 IncrementPC
+O 1 NextInstruction
+o 1 DataBusDH WritePCH
+o 2 DataBusDL WritePCL
+o 3 NextInstruction
 EOF
 
 ####
-# Stack operations: 0x40 - 0x5f
+# Stack operations: 0x30...
 ####
 
 # Push: put a static value on the stack
 cat <<EOF
 
-[0x40] PUSH \$data
+[0x30] PUSH \$data
 x 0 IncrementPC IncrementSP
 # PC now points to data; SP points to target address
 x 1 AddrBusPC WriteTD
@@ -317,7 +349,7 @@ x 3 NextInstruction
 EOF
 
 # Push a general purpose register onto the stack
-opcode=$(hex_to_dec 41)
+opcode=$(hex_to_dec 31)
 for from_reg in ${DATA_REGS[@]}; do
 cat <<EOF
 
@@ -355,48 +387,8 @@ let "opcode = opcode + 1"
 done
 
 ####
-# Subroutine operations: 0x60 - 0x6f
-####
-
-# Call subroutine: push next instruction address onto
-# the stack, then jump to the given address
-cat <<EOF
-
-[0x60] CALL @addr
-x 0 IncrementPC
-# PC now points to high byte of subroutine address;
-# Write high byte to TAL (TAL can present to data bus)
-x 1 AddrBusPC WriteTAL IncrementPC
-# PC now points to low byte of subroute address;
-# Write low byte to TD
-x 2 AddrBusPC WriteTD IncrementPC IncrementSP
-# PC now points to next instruction address;
-# Write low byte to stack
-x 3 AddrBusSP DataBusPCL WriteRAM IncrementSP
-# Write high byte to stack
-x 4 AddrBusSP DataBusPCH WriteRAM
-# Load next instruction address from TAL & TD
-x 5 DataBusTAL WritePCH
-x 6 DataBusTD WritePCL
-x 7 NextInstruction
-EOF
-
-# Return from subroutine: pop the next instruction
-# address from the stack, jump to that address
-cat <<EOF
-
-[0x6f] RET
-x 0 AddrBusSP WritePCH DecrementSP
-x 1 AddrBusSP WritePCL DecrementSP
-x 2 NextInstruction
-EOF
-
-####
 # Load immediate value into a general purpose register
-# 0x70 - 0x7f
 ####
-
-opcode=$(hex_to_dec 70)
 
 # Store immediate word into 16-bit register
 for to_reg in ${ADDR_REGS[@]}; do
@@ -425,15 +417,15 @@ let "opcode = opcode + 1"
 done
 
 ####
-# Load from RAM using the address in a 16-bit register,
-# into a general purpose register: 0x80 - 0x9f
+# Load/Store from/to RAM using the address in a 16-bit register,
+# into a general purpose register
 ####
-
-opcode=$(hex_to_dec 80)
 
 # Load from RAM@reg into reg
 for addr_reg in ${ADDR_REGS[@]}; do
 for to_reg in ${WRITABLE_REGS[@]}; do
+# Skip instructions where we are writing our own address
+[ "${to_reg:0:-1}" = "${addr_reg}" ] && continue
 # Skip instructions where we are reading and writing
 # simultaneously to C/D registers since that's a single
 # control signal
@@ -448,13 +440,6 @@ EOF
 let "opcode = opcode + 1"
 done
 done
-
-####
-# Store to RAM using the address in a 16-bit register,
-# from a general purpose register: 0x90 - 0xaf
-####
-
-opcode=$(hex_to_dec 90)
 
 # Store to RAM@reg from reg
 for addr_reg in ${ADDR_REGS[@]}; do
@@ -477,7 +462,7 @@ done
 done
 
 ####
-# ALU operations: 0xb0 - 0xcf
+# ALU operations: 0xb0 - 0xbf
 ####
 
 ### ALU operations have the following format for $op
@@ -500,7 +485,7 @@ EOF
 # push ALU result onto stack
 cat <<EOF
 
-[0xb2] ALUOP_PUSH \$op
+[0xb1] ALUOP_PUSH \$op
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC IncrementSP
@@ -512,7 +497,7 @@ EOF
 # store ALU result in RAM at immediate address
 cat <<EOF
 
-[0xb1] ALUOP_ADDR \$op @addr
+[0xb2] ALUOP_ADDR \$op @addr
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -523,6 +508,8 @@ x 3 AddrBusPC WriteTAL IncrementPC
 x 4 DataBusALU AddrBusTA WriteRAM WriteStatus
 x 5 NextInstruction
 EOF
+
+opcode=$(hex_to_dec b3)
 
 # store ALU result in RAM at an addres register
 for addr_reg in ${ADDR_REGS[@]}; do
@@ -540,7 +527,6 @@ let "opcode = opcode + 1"
 done
 
 # store ALU result in a general purpose register
-opcode=$(hex_to_dec b3)
 for to_reg in ${WRITABLE_REGS[@]}; do
 cat <<EOF
 
@@ -555,4 +541,40 @@ EOF
 let "opcode = opcode + 1"
 done
 
+####
+# Transfer operations
+####
+
+for from_reg in ${DATA_REGS[@]}; do
+for to_reg in ${WRITABLE_REGS[@]}; do
+[ "${from_reg}" = "${to_reg}" ] && continue
+# Skip instructions where we are reading and writing
+# simultaneously to C/D registers since that's a single
+# control signal
+[ "${from_reg:0:-1}" = "C" ] && [ "${to_reg:0:-1}" = "C" ] && continue
+[ "${from_reg:0:-1}" = "C" ] && [ "${to_reg:0:-1}" = "D" ] && continue
+[ "${from_reg:0:-1}" = "D" ] && [ "${to_reg:0:-1}" = "C" ] && continue
+[ "${from_reg:0:-1}" = "D" ] && [ "${to_reg:0:-1}" = "D" ] && continue
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] MOV_${from_reg}_${to_reg}
+x 0 IncrementPC DataBus${from_reg} Write${to_reg}
+x 1 NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+done
+
+# Halt: goes into infinite loop of loading the program
+# counter address into the opcode register, but never
+# incrementing the program counter.  So the CPU just
+# runs HLT in an endless loop.  This is opcode 0xff
+# because that's the default state of the data bus, so
+# if a NextInstruction operation happens with the bus
+# quiesced, the CPU just halts.
+cat <<EOF
+
+[0xff] HLT
+x 0 NextInstruction
+EOF
 

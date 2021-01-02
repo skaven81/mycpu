@@ -319,7 +319,7 @@ if __name__ == "__main__":
                     found_uops[sequence_num] = True
                     for m in uop['macros']:
                         if m not in macro_map:
-                            raise SyntaxError("ERROR: {} micro-op seq {} uses macro {} that does not exist".format(opcode.name, sequence_num, s))
+                            raise SyntaxError("ERROR: {} micro-op seq {} uses macro {} that does not exist".format(opcode.name, sequence_num, m))
                         for signal_name, signal_value in macro_map[m].items():
                             signal = control_signals[signal_name]
                             if signal_name in op_signals[signal.romid]:
