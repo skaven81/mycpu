@@ -1,0 +1,83 @@
+# Transfer operations
+MOV_TAL_{TAH,TD,AH,AL,BH,BL,CH,CL,DH,DL}
+MOV_TD_{TAH,TAL,AH,AL,BH,BL,CH,CL,DH,DL}
+MOV_CH_{TAH,TAL,TD,AH,AL,BH,BL}
+MOV_CL_{TAH,TAL,TD,AH,AL,BH,BL}
+MOV_DH_{TAH,TAL,TD,AH,AL,BH,BL}
+MOV_DL_{TAH,TAL,TD,AH,AL,BH,BL}
+
+# To MOV from AH,AL,BH,BL to another
+# register, use an ALUOP_{reg} operation
+# with the desired A/B register as the
+# source configured in the ALU op.
+
+# Store $data at @addr
+ST @addr $data
+
+# Store {reg} at @addr
+ST_{TD,CH,CL,DH,DL} @addr
+
+# Load RAM@addr into {reg}
+LD_{TD,AH,AL,BH,BL,CH,CL,DH,DL} @addr
+
+# Load @word into {reg}
+LDI_{A,B,C,D} @word
+# Load $byte into {reg}
+LDI_{TAH,TAL,TD,AH,AL,BH,BL,CH,CL,DH,DL} $byte
+
+# Load RAM@{addr_reg} into {reg}
+LDA_TA_{TD,AH,AL,BH,BL,CH,CL,DH,DL}
+LDA_A_{TAH,TAL,TD,BH,BL,CH,CL,DH,DL}
+LDA_B_{TAH,TAL,TD,AH,AL,CH,CL,DH,DL}
+LDA_C_{TAH,TAL,TD,AH,AL,BH,BL}
+LDA_D_{TAH,TAL,TD,AH,AL,BH,BL}
+
+# Store into RAM@{addr_reg} from {reg}
+STA_TA_{TD,CH,CL,DH,DL}
+STA_A_{TAL,TD,CH,CL,DH,DL}
+STA_B_{TAL,TD,CH,CL,DH,DL}
+STA_C_{TAL,TD}
+STA_D_{TAL,TD}
+
+# Jumps - all also have _D variant
+JMP @addr
+JEQ @addr
+JNE @addr
+JZ @addr
+JNZ @addr
+JO @addr
+JNO @addr
+
+# ALU operations
+ALUOP_FLAGS $op
+ALUOP_PUSH $op
+ALUOP_ADDR $op @addr
+# Store ALU result into RAM@{addr_reg}
+ALUOP_ADDR_{TA,A,B,C,D} $op
+# Store ALU result into {reg}
+ALUOP_{TAH,TAL,TD,AH,AL,BH,BL,CH,CL,DH,DL} $op
+
+# Push $data onto stack
+PUSH $data
+# Push {reg} onto 
+PUSH_{TAL,TD,CH,CL,DH,DL}
+# Peek/Pop into {reg}
+{PEEK,POP}_{TAH,TAL,TD,AH,AL,BH,BL,CH,CL,DH,DL}
+
+# General purpose
+NOP
+HLT
+CALL @addr
+RET
+IRQ
+RETI
+MASKINT
+UMASKINT
+
+# Use inside interrupt vector to figure
+# out which peripheral triggered the interrupt,
+# and to also know the base address of that
+# peripheral's RAM address space
+PERIPH_{TAH,AH,BH,CH,DH}
+
+

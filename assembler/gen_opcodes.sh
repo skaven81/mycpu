@@ -80,6 +80,62 @@ x 1 AddrBusSP WritePCL DecrementSP
 x 2 NextInstruction
 EOF
 
+# IRQ operation -- like CALL, but masks interrupts, and
+# jumps to a constant address for the IRQ vector
+cat <<EOF
+
+[0xee] IRQ
+# PC is still pointing at our return address, as
+# the 0xee op was forced in instead of the intended
+# next instruction.
+x 0 MaskInterrupts IncrementSP
+# Write low byte of PC to stack
+x 1 AddrBusSP DataBusPCL WriteRAM IncrementSP
+# Write high byte of PC to stack
+x 2 AddrBusSP DataBusPCH WriteRAM
+# Load next instruction from constants
+x 3 DataBusZero WritePCL
+x 4 DataBusIRQ WritePCH
+# Jump to the IRQ vector
+x 5 NextInstruction
+EOF
+
+# IRQ return -- like RET, but unmasks interrupts
+cat <<EOF
+
+[0x03] RETI
+x 0 AddrBusSP WritePCH DecrementSP
+x 1 AddrBusSP WritePCL DecrementSP UnmaskInterrupts
+x 2 NextInstruction
+EOF
+
+# Explicitly mask/unmask interrupts
+cat <<EOF
+
+[0x04] MASKINT
+x 0 IncrementSP MaskInterrupts
+x 1 NextInstruction
+
+[0x05] UMASKINT
+x 0 IncrementSP UnmaskInterrupts
+x 1 NextInstruction
+EOF
+
+# Load the peripheral address into register D
+opcode=$(hex_to_dec 6)
+for to_reg in ${WRITABLE_REGS[@]}; do
+offset=$((${#to_reg}-1))
+[ "${to_reg}" = "TD" ] && continue
+[ "${to_reg:$offset:1}" = "L" ] && continue
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] PERIPH_${to_reg}
+x 0 IncrementSP DataBusPeripheral Write${to_reg}
+x 1 NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+
 # Leave reserved instructions at the top of the range
 opcode=$(hex_to_dec 10)
 
@@ -562,6 +618,7 @@ x 0 IncrementPC DataBus${from_reg} Write${to_reg}
 x 1 NextInstruction
 EOF
 let "opcode = opcode + 1"
+[ $opcode -eq 238 ] && opcode=239 # skip opcode 0xee as it's reserved for the IRQ op
 done
 done
 
