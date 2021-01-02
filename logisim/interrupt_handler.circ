@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<project source="2.15.0" version="1.0">
-This file is intended to be loaded by Logisim-evolution (https://github.com/reds-heig/logisim-evolution).
-<lib desc="#Wiring" name="0">
+<project source="3.3.0" version="1.0">
+  This file is intended to be loaded by Logisim-evolution (https://github.com/reds-heig/logisim-evolution).
+
+  <lib desc="#Wiring" name="0">
     <tool name="Splitter">
-      <a name="facing" val="south"/>
       <a name="appear" val="center"/>
+      <a name="facing" val="south"/>
     </tool>
     <tool name="Pin">
       <a name="facing" val="south"/>
@@ -27,6 +28,9 @@ This file is intended to be loaded by Logisim-evolution (https://github.com/reds
     <tool name="Controlled Buffer">
       <a name="facing" val="south"/>
     </tool>
+    <tool name="PLA">
+      <a name="table" val=""/>
+    </tool>
   </lib>
   <lib desc="#Plexers" name="2">
     <tool name="Multiplexer">
@@ -38,7 +42,35 @@ This file is intended to be loaded by Logisim-evolution (https://github.com/reds
   </lib>
   <lib desc="#Arithmetic" name="3"/>
   <lib desc="#Memory" name="4">
+    <tool name="D Flip-Flop">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
+    <tool name="T Flip-Flop">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
+    <tool name="J-K Flip-Flop">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
+    <tool name="S-R Flip-Flop">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
+    <tool name="Register">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
+    <tool name="Counter">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
+    <tool name="Shift Register">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
+    <tool name="Random">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
+    <tool name="RAM">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
     <tool name="ROM">
+      <a name="appearance" val="logisim_evolution"/>
       <a name="contents">addr/data: 8 8
 0
 </a>
@@ -46,50 +78,7 @@ This file is intended to be loaded by Logisim-evolution (https://github.com/reds
   </lib>
   <lib desc="#I/O" name="5"/>
   <lib desc="#TTL" name="6"/>
-  <lib desc="#HDL-IP" name="7">
-    <tool name="VHDL Entity">
-      <a name="content">--------------------------------------------------------------------------------
--- HEIG-VD, institute REDS, 1400 Yverdon-les-Bains
--- Project :
--- File    :
--- Autor   :
--- Date    :
---
---------------------------------------------------------------------------------
--- Description :
---
---------------------------------------------------------------------------------
-
-library ieee;
-  use ieee.std_logic_1164.all;
-  --use ieee.numeric_std.all;
-
-entity VHDL_Component is
-  port(
-  ------------------------------------------------------------------------------
-  --Insert input ports below
-    horloge_i  : in  std_logic;                    -- input bit example
-    val_i      : in  std_logic_vector(3 downto 0); -- input vector example
-  ------------------------------------------------------------------------------
-  --Insert output ports below
-    max_o      : out std_logic;                    -- output bit example
-    cpt_o      : out std_logic_vector(3 downto 0)  -- output vector example
-    );
-end VHDL_Component;
-
---------------------------------------------------------------------------------
---Complete your VHDL description below
-architecture type_architecture of VHDL_Component is
-
-
-begin
-
-
-end type_architecture;
-</a>
-    </tool>
-  </lib>
-  <lib desc="#TCL" name="8">
+  <lib desc="#TCL" name="7">
     <tool name="TclGeneric">
       <a name="content">library ieee;
 use ieee.std_logic_1164.all;
@@ -108,271 +97,231 @@ end TCL_Generic;
 </a>
     </tool>
   </lib>
-  <lib desc="#Base" name="9">
+  <lib desc="#Base" name="8">
     <tool name="Text Tool">
-      <a name="text" val=""/>
       <a name="font" val="SansSerif plain 12"/>
-      <a name="halign" val="left"/>
+      <a name="halign" val="center"/>
+      <a name="text" val=""/>
       <a name="valign" val="base"/>
     </tool>
   </lib>
-  <lib desc="#BFH-Praktika" name="10"/>
-  <lib desc="#Logisim ITA components" name="11"/>
-  <lib desc="file#logi7400/logi7400ic.circ" name="12"/>
-  <lib desc="file#logi7400/74148.circ" name="13"/>
+  <lib desc="#BFH-Praktika" name="9"/>
+  <lib desc="#Input/Output-Extra" name="10"/>
+  <lib desc="#Soc" name="11">
+    <tool name="Rv32im">
+      <a name="SocBusSelection" val=""/>
+    </tool>
+    <tool name="Nios2">
+      <a name="SocBusSelection" val=""/>
+    </tool>
+    <tool name="SocBus">
+      <a name="SocBusIdentifier" val="0x00000176A13FD07545ea7fc3"/>
+    </tool>
+    <tool name="Socmem">
+      <a name="SocBusSelection" val=""/>
+    </tool>
+    <tool name="SocPio">
+      <a name="SocBusSelection" val=""/>
+    </tool>
+    <tool name="SocVga">
+      <a name="SocBusSelection" val=""/>
+    </tool>
+    <tool name="SocJtagUart">
+      <a name="SocBusSelection" val=""/>
+    </tool>
+  </lib>
+  <lib desc="file#/user/skaven/mycpu2/logisim/logi7400/74148.circ" name="12"/>
+  <lib desc="file#/user/skaven/mycpu2/logisim/logi7400/logi7400ic.circ" name="13"/>
   <main name="interrupt_handler"/>
   <options>
     <a name="gateUndefined" val="ignore"/>
     <a name="simlimit" val="1000"/>
     <a name="simrand" val="0"/>
-    <a name="tickmain" val="half_period"/>
   </options>
   <mappings>
-    <tool lib="9" map="Button2" name="Menu Tool"/>
-    <tool lib="9" map="Button3" name="Menu Tool"/>
-    <tool lib="9" map="Ctrl Button1" name="Menu Tool"/>
+    <tool lib="8" map="Button2" name="Menu Tool"/>
+    <tool lib="8" map="Button3" name="Menu Tool"/>
+    <tool lib="8" map="Ctrl Button1" name="Menu Tool"/>
   </mappings>
   <toolbar>
-    <tool lib="9" name="Poke Tool"/>
-    <tool lib="9" name="Edit Tool"/>
-    <tool lib="9" name="Text Tool">
-      <a name="text" val=""/>
+    <tool lib="8" name="Poke Tool"/>
+    <tool lib="8" name="Edit Tool"/>
+    <tool lib="8" name="Wiring Tool"/>
+    <tool lib="8" name="Text Tool">
       <a name="font" val="SansSerif plain 12"/>
-      <a name="halign" val="left"/>
+      <a name="halign" val="center"/>
+      <a name="text" val=""/>
       <a name="valign" val="base"/>
     </tool>
     <sep/>
-    <tool lib="0" name="Pin"/>
     <tool lib="0" name="Pin">
+      <a name="appearance" val="NewPins"/>
+    </tool>
+    <tool lib="0" name="Pin">
+      <a name="appearance" val="NewPins"/>
       <a name="facing" val="west"/>
       <a name="output" val="true"/>
     </tool>
-    <tool lib="1" name="NOT Gate">
-      <a name="facing" val="south"/>
-    </tool>
+    <sep/>
+    <tool lib="1" name="NOT Gate"/>
     <tool lib="1" name="AND Gate"/>
     <tool lib="1" name="OR Gate"/>
+    <tool lib="1" name="XOR Gate"/>
+    <tool lib="1" name="NAND Gate"/>
+    <tool lib="1" name="NOR Gate"/>
+    <sep/>
+    <tool lib="4" name="D Flip-Flop">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
+    <tool lib="4" name="Register">
+      <a name="appearance" val="logisim_evolution"/>
+    </tool>
   </toolbar>
   <circuit name="interrupt_handler">
+    <a name="appearance" val="logisim_evolution"/>
     <a name="circuit" val="interrupt_handler"/>
-    <a name="clabel" val=""/>
-    <a name="clabelup" val="east"/>
-    <a name="clabelfont" val="SansSerif bold 16"/>
-    <a name="circuitnamedbox" val="true"/>
     <a name="circuitnamedboxfixedsize" val="true"/>
     <a name="circuitvhdlpath" val=""/>
-    <appear>
-      <rect height="3" stroke="none" width="10" x="50" y="59"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="64">IRQ0</text>
-      <rect height="3" stroke="none" width="10" x="50" y="79"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="84">IRQ1</text>
-      <rect height="3" stroke="none" width="10" x="50" y="99"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="104">IRQ2</text>
-      <rect height="3" stroke="none" width="10" x="50" y="119"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="124">IRQ3</text>
-      <rect height="3" stroke="none" width="10" x="50" y="139"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="144">IRQ4</text>
-      <rect height="3" stroke="none" width="10" x="50" y="159"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="164">IRQ5</text>
-      <rect height="3" stroke="none" width="10" x="50" y="179"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="184">IRQ6</text>
-      <rect height="3" stroke="none" width="10" x="50" y="199"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="204">IRQ7</text>
-      <rect height="3" stroke="none" width="10" x="50" y="219"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="224">IRQ_MASK</text>
-      <rect height="3" stroke="none" width="10" x="50" y="239"/>
-      <circ-port height="8" pin="220,240" width="8" x="46" y="216"/>
-      <circ-port height="8" pin="220,220" width="8" x="46" y="196"/>
-      <circ-port height="8" pin="220,200" width="8" x="46" y="176"/>
-      <circ-port height="8" pin="220,180" width="8" x="46" y="156"/>
-      <circ-port height="8" pin="220,160" width="8" x="46" y="136"/>
-      <circ-port height="8" pin="220,140" width="8" x="46" y="116"/>
-      <circ-port height="8" pin="220,120" width="8" x="46" y="96"/>
-      <circ-port height="8" pin="220,100" width="8" x="46" y="76"/>
-      <circ-port height="8" pin="220,80" width="8" x="46" y="56"/>
-      <circ-port height="8" pin="220,360" width="8" x="46" y="236"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="start" x="65" y="244">IRQ_ADDR_OE</text>
-      <rect height="4" stroke="none" width="10" x="260" y="58"/>
-      <circ-port height="10" pin="820,220" width="10" x="265" y="55"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="end" x="255" y="64">IRQ_ADDR</text>
-      <rect height="3" stroke="none" width="10" x="260" y="79"/>
-      <circ-port height="10" pin="820,410" width="10" x="265" y="75"/>
-      <text fill="#404040" font-family="Courier 10 Pitch" font-size="12" text-anchor="end" x="255" y="84">INTERRUPT</text>
-      <rect height="20" stroke="none" width="200" x="60" y="250"/>
-      <rect fill="none" height="220" stroke="#000000" stroke-width="2" width="200" x="60" y="50"/>
-      <text fill="#ffffff" font-family="Courier 10 Pitch" font-size="14" font-weight="bold" text-anchor="middle" x="160" y="264">interrupt_handler</text>
-      <polyline fill="none" points="193,74 254,74" stroke="#000000"/>
-      <polyline fill="none" points="66,54 91,54" stroke="#000000"/>
-      <polyline fill="none" points="66,74 91,74" stroke="#000000"/>
-      <polyline fill="none" points="66,94 92,94" stroke="#000000"/>
-      <polyline fill="none" points="66,115 91,115" stroke="#000000"/>
-      <polyline fill="none" points="66,134 92,134" stroke="#000000"/>
-      <polyline fill="none" points="66,154 92,154" stroke="#000000"/>
-      <polyline fill="none" points="66,174 93,174" stroke="#000000"/>
-      <polyline fill="none" points="66,194 91,194" stroke="#000000"/>
-      <polyline fill="none" points="66,234 142,234" stroke="#000000"/>
-      <circ-anchor facing="east" height="6" width="6" x="157" y="137"/>
-    </appear>
-    <wire from="(430,80)" to="(490,80)"/>
-    <wire from="(610,230)" to="(610,360)"/>
-    <wire from="(490,270)" to="(490,280)"/>
-    <wire from="(720,170)" to="(760,170)"/>
-    <wire from="(220,140)" to="(320,140)"/>
-    <wire from="(220,80)" to="(320,80)"/>
-    <wire from="(220,100)" to="(320,100)"/>
-    <wire from="(220,120)" to="(320,120)"/>
-    <wire from="(220,160)" to="(320,160)"/>
-    <wire from="(220,180)" to="(320,180)"/>
-    <wire from="(220,200)" to="(320,200)"/>
-    <wire from="(220,220)" to="(320,220)"/>
-    <wire from="(220,240)" to="(320,240)"/>
-    <wire from="(600,170)" to="(620,170)"/>
-    <wire from="(760,210)" to="(780,210)"/>
-    <wire from="(610,230)" to="(640,230)"/>
-    <wire from="(460,100)" to="(460,410)"/>
-    <wire from="(220,360)" to="(610,360)"/>
-    <wire from="(720,300)" to="(760,300)"/>
-    <wire from="(760,220)" to="(760,300)"/>
-    <wire from="(460,410)" to="(820,410)"/>
-    <wire from="(800,220)" to="(820,220)"/>
-    <wire from="(760,170)" to="(760,210)"/>
-    <wire from="(430,100)" to="(460,100)"/>
-    <wire from="(550,290)" to="(570,290)"/>
-    <wire from="(550,270)" to="(570,270)"/>
-    <wire from="(490,80)" to="(490,240)"/>
-    <wire from="(760,220)" to="(780,220)"/>
-    <wire from="(610,360)" to="(640,360)"/>
-    <wire from="(590,300)" to="(620,300)"/>
-    <wire from="(490,280)" to="(570,280)"/>
-    <comp lib="0" loc="(220,220)" name="Pin">
-      <a name="label" val="IRQ_7_n"/>
+    <a name="clabel" val=""/>
+    <a name="clabelfont" val="SansSerif bold 16"/>
+    <a name="clabelup" val="east"/>
+    <comp lib="0" loc="(150,110)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="IRQ5"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="0" loc="(220,160)" name="Pin">
-      <a name="label" val="IRQ_4_n"/>
+    <comp lib="0" loc="(150,130)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="IRQ4"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="0" loc="(220,180)" name="Pin">
-      <a name="label" val="IRQ_5_n"/>
+    <comp lib="0" loc="(150,150)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="IRQ3"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="0" loc="(220,140)" name="Pin">
-      <a name="label" val="IRQ_3_n"/>
+    <comp lib="0" loc="(150,170)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="IRQ2"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="0" loc="(220,200)" name="Pin">
-      <a name="label" val="IRQ_6_n"/>
+    <comp lib="0" loc="(150,190)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="IRQ1"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="0" loc="(220,100)" name="Pin">
-      <a name="label" val="IRQ_1_n"/>
+    <comp lib="0" loc="(150,210)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="IRQ0"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="0" loc="(220,120)" name="Pin">
-      <a name="label" val="IRQ_2_n"/>
+    <comp lib="0" loc="(150,310)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="MASK_INT"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="0" loc="(220,80)" name="Pin">
-      <a name="label" val="IRQ_0_n"/>
+    <comp lib="0" loc="(150,350)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="UNMASK_INT"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="13" loc="(380,160)" name="IC74148"/>
-    <comp lib="0" loc="(220,240)" name="Pin">
-      <a name="label" val="IRQ_MASK"/>
+    <comp lib="0" loc="(150,70)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="IRQ7"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="0" loc="(220,360)" name="Pin">
-      <a name="label" val="IRQ_ADDR_OE_n"/>
+    <comp lib="0" loc="(150,90)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="label" val="IRQ6"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
     </comp>
-    <comp lib="0" loc="(590,300)" name="Splitter">
+    <comp lib="0" loc="(230,370)" name="Constant">
       <a name="facing" val="west"/>
-      <a name="fanout" val="3"/>
-      <a name="incoming" val="8"/>
-      <a name="appear" val="right"/>
-      <a name="bit1" val="0"/>
-      <a name="bit2" val="0"/>
-      <a name="bit3" val="1"/>
-      <a name="bit4" val="1"/>
-      <a name="bit5" val="1"/>
-      <a name="bit6" val="2"/>
-      <a name="bit7" val="2"/>
     </comp>
-    <comp lib="0" loc="(550,290)" name="Constant">
-      <a name="width" val="2"/>
-    </comp>
-    <comp lib="1" loc="(490,270)" name="NOT Gate">
-      <a name="facing" val="south"/>
-      <a name="width" val="3"/>
-    </comp>
-    <comp lib="0" loc="(550,270)" name="Constant">
-      <a name="width" val="3"/>
+    <comp lib="0" loc="(450,130)" name="Constant"/>
+    <comp lib="0" loc="(450,140)" name="Constant"/>
+    <comp lib="0" loc="(450,70)" name="Constant">
       <a name="value" val="0x0"/>
     </comp>
-    <comp lib="9" loc="(634,88)" name="Text">
-      <a name="text" val="bottom 11 bits = 2KiB addr. space per device"/>
-      <a name="font" val="SansSerif plain 12"/>
-      <a name="halign" val="left"/>
+    <comp lib="0" loc="(450,80)" name="Constant">
+      <a name="value" val="0x0"/>
     </comp>
-    <comp lib="9" loc="(634,68)" name="Text">
-      <a name="text" val="next 3 bits = IRQ address, IRQ0=000, IRQ7=111"/>
-      <a name="font" val="SansSerif plain 12"/>
-      <a name="halign" val="left"/>
+    <comp lib="0" loc="(450,90)" name="Constant">
+      <a name="value" val="0x0"/>
     </comp>
-    <comp lib="0" loc="(620,170)" name="Splitter">
-      <a name="fanout" val="8"/>
-      <a name="incoming" val="8"/>
-      <a name="appear" val="center"/>
-    </comp>
-    <comp lib="0" loc="(720,300)" name="Splitter">
+    <comp lib="0" loc="(490,60)" name="Splitter">
       <a name="facing" val="west"/>
       <a name="fanout" val="8"/>
       <a name="incoming" val="8"/>
-      <a name="appear" val="center"/>
     </comp>
-    <comp lib="0" loc="(820,220)" name="Pin">
+    <comp lib="0" loc="(510,180)" name="Pin">
+      <a name="appearance" val="NewPins"/>
       <a name="facing" val="west"/>
+      <a name="label" val="IRQOP"/>
+      <a name="labelfont" val="SansSerif bold 14"/>
       <a name="output" val="true"/>
-      <a name="width" val="16"/>
-      <a name="label" val="IRQ_ADDR"/>
+    </comp>
+    <comp lib="0" loc="(510,60)" name="Pin">
+      <a name="appearance" val="NewPins"/>
+      <a name="facing" val="west"/>
+      <a name="label" val="PERIPH_BASE"/>
+      <a name="output" val="true"/>
       <a name="radix" val="16"/>
-    </comp>
-    <comp lib="0" loc="(800,220)" name="Splitter">
-      <a name="facing" val="west"/>
-      <a name="incoming" val="16"/>
-      <a name="appear" val="center"/>
-      <a name="bit1" val="0"/>
-      <a name="bit2" val="0"/>
-      <a name="bit3" val="0"/>
-      <a name="bit4" val="0"/>
-      <a name="bit5" val="0"/>
-      <a name="bit6" val="0"/>
-      <a name="bit7" val="0"/>
-      <a name="bit8" val="1"/>
-      <a name="bit9" val="1"/>
-      <a name="bit10" val="1"/>
-      <a name="bit11" val="1"/>
-      <a name="bit12" val="1"/>
-      <a name="bit13" val="1"/>
-      <a name="bit14" val="1"/>
-      <a name="bit15" val="1"/>
-    </comp>
-    <comp lib="0" loc="(820,410)" name="Pin">
-      <a name="facing" val="west"/>
-      <a name="output" val="true"/>
-      <a name="label" val="INTERRUPT_n"/>
-    </comp>
-    <comp lib="12" loc="(700,260)" name="IC_74245"/>
-    <comp lib="0" loc="(720,170)" name="Splitter">
-      <a name="facing" val="west"/>
-      <a name="fanout" val="8"/>
-      <a name="incoming" val="8"/>
-      <a name="appear" val="center"/>
-    </comp>
-    <comp lib="9" loc="(635,50)" name="Text">
-      <a name="text" val="top 2 bits = 01 (16KiB range between RAM and ROM)"/>
-      <a name="font" val="SansSerif plain 12"/>
-      <a name="halign" val="left"/>
-    </comp>
-    <comp lib="0" loc="(600,170)" name="Constant">
       <a name="width" val="8"/>
-      <a name="value" val="0x0"/>
     </comp>
-    <comp lib="12" loc="(700,130)" name="IC_74245"/>
-    <comp lib="0" loc="(620,300)" name="Splitter">
-      <a name="fanout" val="8"/>
-      <a name="incoming" val="8"/>
-      <a name="appear" val="center"/>
+    <comp lib="1" loc="(160,270)" name="NOT Gate">
+      <a name="size" val="20"/>
     </comp>
+    <comp lib="1" loc="(160,390)" name="NOT Gate">
+      <a name="size" val="20"/>
+    </comp>
+    <comp lib="1" loc="(480,180)" name="NOT Gate"/>
+    <comp lib="12" loc="(390,70)" name="IC_74148"/>
+    <comp lib="13" loc="(240,310)" name="IC_74112"/>
+    <comp lib="5" loc="(130,270)" name="Button">
+      <a name="label" val="RST"/>
+    </comp>
+    <comp lib="5" loc="(130,390)" name="Button">
+      <a name="label" val="CLK"/>
+    </comp>
+    <wire from="(130,270)" to="(140,270)"/>
+    <wire from="(130,390)" to="(140,390)"/>
+    <wire from="(150,110)" to="(280,110)"/>
+    <wire from="(150,130)" to="(280,130)"/>
+    <wire from="(150,150)" to="(280,150)"/>
+    <wire from="(150,170)" to="(280,170)"/>
+    <wire from="(150,190)" to="(280,190)"/>
+    <wire from="(150,210)" to="(280,210)"/>
+    <wire from="(150,310)" to="(200,310)"/>
+    <wire from="(150,350)" to="(200,350)"/>
+    <wire from="(150,70)" to="(280,70)"/>
+    <wire from="(150,90)" to="(280,90)"/>
+    <wire from="(160,270)" to="(220,270)"/>
+    <wire from="(160,390)" to="(170,390)"/>
+    <wire from="(170,330)" to="(170,390)"/>
+    <wire from="(170,330)" to="(200,330)"/>
+    <wire from="(220,270)" to="(220,300)"/>
+    <wire from="(220,360)" to="(220,370)"/>
+    <wire from="(220,370)" to="(230,370)"/>
+    <wire from="(240,310)" to="(260,310)"/>
+    <wire from="(260,230)" to="(260,310)"/>
+    <wire from="(260,230)" to="(280,230)"/>
+    <wire from="(390,110)" to="(400,110)"/>
+    <wire from="(390,180)" to="(450,180)"/>
+    <wire from="(390,70)" to="(420,70)"/>
+    <wire from="(390,90)" to="(410,90)"/>
+    <wire from="(400,110)" to="(400,120)"/>
+    <wire from="(400,120)" to="(470,120)"/>
+    <wire from="(410,110)" to="(470,110)"/>
+    <wire from="(410,90)" to="(410,110)"/>
+    <wire from="(420,100)" to="(470,100)"/>
+    <wire from="(420,70)" to="(420,100)"/>
+    <wire from="(450,130)" to="(470,130)"/>
+    <wire from="(450,140)" to="(470,140)"/>
+    <wire from="(450,70)" to="(470,70)"/>
+    <wire from="(450,80)" to="(470,80)"/>
+    <wire from="(450,90)" to="(470,90)"/>
+    <wire from="(480,180)" to="(510,180)"/>
+    <wire from="(490,60)" to="(510,60)"/>
   </circuit>
 </project>
