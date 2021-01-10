@@ -131,11 +131,11 @@ MINT
 UINT
 
 {DataBusZero}
-CONSEL=1
+/ZERO
 
 {DataBusIRQ}
-CONSEL=2
+/IRQVEC
 
 {DataBusPeripheral}
-CONSEL=3
+/PERIPH
 

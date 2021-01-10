@@ -63,9 +63,6 @@
 (/BWH)   1 2 0x40
 (/BWL)   1 2 0x80
 
-# Remaining ROM2 signal
-#(SIG)   0 2 0x08
-
 # Registers C/D operations
 # 0: do nothing
 # 1: write to CL
@@ -90,8 +87,6 @@
 (UINT)      0 3 0x20
 
 # Data bus constants
-# 0: do nothing (bus pulls up to 0xff)
-# 1: zero
-# 2: IRQ vector 0x3f
-# 3: Peripheral (0xc0, 0xc8, 0xd0, etc.)
-(CONSEL)    0 3 0xc0
+(/IRQVEC)   1 3 0x40
+(/PERIPH)   1 3 0x80
+(/ZERO)     1 2 0x08
