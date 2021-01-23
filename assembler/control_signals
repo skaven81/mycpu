@@ -86,7 +86,12 @@
 (MINT)      0 3 0x10
 (UINT)      0 3 0x20
 
+# Status register backup/restore
+(STRES)     0 2 0x08
+
 # Data bus constants
-(/IRQVEC)   1 3 0x40
-(/PERIPH)   1 3 0x80
-(/ZERO)     1 2 0x08
+# 0: none
+# 1: zero
+# 2: IRQ vector
+# 3: IRQ source
+(CONSEL)    0 3 0xc0
