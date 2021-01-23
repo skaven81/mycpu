@@ -1,10 +1,8 @@
 # Transfer operations
-MOV_TAL_{TAH,TD,AH,AL,BH,BL,CH,CL,DH,DL}
-MOV_TD_{TAH,TAL,AH,AL,BH,BL,CH,CL,DH,DL}
-MOV_CH_{TAH,TAL,TD,AH,AL,BH,BL}
-MOV_CL_{TAH,TAL,TD,AH,AL,BH,BL}
-MOV_DH_{TAH,TAL,TD,AH,AL,BH,BL}
-MOV_DL_{TAH,TAL,TD,AH,AL,BH,BL}
+MOV_CH_{AH,AL,BH,BL}
+MOV_CL_{AH,AL,BH,BL}
+MOV_DH_{AH,AL,BH,BL}
+MOV_DL_{AH,AL,BH,BL}
 
 # To MOV from AH,AL,BH,BL to another
 # register, use an ALUOP_{reg} operation
@@ -15,29 +13,27 @@ MOV_DL_{TAH,TAL,TD,AH,AL,BH,BL}
 ST @addr $data
 
 # Store {reg} at @addr
-ST_{TD,CH,CL,DH,DL} @addr
+ST_{CH,CL,DH,DL} @addr
 
 # Load RAM@addr into {reg}
-LD_{TD,AH,AL,BH,BL,CH,CL,DH,DL} @addr
+LD_{AH,AL,BH,BL,CH,CL,DH,DL} @addr
 
 # Load @word into {reg}
 LDI_{A,B,C,D} @word
 # Load $byte into {reg}
-LDI_{TAH,TAL,TD,AH,AL,BH,BL,CH,CL,DH,DL} $byte
+LDI_{AH,AL,BH,BL,CH,CL,DH,DL} $byte
 
 # Load RAM@{addr_reg} into {reg}
-LDA_TA_{TD,AH,AL,BH,BL,CH,CL,DH,DL}
-LDA_A_{TAH,TAL,TD,BH,BL,CH,CL,DH,DL}
-LDA_B_{TAH,TAL,TD,AH,AL,CH,CL,DH,DL}
-LDA_C_{TAH,TAL,TD,AH,AL,BH,BL}
-LDA_D_{TAH,TAL,TD,AH,AL,BH,BL}
+LDA_A_{BH,BL,CH,CL,DH,DL}
+LDA_B_{AH,AL,CH,CL,DH,DL}
+LDA_C_{AH,AL,BH,BL}
+LDA_D_{AH,AL,BH,BL}
 
 # Store into RAM@{addr_reg} from {reg}
-STA_TA_{TD,CH,CL,DH,DL}
-STA_A_{TAL,TD,CH,CL,DH,DL}
-STA_B_{TAL,TD,CH,CL,DH,DL}
-STA_C_{TAL,TD}
-STA_D_{TAL,TD}
+STA_A_{CH,CL,DH,DL}
+STA_B_{CH,CL,DH,DL}
+STA_C_{DH,DL}
+STA_D_{CH,CL}
 
 # Jumps - all also have _D variant
 JMP @addr
@@ -53,16 +49,16 @@ ALUOP_FLAGS $op
 ALUOP_PUSH $op
 ALUOP_ADDR $op @addr
 # Store ALU result into RAM@{addr_reg}
-ALUOP_ADDR_{TA,A,B,C,D} $op
+ALUOP_ADDR_{A,B,C,D} $op
 # Store ALU result into {reg}
-ALUOP_{TAH,TAL,TD,AH,AL,BH,BL,CH,CL,DH,DL} $op
+ALUOP_{AH,AL,BH,BL,CH,CL,DH,DL} $op
 
 # Push $data onto stack
 PUSH $data
 # Push {reg} onto 
-PUSH_{TAL,TD,CH,CL,DH,DL}
+PUSH_{CH,CL,DH,DL}
 # Peek/Pop into {reg}
-{PEEK,POP}_{TAH,TAL,TD,AH,AL,BH,BL,CH,CL,DH,DL}
+{PEEK,POP}_{AH,AL,BH,BL,CH,CL,DH,DL}
 
 # General purpose
 NOP
@@ -73,11 +69,39 @@ IRQ
 RETI
 MASKINT
 UMASKINT
+INCR_C
+DECR_C
+INCR_D
+DECR_D
 
-# Use inside interrupt vector to figure
+# Use PERIPH_* inside interrupt vector to figure
 # out which peripheral triggered the interrupt,
 # and to also know the base address of that
 # peripheral's RAM address space
-PERIPH_{TAH,AH,BH,CH,DH}
+PERIPH_{AH,BH,CH,DH}
 
+# Timer rates
+0x0 1/2 sec
+0x1 1/4 sec
+0x2 1/8 sec
+0x3 1/16 sec
+0x4 1/32 sec
+0x5 1/64 sec
+0x6 1/128 sec
+0x7 1/256 sec
 
+# Memory ranges
+0x0000 - 0x3eff program data (ROM)
+0x3f00 - 0x3fff interrupt vector (ROM)
+0x4000 - 0x4fff framebuffer chars
+0x5000 - 0x5fff framebuffer color
+0x6000 - 0xbeff RAM
+0xbf00 - 0xbfff stack
+0xc000 - 0xc7ff peripheral 0
+0xc800 - 0xcfff peripheral 1
+0xd000 - 0xd7ff peripheral 2
+0xd800 - 0xdfff peripheral 3
+0xe000 - 0xe7ff peripheral 4
+0xe800 - 0xefff peripheral 5
+0xf000 - 0xf7ff peripheral 6
+0xf800 - 0xffff peripheral 7
