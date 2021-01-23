@@ -23,13 +23,13 @@ PATH=/usr/bin:/usr/sbin:/bin:/sbin
 #   ORed to form the control signals for this microcode entry.
 
 # General purpose registers that can be written to
-WRITABLE_REGS=(TAH TAL TD AH AL BH BL CH CL DH DL)
+WRITABLE_REGS=(AH AL BH BL CH CL DH DL)
 
 # General purpose registers that can be output to the data bus
-DATA_REGS=(TAL TD CH CL DH DL)
+DATA_REGS=(CH CL DH DL)
 
 # General purpose registers that can be output to the address bus
-ADDR_REGS=(TA A B C D)
+ADDR_REGS=(A B C D)
 
 # hex_to_dec $hex
 # Outputs decimal digit
@@ -100,12 +100,14 @@ x 4 DataBusIRQ WritePCH
 x 5 NextInstruction
 EOF
 
-# IRQ return -- like RET, but unmasks interrupts
+# IRQ return -- like RET, but unmasks interrupts.  Also
+# restores the status flags from the backup preserved
+# while interrupts are unmasked.
 cat <<EOF
 
 [0x03] RETI
-x 0 AddrBusSP WritePCH DecrementSP
-x 1 AddrBusSP WritePCL DecrementSP UnmaskInterrupts
+x 0 AddrBusSP WritePCH DecrementSP UnmaskInterrupts
+x 1 AddrBusSP WritePCL DecrementSP RestoreStatusFlags WriteStatus
 x 2 NextInstruction
 EOF
 
@@ -113,11 +115,11 @@ EOF
 cat <<EOF
 
 [0x04] MASKINT
-x 0 IncrementSP MaskInterrupts
+x 0 IncrementPC MaskInterrupts
 x 1 NextInstruction
 
 [0x05] UMASKINT
-x 0 IncrementSP UnmaskInterrupts
+x 0 IncrementPC UnmaskInterrupts
 x 1 NextInstruction
 EOF
 
@@ -125,16 +127,35 @@ EOF
 opcode=$(hex_to_dec 6)
 for to_reg in ${WRITABLE_REGS[@]}; do
 offset=$((${#to_reg}-1))
-[ "${to_reg}" = "TD" ] && continue
 [ "${to_reg:$offset:1}" = "L" ] && continue
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] PERIPH_${to_reg}
-x 0 IncrementSP DataBusPeripheral Write${to_reg}
+x 0 IncrementPC DataBusPeripheral Write${to_reg}
 x 1 NextInstruction
 EOF
 let "opcode = opcode + 1"
 done
+
+# Increment/decrement C and D
+cat <<EOF
+
+[0x0a] INCR_C
+x 0 IncrementPC IncrementC
+x 1 NextInstruction
+
+[0x0b] DECR_C
+x 0 IncrementPC DecrementC
+x 1 NextInstruction
+
+[0x0c] INCR_D
+x 0 IncrementPC IncrementD
+x 1 NextInstruction
+
+[0x0d] DECR_D
+x 0 IncrementPC DecrementD
+x 1 NextInstruction
+EOF
 
 # Leave reserved instructions at the top of the range
 opcode=$(hex_to_dec 10)
@@ -446,6 +467,7 @@ done
 # Load immediate value into a general purpose register
 ####
 
+opcode=$(hex_to_dec 50)
 # Store immediate word into 16-bit register
 for to_reg in ${ADDR_REGS[@]}; do
 [ "${to_reg}" = "TA" ] && continue
@@ -497,21 +519,35 @@ let "opcode = opcode + 1"
 done
 done
 
-# Store to RAM@reg from reg
-for addr_reg in ${ADDR_REGS[@]}; do
+# Store to RAM@reg from reg -- fast for A and B
+for addr_reg in A B; do
 for from_reg in ${DATA_REGS[@]}; do
 # Skip instructions where we are writing our own address
 [ "${from_reg:0:-1}" = "${addr_reg}" ] && continue
-# Skip instructions where we are reading and writing
-# simultaneously to C/D registers since that's a single
-# control signal
-[ "${from_reg:0:-1}" = "C" ] && [ "${addr_reg}" = "D" ] && continue
-[ "${from_reg:0:-1}" = "D" ] && [ "${addr_reg}" = "C" ] && continue
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] STA_${addr_reg}_${from_reg}
 x 0 IncrementPC AddrBus${addr_reg} DataBus${from_reg} WriteRAM
 x 1 NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+done
+
+# Store to RAM@reg from reg -- slower for C and D
+# since you can't simultaneously read and write
+# the C and D registers
+for addr_reg in C D; do
+for from_reg in ${DATA_REGS[@]}; do
+# Skip instructions where we are writing our own address
+[ "${from_reg:0:-1}" = "${addr_reg}" ] && continue
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] STA_${addr_reg}_${from_reg}
+x 0 IncrementPC DataBus${addr_reg}H WriteTAH
+x 1 DataBus${addr_reg}L WriteTAL
+x 2 AddrBusTA DataBus${from_reg} WriteRAM
+x 3 NextInstruction
 EOF
 let "opcode = opcode + 1"
 done
@@ -530,7 +566,7 @@ done
 # set flags only (do not store result)
 cat <<EOF
 
-[0xb0] ALUOP_FLAGS \$op
+[0x80] ALUOP_FLAGS \$op
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -538,10 +574,17 @@ x 1 AddrBusPC WriteALUop IncrementPC
 x 2 WriteStatus NextInstruction
 EOF
 
+cat <<EOF
+
+[0x81] ALUOP_AGAIN_FLAGS
+x 0 IncrementPC
+x 1 WriteStatus NextInstruction
+EOF
+
 # push ALU result onto stack
 cat <<EOF
 
-[0xb1] ALUOP_PUSH \$op
+[0x82] ALUOP_PUSH \$op
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC IncrementSP
@@ -550,10 +593,17 @@ x 2 DataBusALU AddrBusSP WriteRAM WriteStatus
 x 3 NextInstruction
 EOF
 
+cat <<EOF
+
+[0x83] ALUOP_AGAIN_PUSH
+x 0 IncrementPC DataBusALU AddrBusSP WriteRAM WriteStatus
+x 1 NextInstruction
+EOF
+
 # store ALU result in RAM at immediate address
 cat <<EOF
 
-[0xb2] ALUOP_ADDR \$op @addr
+[0x84] ALUOP_ADDR \$op @addr
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -565,9 +615,22 @@ x 4 DataBusALU AddrBusTA WriteRAM WriteStatus
 x 5 NextInstruction
 EOF
 
-opcode=$(hex_to_dec b3)
+cat <<EOF
 
-# store ALU result in RAM at an addres register
+[0x85] ALUOP_AGAIN_ADDR @addr
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to next instruction
+x 3 DataBusALU AddrBusTA WriteRAM WriteStatus
+x 4 NextInstruction
+EOF
+
+
+opcode=$(hex_to_dec 86)
+
+# store ALU result in RAM at an address register
 for addr_reg in ${ADDR_REGS[@]}; do
 cat <<EOF
 
@@ -580,6 +643,15 @@ x 2 DataBusALU AddrBus${addr_reg} WriteRAM WriteStatus
 x 3 NextInstruction
 EOF
 let "opcode = opcode + 1"
+
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] ALUOP_AGAIN_ADDR_${addr_reg}
+x 0 IncrementPC DataBusALU AddrBus${addr_reg} WriteRAM WriteStatus
+x 1 NextInstruction
+EOF
+let "opcode = opcode + 1"
+
 done
 
 # store ALU result in a general purpose register
@@ -595,11 +667,21 @@ x 2 DataBusALU Write${to_reg} WriteStatus
 x 3 NextInstruction
 EOF
 let "opcode = opcode + 1"
+
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] ALUOP_AGAIN_${to_reg}
+x 0 IncrementPC DataBusALU Write${to_reg} WriteStatus
+x 1 NextInstruction
+EOF
+let "opcode = opcode + 1"
+
 done
 
 ####
 # Transfer operations
 ####
+opcode=$(hex_to_dec a0)
 
 for from_reg in ${DATA_REGS[@]}; do
 for to_reg in ${WRITABLE_REGS[@]}; do
