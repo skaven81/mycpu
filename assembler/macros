@@ -130,12 +130,15 @@ MINT
 {UnmaskInterrupts}
 UINT
 
+{RestoreStatusFlags}
+STRES
+
 {DataBusZero}
-/ZERO
+CONSEL=1
 
 {DataBusIRQ}
-/IRQVEC
+CONSEL=2
 
 {DataBusPeripheral}
-/PERIPH
+CONSEL=3
 
