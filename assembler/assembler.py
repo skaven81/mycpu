@@ -319,7 +319,11 @@ if args.output == '-' or args.verbose >= 1:
     if args.output != '-':
         print("Final assembly")
     for idx, a in enumerate(final_assembly):
-        print("{:04x} {:02x} # {}".format(idx, a, assembly[idx]['msg']))
+        print("{:04x} {:02x} # {}".format(idx, a, assembly[idx]['msg']), end='')
+        if idx in label_addrs:
+            print(" <-- {}".format(label_addrs[idx]))
+        else:
+            print()
 if args.output != '-':
     logging.info("Writing {} bytes to {}".format(len(final_assembly), args.output))
     with open(args.output, mode='wb') as fh:
