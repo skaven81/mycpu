@@ -564,6 +564,13 @@ done
 ### bit  7   (mask 0x80) = B bus hi(1)/lo(0)
 
 # set flags only (do not store result)
+
+# We have to enable the ALU's outputs to get
+# the flags to appear.  We don't write anything
+# to a register, but DataBusALU has to be asserted
+# so that the ALU ROMs have their /OE pins set,
+# otherwise the Z/O/E/Cout outputs just float
+# on the data bus.
 cat <<EOF
 
 [0x80] ALUOP_FLAGS \$op
@@ -571,14 +578,16 @@ x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC
 # PC now points to next instruction
-x 2 WriteStatus NextInstruction
+x 2 DataBusALU WriteStatus
+x 3 NextInstruction
 EOF
 
 cat <<EOF
 
 [0x81] ALUOP_AGAIN_FLAGS
 x 0 IncrementPC
-x 1 WriteStatus NextInstruction
+x 1 DataBusALU WriteStatus
+x 2 NextInstruction
 EOF
 
 # push ALU result onto stack
