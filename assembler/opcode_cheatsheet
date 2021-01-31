@@ -93,8 +93,10 @@ PERIPH_{AH,BH,CH,DH}
 # Memory ranges
 0x0000 - 0x3eff program data (ROM)
 0x3f00 - 0x3fff interrupt vector (ROM)
-0x4000 - 0x4fff framebuffer chars
-0x5000 - 0x5fff framebuffer color
+0x4000 - 0x4eff framebuffer chars
+0x4f00 - 0x4fff hidden framebuffer (global vars)
+0x5000 - 0x5eff framebuffer color
+0x5f00 - 0x5fff hidden framebuffer (global vars)
 0x6000 - 0xbeff RAM
 0xbf00 - 0xbfff stack
 0xc000 - 0xc7ff peripheral 0
