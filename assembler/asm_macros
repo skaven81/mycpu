@@ -14,7 +14,9 @@
 %one%         0x01
 %negone%      0x02
 %A%           0x03
+%A+1%         0x23
 %B%           0x04
+%B+1%         0x24
 
 # arithmetic
 %A+B%         0x05
