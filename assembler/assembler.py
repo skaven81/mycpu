@@ -7,6 +7,7 @@ import re
 import argparse
 import logging
 from pyparsing import Word, alphanums, nums, Regex, Literal, QuotedString, Or, And, Char, srange, printables, Optional, Combine, Group, StringStart, OneOrMore, oneOf
+from pyparsing.exceptions import ParseException
 
 parser = argparse.ArgumentParser(description='Assemble program ROM')
 parser.add_argument('--opcodes', default='opcodes', help='File containing opcodes')
@@ -195,7 +196,11 @@ labels = { }
 label_addrs = { }
 for line_num, line in source:
     logging.debug("{:3d}: IN:  {}".format(line_num, line))
-    match = grammar.parseString(line, parseAll=True).asDict()
+    try:
+        match = grammar.parseString(line, parseAll=True).asDict()
+    except ParseException:
+        print(f"ERROR on line {line_num}: {line}")
+        raise
     logging.debug("{:3d}: OUT: {}".format(line_num, match))
 
     # comments will result in an empty dict
