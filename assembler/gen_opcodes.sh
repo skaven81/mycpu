@@ -582,18 +582,10 @@ x 2 DataBusALU WriteStatus
 x 3 NextInstruction
 EOF
 
-cat <<EOF
-
-[0x81] ALUOP_AGAIN_FLAGS
-x 0 IncrementPC
-x 1 DataBusALU WriteStatus
-x 2 NextInstruction
-EOF
-
 # push ALU result onto stack
 cat <<EOF
 
-[0x82] ALUOP_PUSH \$op
+[0x81] ALUOP_PUSH \$op
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC IncrementSP
@@ -602,17 +594,10 @@ x 2 DataBusALU AddrBusSP WriteRAM WriteStatus
 x 3 NextInstruction
 EOF
 
-cat <<EOF
-
-[0x83] ALUOP_AGAIN_PUSH
-x 0 IncrementPC DataBusALU AddrBusSP WriteRAM WriteStatus
-x 1 NextInstruction
-EOF
-
 # store ALU result in RAM at immediate address
 cat <<EOF
 
-[0x84] ALUOP_ADDR \$op @addr
+[0x82] ALUOP_ADDR \$op @addr
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -624,20 +609,7 @@ x 4 DataBusALU AddrBusTA WriteRAM WriteStatus
 x 5 NextInstruction
 EOF
 
-cat <<EOF
-
-[0x85] ALUOP_AGAIN_ADDR @addr
-x 0 IncrementPC
-# PC now points to high byte of target address
-x 1 AddrBusPC WriteTAH IncrementPC
-x 2 AddrBusPC WriteTAL IncrementPC
-# PC now points to next instruction
-x 3 DataBusALU AddrBusTA WriteRAM WriteStatus
-x 4 NextInstruction
-EOF
-
-
-opcode=$(hex_to_dec 86)
+opcode=$(hex_to_dec 83)
 
 # store ALU result in RAM at an address register
 for addr_reg in ${ADDR_REGS[@]}; do
@@ -674,14 +646,6 @@ x 1 AddrBusPC WriteALUop IncrementPC
 # PC now points to next instruction
 x 2 DataBusALU Write${to_reg} WriteStatus
 x 3 NextInstruction
-EOF
-let "opcode = opcode + 1"
-
-cat <<EOF
-
-[0x$(printf "%02x" $opcode)] ALUOP_AGAIN_${to_reg}
-x 0 IncrementPC DataBusALU Write${to_reg} WriteStatus
-x 1 NextInstruction
 EOF
 let "opcode = opcode + 1"
 
