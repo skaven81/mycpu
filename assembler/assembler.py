@@ -13,8 +13,8 @@ parser = argparse.ArgumentParser(description='Assemble program ROM')
 parser.add_argument('--opcodes', default='opcodes', help='File containing opcodes')
 parser.add_argument('--verbose', '-v', action='count', default=0)
 parser.add_argument('--macros', '-m', action='append', default=['asm_macros'])
-parser.add_argument('source', help='Assembly source code')
-parser.add_argument('output', help='Output .hex file, or - for STDOUT')
+parser.add_argument('sources', help='Assembly source code, specified in order', nargs='+')
+parser.add_argument('--output', '-o', help='Output .hex file, or - for STDOUT')
 args = parser.parse_args()
 
 if args.verbose == 0:
@@ -56,7 +56,7 @@ with open(args.opcodes, 'r') as fh:
             logging.debug(str(opcode).split('\n')[0])
             opcodes[opcode.name] = opcode
 
-# Read any macros
+# Read any assembler macros (%..% style)
 asm_macros = { }
 for macro_file in args.macros:
     logging.info("Reading {} for assembly macros".format(macro_file))
@@ -81,11 +81,22 @@ for macro_file in args.macros:
 comment = Regex('#.*')
 # Labels at the beginning of the line mark addresses, or can be used
 # in places where a 16-bit word argument is required.
-label = Word(".", alphanums+"_")
+#  .label - regular label
+#  :label - exported/global label
+#  OPCODE .label - .label gets turned into the corresponding address
+#  OPCODE :label+4 - same, but with an offset
+labelprefix = oneOf(': .')
+label = Combine(labelprefix + Word(alphanums+"_"))
 label.setName('label')
-labeloffset = Word(".", alphanums+"_-+")
+labeloffset = Combine(labelprefix + Word(':', alphanums+"_-+"))
 labeloffset.setName('labeloffset')
 # Bytes can be represented in binary, hex, char, or a number (0-255 or -128-127)
+# and may include embedded arithmetic
+#  OPCODE 0b00001100
+#  OPCODE 0x0b
+#  OPCODE 'a'
+#  OPCODE 254-0x0a
+#  OPCODE 'a'&0b00001111
 binbyte = Combine(Literal('0b') + Char('01') * 8)
 binbyte.setName('binbyte')
 binbyte.setParseAction(lambda t: [int(t[0], 2)])
@@ -105,6 +116,11 @@ bytemathexpression.setParseAction(lambda t: [eval(t[0])])
 byte = bytemathexpression | allbytes
 byte.setName('byte')
 # Words can be represented in binary, hex, label, or number (0-65535 or -32768-32767)
+#  OPCODE 0b0000111100001111
+#  OPCODE 0x2911
+#  OPCODE .label
+#  OPCODE .label+4
+#  OPCODE 2490
 binword = Combine(Literal('0b') + Char('01') * 16)
 binword.setName('binword')
 binword.setParseAction(lambda t: [int(t[0], 2)])
@@ -118,9 +134,13 @@ wordmathexpression.setParseAction(lambda t: [eval(t[0])])
 word = wordmathexpression | label | allwords
 word.setName('word')
 # Data can be represented as a label followed by a double-quoted string, or a series of bytes or words
+#  .label "Hello World\0"
 data = label + (QuotedString(quoteChar='"', unquoteResults=True) | byte[1, ...] | word[1, ...])
 data.setName('data')
 # Opcodes are an opcode followed by some number of bytes and/or words
+#  OPCODE
+#  OPCODE 0xa0
+#  OPCODE .label
 opcode_syntax = [ ]
 for opcode in opcodes.values():
     op_grammar = Literal(opcode.name).setResultsName('opcode')
@@ -150,41 +170,49 @@ logging.info("Generated grammar")
 logging.debug(grammar)
 
 #####
-# Replace macros in the source
+# Replace ASM macros and localize labels in the source
 #####
-logging.info("Replacing macros")
+logging.info("Replacing ASM macros and localizing labels")
 line_num = 0
-source = [ ]
-with open(args.source, 'r') as fh:
-    while True:
-        line = fh.readline()
-        line_num += 1
-        if not line:
-            break
-        line = line.rstrip()
-        if not line:
-            continue
-        
-        partline = [*line.partition('#')]
-        splitline = partline[0].split(' ')
-        newsplitline = [ *splitline ]
-        for idx, token in enumerate(splitline[1:]):
-            while True:
-                foundmacro = False
-                for m, v in asm_macros.items():
-                    newtoken = token.replace(m, v)
-                    if newtoken != token:
-                        foundmacro = True
-                        newsplitline[idx+1] = newtoken
-                    token = newtoken
-                if not foundmacro:
-                    break
+concat_source = [ ]
+for input_file in args.sources:
+    label_prefix="{}_".format(input_file.split('/')[-1].split('.')[0].replace(' ','_')).upper()
+    with open(input_file, 'r') as fh:
+        while True:
+            line = fh.readline()
+            line_num += 1
+            if not line:
+                break
+            line = line.rstrip()
+            if not line:
+                continue
+            
+            # Look for ASM macros and replace them
+            partline = [*line.partition('#')]
+            splitline = partline[0].split(' ')
+            newsplitline = [ *splitline ]
+            for idx, token in enumerate(splitline[1:]):
+                while True:
+                    foundmacro = False
+                    for m, v in asm_macros.items():
+                        newtoken = token.replace(m, v)
+                        if newtoken != token:
+                            foundmacro = True
+                            newsplitline[idx+1] = newtoken
+                        token = newtoken
+                    if not foundmacro:
+                        break
 
-        oldline = ' '.join(splitline) + partline[1] + partline[2]
-        newline = ' '.join(newsplitline) + partline[1] + partline[2]
-        if newline != oldline:
-            logging.debug("Line {}: [{}]->[{}]".format(line_num, oldline, newline))
-        source.append((line_num, newline))
+            oldline = ' '.join(splitline) + partline[1] + partline[2]
+            newline = ' '.join(newsplitline) + partline[1] + partline[2]
+
+            # Look for dot-style labels and replace them with localized
+            # versions that have the filename prepended
+            newline = re.sub(r"\.([a-zA-Z0-9_]+)", f".{label_prefix}\\1", newline)
+
+            if newline != oldline:
+                logging.debug("{:16.16s} Line {}: [{}]->[{}]".format(input_file, line_num, oldline, newline))
+            concat_source.append((input_file, line_num, newline))
 
 #####
 # Parse the assembly
@@ -194,14 +222,14 @@ asm_addr = 0
 assembly = [ ]
 labels = { }
 label_addrs = { }
-for line_num, line in source:
-    logging.debug("{:3d}: IN:  {}".format(line_num, line))
+for input_file, line_num, line in concat_source:
+    logging.debug("{:16.16s} {:3d}: IN:  {}".format(input_file, line_num, line))
     try:
         match = grammar.parseString(line, parseAll=True).asDict()
     except ParseException:
         print(f"ERROR on line {line_num}: {line}")
         raise
-    logging.debug("{:3d}: OUT: {}".format(line_num, match))
+    logging.debug("{:16.16s} {:3d}: OUT: {}".format(input_file, line_num, match))
 
     # comments will result in an empty dict
     if not match:
@@ -211,13 +239,13 @@ for line_num, line in source:
     if 'label' in match:
         labels[match['label']] = len(assembly)
         label_addrs[len(assembly)] = match['label']
-        logging.debug("{:4d} Label {} => 0x{:04x}".format(line_num, match['label'], len(assembly)))
+        logging.debug("{:16.16s} {:3d} Label {} => 0x{:04x}".format(input_file, line_num, match['label'], len(assembly)))
 
     # data: assign a label and add some data to the assembly list
     if 'data' in match:
         labels[match['data'][0]] = len(assembly)
         label_addrs[len(assembly)] = match['data'][0]
-        logging.debug("{:4d} Label {} => 0x{:04x} => {}".format(line_num, match['data'][0], len(assembly), match['data'][1]))
+        logging.debug("{:16.16s} {:3d} Label {} => 0x{:04x} => {}".format(input_file, line_num, match['data'][0], len(assembly), match['data'][1]))
         match['data'][1] = match['data'][1].replace('\\n', '\n')
         match['data'][1] = match['data'][1].replace('\\r', '\t')
         match['data'][1] = match['data'][1].replace('\\0', '\0')
@@ -237,45 +265,45 @@ for line_num, line in source:
                     # byte = binbyte | hexbyte | chrbyte | number
                     if type(match_arg) is str: # char
                         if len(match_arg) != 1:
-                            raise SyntaxError("Line {}: argument {} must be a single character".format(line_num, op_arg))
+                            raise SyntaxError("{} Line {}: argument {} must be a single character".format(input_file, line_num, op_arg))
                         asm.append({"val": ord(match_arg[0]), "msg": op_arg})
                         arg_description.append("{}('{}'->{:02x})".format(op_arg, match_arg[0], ord(match_arg[0])))
                     else: # number
                         if match_arg < -128 or match_arg > 255:
-                            raise SyntaxError("Line {}: argument {} must be between -128 and 255".format(line_num, op_arg))
+                            raise SyntaxError("{} Line {}: argument {} must be between -128 and 255".format(input_file, line_num, op_arg))
                         if match_arg < 0:
                             # convert negative numbers to two's complement
                             old_match_arg = match_arg
                             match_arg = int(match_arg % (1<<8))
-                            logging.info("Line {}: argument {} converted to two's complement: {} -> {}".format(line_num, op_arg, old_match_arg, match_arg))
+                            logging.info("{} Line {}: argument {} converted to two's complement: {} -> {}".format(input_file, line_num, op_arg, old_match_arg, match_arg))
                         asm.append({"val": match_arg, "msg": op_arg})
                         arg_description.append("{}({}->{:02x})".format(op_arg, match_arg, match_arg))
                 elif op_arg.startswith('@'):
                     # word = binword | hexword | label | number
                     if type(match_arg) is str:
-                        if len(match_arg) > 1 and match_arg.startswith('.'):
+                        if len(match_arg) > 1 and (match_arg.startswith('.') or match_arg.startswith(':')):
                             # For the first pass we just put the label in, and will resolve
                             # it on the second pass.
                             arg_description.append("{}({})".format(op_arg, match_arg))
-                            asm.append({"val": "high:{}".format(match_arg), "msg": "{} high".format(op_arg)})
-                            asm.append({"val": "low:{}".format(match_arg), "msg": "{} low".format(op_arg)})
+                            asm.append({"val": "hi>{}".format(match_arg), "msg": "{} high".format(op_arg)})
+                            asm.append({"val": "lo>{}".format(match_arg), "msg": "{} low".format(op_arg)})
                         else:
-                            raise SyntaxError("Line {}: argument {} is a string, but does not look like a label".format(line_num, op_arg))
+                            raise SyntaxError("{} Line {}: argument {} is a string, but does not look like a label".format(input_file, line_num, op_arg))
                     else:
                         if match_arg < -32768 or match_arg > 65535:
-                            raise SyntaxError("Line {}: argument {} must be between -32768 and 65535".format(line_num, op_arg))
+                            raise SyntaxError("{} Line {}: argument {} must be between -32768 and 65535".format(input_file, line_num, op_arg))
                         if match_arg < 0:
                             # convert negative numbers to two's complement
                             old_match_arg = match_arg
                             match_arg = int(match_arg % (1<<16))
-                            logging.info("Line {}: argument {} converted to two's complement: {} -> {}".format(line_num, op_arg, old_match_arg, match_arg))
+                            logging.info("{} Line {}: argument {} converted to two's complement: {} -> {}".format(input_file, line_num, op_arg, old_match_arg, match_arg))
                         highbyte = (match_arg >> 8)
                         lowbyte = (match_arg & 0x00ff)
                         arg_description.append("{}({}->{:02x}+{:02x})".format(op_arg, match_arg, highbyte, lowbyte))
                         asm.append({"val": highbyte, "msg": "{} high".format(op_arg)})
                         asm.append({"val": lowbyte, "msg": "{} low".format(op_arg)})
 
-        logging.debug("{:4d} {:04x}: {} [0x{:02x}] {}".format(line_num, len(assembly), opcode.name, opcode.code, arg_description))
+        logging.debug("{:16.16s} {:3d}: {:04x}: {} [0x{:02x}] {}".format(input_file, line_num, len(assembly), opcode.name, opcode.code, arg_description))
         assembly.extend(asm)
 
 logging.info("Incomplete assembly")
@@ -292,7 +320,7 @@ logging.info("Updating labels")
 final_assembly = [ ]
 for idx, a in enumerate(assembly):
     if type(a['val']) is str:
-        hl, label = a['val'].split(':')
+        hl, label = a['val'].split('>')
         offset = 0
         if '-' in label:
             label, offval = label.split('-')
@@ -305,9 +333,9 @@ for idx, a in enumerate(assembly):
             addr = labels[label] + offset
             if offset:
                 logging.debug("Label {} with offset {} resolved to {}".format(a['val'], offset, addr))
-            if hl == 'high':
+            if hl == 'hi':
                 val = (addr >> 8)
-            elif hl == 'low':
+            elif hl == 'lo':
                 val = (addr & 0x00ff)
             else:
                 raise SyntaxError("Label {} missing high/low prefix".format(a['val']))
