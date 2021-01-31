@@ -1,69 +1,77 @@
 # Transfer operations
-MOV_CH_{AH,AL,BH,BL}
-MOV_CL_{AH,AL,BH,BL}
-MOV_DH_{AH,AL,BH,BL}
-MOV_DL_{AH,AL,BH,BL}
+MOV_CH_{AH,AL,BH,BL,TAL,TD}
+MOV_CL_{AH,AL,BH,BL,TAL,TD}
+MOV_DH_{AH,AL,BH,BL,TAL,TD}
+MOV_DL_{AH,AL,BH,BL,TAL,TD}
 
-# To MOV from AH,AL,BH,BL to another
-# register, use an ALUOP_{reg} operation
-# with the desired A/B register as the
-# source configured in the ALU op.
+# Push $data onto stack
+PUSH $data  ** TD **
+# Push {reg} onto stack
+PUSH_{CH,CL,DH,DL}
+# Peek/Pop into {reg}
+{PEEK,POP}_{AH,AL,BH,BL,CH,CL,DH,DL,TAL,TD}
+
+# To MOV or PUSH from AH,AL,BH,BL to another register
+# or the stack, use an ALUOP_{reg} or ALUOP_PUSH operation
+# with the desired A/B register as the source configured
+# in the ALU op.
 
 # Store $data at @addr
-ST @addr $data
+ST @addr $data  ** TAH TAL TD **
 
 # Store {reg} at @addr
-ST_{CH,CL,DH,DL} @addr
+ST_{CH,CL,DH,DL,TD} @addr   ** TAH TAL **
 
 # Load RAM@addr into {reg}
-LD_{AH,AL,BH,BL,CH,CL,DH,DL} @addr
+LD_{AH,AL,BH,BL,CH,CL,DH,DL,TD} @addr   ** TAH TAL **
 
 # Load @word into {reg}
 LDI_{A,B,C,D} @word
 # Load $byte into {reg}
-LDI_{AH,AL,BH,BL,CH,CL,DH,DL} $byte
+LDI_{AH,AL,BH,BL,CH,CL,DH,DL,TAL,TD} $byte
 
 # Load RAM@{addr_reg} into {reg}
-LDA_A_{BH,BL,CH,CL,DH,DL}
-LDA_B_{AH,AL,CH,CL,DH,DL}
-LDA_C_{AH,AL,BH,BL}
-LDA_D_{AH,AL,BH,BL}
+LDA_A_{BH,BL,CH,CL,DH,DL,TAL,TD}
+LDA_B_{AH,AL,CH,CL,DH,DL,TAL,TD}
+LDA_C_{AH,AL,BH,BL,TAL,TD}
+LDA_D_{AH,AL,BH,BL,TAL,TD}
 
 # Store into RAM@{addr_reg} from {reg}
-STA_A_{CH,CL,DH,DL}
-STA_B_{CH,CL,DH,DL}
-STA_C_{DH,DL}
-STA_D_{CH,CL}
+STA_A_{CH,CL,DH,DL,TAL,TD}  ** TAH TAL **
+STA_B_{CH,CL,DH,DL,TAL,TD}
+STA_C_{DH,DL,TD}
+STA_D_{CH,CL,TD}
 
 # Jumps - all also have _D variant
-JMP @addr
-JEQ @addr
-JNE @addr
-JZ @addr
-JNZ @addr
-JO @addr
-JNO @addr
+JMP @addr   ** TD **
+JEQ @addr   ** TD **
+JNE @addr   ** TD **
+JZ @addr    ** TD **
+JNZ @addr   ** TD **
+JO @addr    ** TD **
+JNO @addr   ** TD **
+
+JMP_D @addr
+JEQ_D @addr
+JNE_D @addr
+JZ_D @addr
+JNZ_D @addr
+JO_D @addr
+JNO_D @addr
 
 # ALU operations
 ALUOP_FLAGS $op
 ALUOP_PUSH $op
-ALUOP_ADDR $op @addr
+ALUOP_ADDR $op @addr    ** TAH TAL **
 # Store ALU result into RAM@{addr_reg}
 ALUOP_ADDR_{A,B,C,D} $op
 # Store ALU result into {reg}
-ALUOP_{AH,AL,BH,BL,CH,CL,DH,DL} $op
-
-# Push $data onto stack
-PUSH $data
-# Push {reg} onto 
-PUSH_{CH,CL,DH,DL}
-# Peek/Pop into {reg}
-{PEEK,POP}_{AH,AL,BH,BL,CH,CL,DH,DL}
+ALUOP_{AH,AL,BH,BL,CH,CL,DH,DL,TAL,TD} $op
 
 # General purpose
 NOP
 HLT
-CALL @addr
+CALL @addr  ** TAL TD **
 RET
 IRQ
 RETI

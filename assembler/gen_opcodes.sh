@@ -560,7 +560,7 @@ done
 done
 
 ####
-# ALU operations: 0xb0 - 0xbf
+# ALU operations: 0x90 - 0x9f
 ####
 
 ### ALU operations have the following format for $op
@@ -579,7 +579,7 @@ done
 # on the data bus.
 cat <<EOF
 
-[0x80] ALUOP_FLAGS \$op
+[0x90] ALUOP_FLAGS \$op
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -591,7 +591,7 @@ EOF
 # push ALU result onto stack
 cat <<EOF
 
-[0x81] ALUOP_PUSH \$op
+[0x91] ALUOP_PUSH \$op
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC IncrementSP
@@ -603,7 +603,7 @@ EOF
 # store ALU result in RAM at immediate address
 cat <<EOF
 
-[0x82] ALUOP_ADDR \$op @addr
+[0x92] ALUOP_ADDR \$op @addr
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC
@@ -615,7 +615,7 @@ x 4 DataBusALU AddrBusTA WriteRAM WriteStatus
 x 5 NextInstruction
 EOF
 
-opcode=$(hex_to_dec 83)
+opcode=$(hex_to_dec 93)
 
 # store ALU result in RAM at an address register
 for addr_reg in ${ADDR_REGS[@]}; do
@@ -652,7 +652,7 @@ done
 ####
 # Transfer operations
 ####
-opcode=$(hex_to_dec a0)
+opcode=$(hex_to_dec b0)
 
 for from_reg in ${DATA_REGS[@]}; do
 for to_reg in ${WRITABLE_REGS[@]} ${VOLATILE_REGS[@]}; do
