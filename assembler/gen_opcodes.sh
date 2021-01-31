@@ -25,6 +25,11 @@ PATH=/usr/bin:/usr/sbin:/bin:/sbin
 # General purpose registers that can be written to
 WRITABLE_REGS=(AH AL BH BL CH CL DH DL)
 
+# Registers that can only be used around instructions
+# that don't use them internally.  These can read and
+# write to the data bus.
+VOLATILE_REGS=(TAL TD)
+
 # General purpose registers that can be output to the data bus
 DATA_REGS=(CH CL DH DL)
 
@@ -177,8 +182,9 @@ EOF
 let "opcode = opcode + 1"
 
 # Store to RAM at an immediate address, from a general-purpose register
-for from_reg in ${DATA_REGS[@]}; do
+for from_reg in ${DATA_REGS[@]} ${VOLATILE_REGS[@]}; do
 [ "${from_reg}" = "TAL" ] && continue
+[ "${from_reg}" = "TAH" ] && continue
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] ST_${from_reg} @addr
@@ -194,7 +200,7 @@ let "opcode = opcode + 1"
 done
 
 # Load from RAM at an immediate address, to a general-purpose register
-for to_reg in ${WRITABLE_REGS[@]}; do
+for to_reg in ${WRITABLE_REGS[@]} ${VOLATILE_REGS[@]}; do
 [ "${to_reg}" = "TAH" ] && continue
 [ "${to_reg}" = "TAL" ] && continue
 cat <<EOF
@@ -441,7 +447,7 @@ done
 
 # Peek: fetch the data from the top of the stack
 # into a general purpose register, but don't remove it
-for to_reg in ${WRITABLE_REGS[@]}; do
+for to_reg in ${WRITABLE_REGS[@]} ${VOLATILE_REGS[@]}; do
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] PEEK_${to_reg}
@@ -453,7 +459,7 @@ done
 
 # Pop: pop the top item on the stack into a
 # general purpose register
-for to_reg in ${WRITABLE_REGS[@]}; do
+for to_reg in ${WRITABLE_REGS[@]} ${VOLATILE_REGS[@]}; do
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] POP_${to_reg}
@@ -470,7 +476,6 @@ done
 opcode=$(hex_to_dec 50)
 # Store immediate word into 16-bit register
 for to_reg in ${ADDR_REGS[@]}; do
-[ "${to_reg}" = "TA" ] && continue
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] LDI_${to_reg} @word
@@ -483,7 +488,7 @@ let "opcode = opcode + 1"
 done
 
 # Store immediate byte into 8-bit register
-for to_reg in ${WRITABLE_REGS[@]}; do
+for to_reg in ${WRITABLE_REGS[@]} ${VOLATILE_REGS[@]}; do
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] LDI_${to_reg} \$byte
@@ -501,7 +506,7 @@ done
 
 # Load from RAM@reg into reg
 for addr_reg in ${ADDR_REGS[@]}; do
-for to_reg in ${WRITABLE_REGS[@]}; do
+for to_reg in ${WRITABLE_REGS[@]} ${VOLATILE_REGS[@]}; do
 # Skip instructions where we are writing our own address
 [ "${to_reg:0:-1}" = "${addr_reg}" ] && continue
 # Skip instructions where we are reading and writing
@@ -521,7 +526,7 @@ done
 
 # Store to RAM@reg from reg -- fast for A and B
 for addr_reg in A B; do
-for from_reg in ${DATA_REGS[@]}; do
+for from_reg in ${DATA_REGS[@]} ${VOLATILE_REGS[@]}; do
 # Skip instructions where we are writing our own address
 [ "${from_reg:0:-1}" = "${addr_reg}" ] && continue
 cat <<EOF
@@ -538,9 +543,10 @@ done
 # since you can't simultaneously read and write
 # the C and D registers
 for addr_reg in C D; do
-for from_reg in ${DATA_REGS[@]}; do
+for from_reg in ${DATA_REGS[@]} ${VOLATILE_REGS[@]}; do
 # Skip instructions where we are writing our own address
 [ "${from_reg:0:-1}" = "${addr_reg}" ] && continue
+[ "${from_reg:0:2}" = "TA" ] && continue
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] STA_${addr_reg}_${from_reg}
@@ -625,18 +631,10 @@ x 3 NextInstruction
 EOF
 let "opcode = opcode + 1"
 
-cat <<EOF
-
-[0x$(printf "%02x" $opcode)] ALUOP_AGAIN_ADDR_${addr_reg}
-x 0 IncrementPC DataBusALU AddrBus${addr_reg} WriteRAM WriteStatus
-x 1 NextInstruction
-EOF
-let "opcode = opcode + 1"
-
 done
 
 # store ALU result in a general purpose register
-for to_reg in ${WRITABLE_REGS[@]}; do
+for to_reg in ${WRITABLE_REGS[@]} ${VOLATILE_REGS[@]}; do
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] ALUOP_${to_reg} \$op
@@ -657,7 +655,7 @@ done
 opcode=$(hex_to_dec a0)
 
 for from_reg in ${DATA_REGS[@]}; do
-for to_reg in ${WRITABLE_REGS[@]}; do
+for to_reg in ${WRITABLE_REGS[@]} ${VOLATILE_REGS[@]}; do
 [ "${from_reg}" = "${to_reg}" ] && continue
 # Skip instructions where we are reading and writing
 # simultaneously to C/D registers since that's a single
