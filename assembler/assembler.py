@@ -12,10 +12,13 @@ from pyparsing.exceptions import ParseException
 parser = argparse.ArgumentParser(description='Assemble program ROM')
 parser.add_argument('--opcodes', default='opcodes', help='File containing opcodes')
 parser.add_argument('--verbose', '-v', action='count', default=0)
-parser.add_argument('--macros', '-m', action='append', default=['asm_macros'])
+parser.add_argument('--macros', '-m', help='%-% style preprocessing macros', action='append')
 parser.add_argument('sources', help='Assembly source code, specified in order', nargs='+')
 parser.add_argument('--output', '-o', help='Output .hex file, or - for STDOUT')
 args = parser.parse_args()
+
+if not args.macros:
+    args.macros = [ 'asm_macros' ]
 
 if args.verbose == 0:
     logging.basicConfig(level=getattr(logging, 'WARNING'))
