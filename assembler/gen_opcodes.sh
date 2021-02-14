@@ -97,17 +97,16 @@ cat <<EOF
 # the 0xee op was forced in instead of the intended
 # next instruction.
 x 0 MaskInterrupts IncrementSP
-# Write low byte of PC to stack
+# Write PC to stack
 x 1 AddrBusSP DataBusPCL WriteRAM IncrementSP
-# Write high byte of PC to stack
 x 2 AddrBusSP DataBusPCH WriteRAM IncrementSP
 # Save D register to stack
 x 3 AddrBusSP DataBusDH WriteRAM IncrementSP
 x 4 AddrBusSP DataBusDL WriteRAM
 # Load IRQ vec constant to DH
-x 5 DataBusIRQ WriteDH
+x 5 DataBusIrqBase WriteDH
 # Load IRQ ID (shifted left one) to DL
-x 6 DataBusPeripheral WriteDL
+x 6 DataBusIrqId WriteDL
 # Load RAM@D into PC
 x 7 AddrBusD WritePCH
 x 8 IncrementD
@@ -142,15 +141,15 @@ x 0 IncrementPC UnmaskInterrupts
 x 1 NextInstruction
 EOF
 
-# Load the peripheral address into register D
+# Load the IRQ ID into a high register
 opcode=$(hex_to_dec 6)
 for to_reg in ${WRITABLE_REGS[@]}; do
 offset=$((${#to_reg}-1))
 [ "${to_reg:$offset:1}" = "L" ] && continue
 cat <<EOF
 
-[0x$(printf "%02x" $opcode)] PERIPH_${to_reg}
-x 0 IncrementPC DataBusPeripheral Write${to_reg}
+[0x$(printf "%02x" $opcode)] IRQID_${to_reg}
+x 0 IncrementPC DataBusIrqId Write${to_reg}
 x 1 NextInstruction
 EOF
 let "opcode = opcode + 1"

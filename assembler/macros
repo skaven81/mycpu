@@ -136,9 +136,9 @@ STRES
 {DataBusZero}
 CONSEL=1
 
-{DataBusIRQ}
+{DataBusIrqBase}
 CONSEL=2
 
-{DataBusPeripheral}
+{DataBusIrqId}
 CONSEL=3
 
