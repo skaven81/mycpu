@@ -86,7 +86,10 @@ x 2 NextInstruction
 EOF
 
 # IRQ operation -- like CALL, but masks interrupts, and
-# jumps to a constant address for the IRQ vector
+# jumps to a constant address for the IRQ vector.  Uses
+# D register to transfer the address, as it can be incremented
+# without the ALU.  So this opcode has an interleaved
+# PUSH_D and POP_D as well.
 cat <<EOF
 
 [0xee] IRQ
@@ -97,12 +100,23 @@ x 0 MaskInterrupts IncrementSP
 # Write low byte of PC to stack
 x 1 AddrBusSP DataBusPCL WriteRAM IncrementSP
 # Write high byte of PC to stack
-x 2 AddrBusSP DataBusPCH WriteRAM
-# Load next instruction from constants
-x 3 DataBusZero WritePCL
-x 4 DataBusIRQ WritePCH
-# Jump to the IRQ vector
-x 5 NextInstruction
+x 2 AddrBusSP DataBusPCH WriteRAM IncrementSP
+# Save D register to stack
+x 3 AddrBusSP DataBusDH WriteRAM IncrementSP
+x 4 AddrBusSP DataBusDL WriteRAM
+# Load IRQ vec constant to DH
+x 5 DataBusIRQ WriteDH
+# Load IRQ ID (shifted left one) to DL
+x 6 DataBusPeripheral WriteDL
+# Load RAM@D into PC
+x 7 AddrBusD WritePCH
+x 8 IncrementD
+x 9 AddrBusD WritePCL
+# Pop D from stack
+x a AddrBusSP WriteDL DecrementSP
+x b AddrBusSP WriteDH DecrementSP
+# Execute referenced instruction
+x c NextInstruction
 EOF
 
 # IRQ return -- like RET, but unmasks interrupts.  Also

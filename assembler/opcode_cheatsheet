@@ -104,14 +104,35 @@ PERIPH_{AH,BH,CH,DH}
 0x4000 - 0x4eff framebuffer chars
 0x4f00 - 0x4fff hidden framebuffer (global vars)
 0x5000 - 0x5eff framebuffer color
+0x5f00 - 0x5f0f interrupt addresses
+0x5f10 - 0x5fff hidden framebuffer (global vars)
 0x5f00 - 0x5fff hidden framebuffer (global vars)
 0x6000 - 0xbeff RAM
 0xbf00 - 0xbfff stack
-0xc000 - 0xc7ff peripheral 0
-0xc800 - 0xcfff peripheral 1
-0xd000 - 0xd7ff peripheral 2
-0xd800 - 0xdfff peripheral 3
-0xe000 - 0xe7ff peripheral 4
-0xe800 - 0xefff peripheral 5
-0xf000 - 0xf7ff peripheral 6
-0xf800 - 0xffff peripheral 7
+0xc000 - 0xffff peripherals
+
+# Interrupt handling
+When CPU comes out of reset, IRQMASK will be set.  In order to take advantage
+of interrupts, IRQ handler addresses must be loaded into the following memory
+locations.  The first byte is 0x5f, the second byte is the IRQ number, shifted
+left one place (so a 16-bit address can be placed at each location):
+
+ * IRQ0 0x5f00
+ * IRQ1 0x5f02
+ * IRQ2 0x5f04
+ * IRQ3 0x5f06
+ * IRQ4 0x5f08
+ * IRQ5 0x5f0a
+ * IRQ6 0x5f0c
+ * IRQ7 0x5f0e
+
+The IRQ opcode saves the PC onto the stack, then loads 0x5f into DH and the
+IRQ ID (shifted left) into DL.  This address is loaded into PCH.  Then D is
+incremented and that address is loaded into PCL and the CPU begins executing
+at that new address.
+
+The interrupt handler calls RETI when it is done, instead of the usual RET.
+
+The interrupt handler is responsible for leaving the CPU in the same state
+as when it was called.
+
