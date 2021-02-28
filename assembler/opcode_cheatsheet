@@ -82,11 +82,12 @@ DECR_C
 INCR_D
 DECR_D
 
-# Use PERIPH_* inside interrupt vector to figure
-# out which peripheral triggered the interrupt,
-# and to also know the base address of that
-# peripheral's RAM address space
-PERIPH_{AH,BH,CH,DH}
+# Load the IRQ base address into a register
+IRQBASE_{AH,AL,BH,BL,CH,CL,DH,DL}
+# Load the IRQ ID (shifted left one) into a register
+IRQID_{AH,AL,BH,BL,CH,CL,DH,DL}
+# Load the contents of the status register into a register
+STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 
 # Timer rates
 0x0 1/2 sec
@@ -100,13 +101,11 @@ PERIPH_{AH,BH,CH,DH}
 
 # Memory ranges
 0x0000 - 0x3eff program data (ROM)
-0x3f00 - 0x3fff interrupt vector (ROM)
 0x4000 - 0x4eff framebuffer chars
 0x4f00 - 0x4fff hidden framebuffer (global vars)
 0x5000 - 0x5eff framebuffer color
 0x5f00 - 0x5f0f interrupt addresses
 0x5f10 - 0x5fff hidden framebuffer (global vars)
-0x5f00 - 0x5fff hidden framebuffer (global vars)
 0x6000 - 0xbeff RAM
 0xbf00 - 0xbfff stack
 0xc000 - 0xffff peripherals

@@ -91,7 +91,7 @@
 
 # Data bus constants
 # 0: none
-# 1: zero
+# 1: Status register
 # 2: IRQ vector
-# 3: IRQ source
+# 3: IRQ ID
 (CONSEL)    0 3 0xc0

@@ -141,20 +141,6 @@ x 0 IncrementPC UnmaskInterrupts
 x 1 NextInstruction
 EOF
 
-# Load the IRQ ID into a high register
-opcode=$(hex_to_dec 6)
-for to_reg in ${WRITABLE_REGS[@]}; do
-offset=$((${#to_reg}-1))
-[ "${to_reg:$offset:1}" = "L" ] && continue
-cat <<EOF
-
-[0x$(printf "%02x" $opcode)] IRQID_${to_reg}
-x 0 IncrementPC DataBusIrqId Write${to_reg}
-x 1 NextInstruction
-EOF
-let "opcode = opcode + 1"
-done
-
 # Increment/decrement C and D
 cat <<EOF
 
@@ -686,6 +672,43 @@ EOF
 let "opcode = opcode + 1"
 [ $opcode -eq 238 ] && opcode=239 # skip opcode 0xee as it's reserved for the IRQ op
 done
+done
+
+# Load the IRQ base into a register
+opcode=$(hex_to_dec d0)
+for to_reg in ${WRITABLE_REGS[@]}; do
+offset=$((${#to_reg}-1))
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] IRQBASE_${to_reg}
+x 0 IncrementPC DataBusIrqBase Write${to_reg}
+x 1 NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+
+# Load the IRQ ID into a register
+for to_reg in ${WRITABLE_REGS[@]}; do
+offset=$((${#to_reg}-1))
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] IRQID_${to_reg}
+x 0 IncrementPC DataBusIrqId Write${to_reg}
+x 1 NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+
+# Load the status register into a register
+for to_reg in ${WRITABLE_REGS[@]}; do
+offset=$((${#to_reg}-1))
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] STATUS_${to_reg}
+x 0 IncrementPC DataBusStatus Write${to_reg}
+x 1 NextInstruction
+EOF
+let "opcode = opcode + 1"
 done
 
 # Halt: goes into infinite loop of loading the program

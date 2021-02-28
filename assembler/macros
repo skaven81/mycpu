@@ -133,7 +133,7 @@ UINT
 {RestoreStatusFlags}
 STRES
 
-{DataBusZero}
+{DataBusStatus}
 CONSEL=1
 
 {DataBusIrqBase}
