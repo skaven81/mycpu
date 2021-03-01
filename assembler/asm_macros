@@ -57,3 +57,12 @@
 %A*2%         0x1d
 %A/2%         0x1e
 
+# IRQ addresses
+%IRQ0addr%  0x5f00
+%IRQ1addr%  0x5f02
+%IRQ2addr%  0x5f04
+%IRQ3addr%  0x5f06
+%IRQ4addr%  0x5f08
+%IRQ5addr%  0x5f0a
+%IRQ6addr%  0x5f0c
+%IRQ7addr%  0x5f0e
