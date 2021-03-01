@@ -161,6 +161,26 @@ x 0 IncrementPC DecrementD
 x 1 NextInstruction
 EOF
 
+# 16-bit store immediate: faster than a pair of ST
+# instructions but overwrites the D register.
+cat <<EOF
+
+[0x0e] ST16 @addr @data
+x 0 IncrementPC
+# PC now points at high byte of address
+x 1 AddrBusPC WriteDH IncrementPC
+# PC now points at low byte of address
+x 2 AddrBusPC WriteDL IncrementPC
+# PC now points at high byte of data
+x 3 AddrBusPC WriteTD IncrementPC
+# PC now points at low byte of data
+x 4 AddrBusD DataBusTD WriteRAM IncrementPC
+# PC now points at next instruction
+x 5 AddrBusPC WriteTD IncrementD
+x 6 AddrBusD DataBusTD WriteRAM
+x 7 NextInstruction
+EOF
+
 # Leave reserved instructions at the top of the range
 opcode=$(hex_to_dec 10)
 

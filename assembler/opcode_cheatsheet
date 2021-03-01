@@ -19,6 +19,9 @@ PUSH_{CH,CL,DH,DL}
 # Store $data at @addr
 ST @addr $data  ** TAH TAL TD **
 
+# Store 16-bit @data at @addr (overwrites D reg)
+ST16 @addr @data ** DH DL TD **
+
 # Store {reg} at @addr
 ST_{CH,CL,DH,DL,TD} @addr   ** TAH TAL **
 
