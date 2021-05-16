@@ -66,3 +66,19 @@
 %IRQ5addr%  0x5f0a
 %IRQ6addr%  0x5f0c
 %IRQ7addr%  0x5f0e
+
+# Colors
+%blue%      0x03
+%green%     0x0c
+%red%       0x30
+# yellow = red+green
+%yellow%    0x3c
+# cyan = green+blue
+%cyan%      0x0f
+# magenta = red+blue
+%magenta%   0x33
+# white = red+blue+green
+%white%     0x3f
+
+%cursor%    0x40
+%blink%     0x80

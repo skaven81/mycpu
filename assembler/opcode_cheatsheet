@@ -92,6 +92,13 @@ IRQID_{AH,AL,BH,BL,CH,CL,DH,DL}
 # Load the contents of the status register into a register
 STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 
+# Color byte masks
+0x03 blue   xx xx xx 11
+0x0c green  xx xx 11 xx
+0x30 red    xx 11 xx xx
+0x40 cursor x1 xx xx xx
+0x80 blink  1x xx xx xx
+
 # Timer rates
 0x0 1/2 sec
 0x1 1/4 sec
