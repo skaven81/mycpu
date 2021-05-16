@@ -174,10 +174,10 @@ x 2 AddrBusPC WriteDL IncrementPC
 # PC now points at high byte of data
 x 3 AddrBusPC WriteTD IncrementPC
 # PC now points at low byte of data
-x 4 AddrBusD DataBusTD WriteRAM IncrementPC
-# PC now points at next instruction
+x 4 AddrBusD DataBusTD WriteRAM
 x 5 AddrBusPC WriteTD IncrementD
-x 6 AddrBusD DataBusTD WriteRAM
+x 6 AddrBusD DataBusTD WriteRAM IncrementPC
+# PC now points at next instruction
 x 7 NextInstruction
 EOF
 
