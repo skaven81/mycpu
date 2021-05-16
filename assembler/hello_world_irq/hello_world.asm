@@ -16,13 +16,16 @@ ST16    %IRQ5addr%  .noirq
 ST16    %IRQ6addr%  .noirq
 ST16    %IRQ7addr%  .noirq
 
+# Enable interrupts
+UMASKINT
+
 ###
 # Main loop
 ###
 .top
 
 LDI_AH  '*'     # char to clear screen with
-LDI_AL  0x3f    # white, no blink, no cursor
+LDI_AL  %white%+%blink%
 CALL :clear_screen
 
 LDI_C   .hw
@@ -32,7 +35,7 @@ CALL :strcpy
 CALL .pause
 
 LDI_AH  '-'     # char to clear screen with
-LDI_AL  0x3f    # white, no blink, no cursor
+LDI_AL  %cyan%+%blink%
 CALL :clear_screen
 
 LDI_C   .hw
@@ -54,7 +57,7 @@ PUSH_CL
 PUSH_DH
 PUSH_DL
 LDI_AH  ' '     # char to clear the screen with
-LDI_AL  0x03    # red, no blink, no cursor
+LDI_AL  %magenta%+%cursor%
 CALL :clear_screen
 LDI_C   .irqtxt
 LDI_D   0x4000+1880 # 30 rows down, 56 chars over
