@@ -18,8 +18,8 @@ PUSH_DH
 PUSH_DL
 
 LDI_B   0x0f00                  # 64x60 chars to clear
-LDI_C   0x4000                  # framebuffer chars
-LDI_D   0x5000                  # framebuffer color
+LDI_C   %display_chars%         # framebuffer chars
+LDI_D   %display_color%         # framebuffer color
 
 .loop
 ALUOP_ADDR_C %A%+%AH%           # store AH into RAM@C (char)

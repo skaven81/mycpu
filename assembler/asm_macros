@@ -67,6 +67,10 @@
 %IRQ6addr%  0x5f0c
 %IRQ7addr%  0x5f0e
 
+# Display addresses
+%display_chars%   0x4000
+%display_color%   0x5000
+
 # Colors
 %blue%      0x03
 %green%     0x0c
@@ -82,3 +86,34 @@
 
 %cursor%    0x40
 %blink%     0x80
+
+# Keyboard macros
+%kb_key%        0xc000
+%kb_keyflags%   0xc001
+%kb_buflen%     0xc002
+%kb_kbctrl%     0xc003
+%kb_config%     0xc004
+
+%kb_keyflag_MAKEBREAK   0x01
+%kb_keyflag_SHIFT       0x02
+%kb_keyflag_CTRL        0x04
+%kb_keyflag_ALT         0x08
+%kb_keyflag_SUPER       0x10
+%kb_keyflag_GUI         0x20
+%kb_keyflag_FUNCTION    0x40
+
+%kb_kbctrl_NONE         0x00
+%kb_kbctrl_NUMLOCK_ON   0x01
+%kb_kbctrl_NUMLOCK_OFF  0x02
+%kb_kbctrl_CAPSLOCK_ON  0x03
+%kb_kbctrl_CAPSLOCK_OFF 0x04
+%kb_kbctrl_KB_RESET     0x05
+%kb_kbctrl_BUFCLEAR     0x06
+%kb_kbctrl_INTCLEAR     0x07
+
+%kb_config_INTMAKE      0x01
+%kb_config_INTBREAK     0x02
+%kb_config_INTSPECIAL   0x04
+%kb_config_INTCLR_READ  0x08
+%kb_config_BUFFER       0x10
+
