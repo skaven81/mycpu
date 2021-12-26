@@ -141,6 +141,71 @@ x 0 IncrementPC UnmaskInterrupts
 x 1 NextInstruction
 EOF
 
+# Special "slow" load and store operations for interacting with
+# I/O devices that can't respond as quickly as main memory
+cat <<EOF
+
+[0x06] LDS_TD @addr
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to next instruction
+x 3 AddrBusTA WriteTD
+x 4 AddrBusTA WriteTD
+x 5 AddrBusTA WriteTD
+x 6 AddrBusTA WriteTD
+x 7 AddrBusTA WriteTD
+x 8 AddrBusTA WriteTD
+x 9 AddrBusTA WriteTD
+x a AddrBusTA WriteTD
+x b AddrBusTA
+x c AddrBusTA
+x d AddrBusTA
+x e AddrBusTA
+x f NextInstruction
+
+[0x07] STS @addr \$data
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to data byte
+x 3 AddrBusPC WriteTD IncrementPC
+x 4 AddrBusTA DataBusTD WriteRAM
+x 5 AddrBusTA DataBusTD WriteRAM
+x 6 AddrBusTA DataBusTD WriteRAM
+x 7 AddrBusTA DataBusTD WriteRAM
+x 8 AddrBusTA DataBusTD WriteRAM
+x 9 AddrBusTA DataBusTD WriteRAM
+x a AddrBusTA DataBusTD WriteRAM
+x b AddrBusTA DataBusTD
+x c AddrBusTA DataBusTD
+x d AddrBusTA DataBusTD
+x e AddrBusTA DataBusTD
+x f NextInstruction
+
+[0x08] STS_TD @addr
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to next instruction
+x 3 AddrBusTA DataBusTD WriteRAM
+x 4 AddrBusTA DataBusTD WriteRAM
+x 5 AddrBusTA DataBusTD WriteRAM
+x 6 AddrBusTA DataBusTD WriteRAM
+x 7 AddrBusTA DataBusTD WriteRAM
+x 8 AddrBusTA DataBusTD WriteRAM
+x 9 AddrBusTA DataBusTD WriteRAM
+x a AddrBusTA DataBusTD WriteRAM
+x b AddrBusTA DataBusTD
+x c AddrBusTA DataBusTD
+x d AddrBusTA DataBusTD
+x e AddrBusTA DataBusTD
+x f NextInstruction
+EOF
+
 # Increment/decrement C and D
 cat <<EOF
 
