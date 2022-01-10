@@ -11,5 +11,5 @@ opcodes.out: $(OPCODES)
 	bash -c "$(OPCODES) > $@"
 
 keyboard_test.hex: $(SOURCES) $(LIBS) opcodes.out $(MACROS)
-	../assembler.py -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(SOURCES) $(LIBS) --output $@
+	../assembler.py -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(SOURCES) $(LIBS) --output $@ >assembler.log 2>&1
 
