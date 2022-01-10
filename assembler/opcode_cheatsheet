@@ -18,21 +18,15 @@ PUSH_{CH,CL,DH,DL}
 
 # Store $data at @addr
 ST @addr $data  ** TAH TAL TD **
-# Store $data at @addr, with extra clock ticks
-STS @addr $data  ** TAH TAL TD **
 
 # Store 16-bit @data at @addr (overwrites D reg)
 ST16 @addr @data ** DH DL TD **
 
 # Store {reg} at @addr
 ST_{CH,CL,DH,DL,TD} @addr   ** TAH TAL **
-# Store TD at @addr, with extra clock ticks
-STS_TD @addr   ** TAH TAL TD **
 
 # Load RAM@addr into {reg}
 LD_{AH,AL,BH,BL,CH,CL,DH,DL,TD} @addr   ** TAH TAL **
-# Load RAM@addr into LD, with extra clocks
-LDS_TD @addr    ** TAH TAL **
 
 # Load @word into {reg}
 LDI_{A,B,C,D} @word
