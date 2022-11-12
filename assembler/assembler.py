@@ -6,8 +6,7 @@ import fileinput
 import re
 import argparse
 import logging
-from pyparsing import Word, alphanums, nums, Regex, Literal, QuotedString, Or, And, Char, srange, printables, Optional, Combine, Group, StringStart, OneOrMore, oneOf
-from pyparsing.exceptions import ParseException
+from pyparsing import Word, alphanums, nums, Regex, Literal, QuotedString, Or, And, Char, srange, printables, Optional, Combine, Group, StringStart, OneOrMore, oneOf, ParseException
 
 parser = argparse.ArgumentParser(description='Assemble program ROM')
 parser.add_argument('--opcodes', default='opcodes', help='File containing opcodes')
