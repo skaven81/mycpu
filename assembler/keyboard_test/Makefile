@@ -13,3 +13,6 @@ opcodes.out: $(OPCODES)
 keyboard_test.hex: $(SOURCES) $(LIBS) opcodes.out $(MACROS)
 	../assembler.py -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(SOURCES) $(LIBS) --output $@ >assembler.log 2>&1
 
+program: keyboard_test.hex
+	/raid/msp430/projects/serial-eeprom-programmer/programmer --verify write keyboard_test.hex
+
