@@ -92,10 +92,78 @@
 %kb_keyflags%   0xc001
 
 # Keyflag register bits
-%kb_keyflag_MAKEBREAK%   0x01
+%kb_keyflag_BREAK%       0x01
 %kb_keyflag_SHIFT%       0x02
 %kb_keyflag_CTRL%        0x04
 %kb_keyflag_ALT%         0x08
 %kb_keyflag_SUPER%       0x10
 %kb_keyflag_GUI%         0x20
 %kb_keyflag_FUNCTION%    0x40
+
+# Timer clock (all data in BCD)
+%tmr_clk_sec%           0xc080
+%tmr_clk_min%           0xc081
+%tmr_clk_hr%            0xc082
+%tmr_clk_day%           0xc083
+%tmr_clk_date%          0xc084
+%tmr_clk_month%         0xc085
+%tmr_clk_month_mask%    0x0f
+%tmr_clk_year%          0xc086
+%tmr_clk_century%       0xc087
+
+# Timer alarm clock registers (all data in BCD)
+%tmr_alarm_sec%         0xc088
+%tmr_alarm_sec_mask%    0x7f
+%tmr_alarm_min%         0xc089
+%tmr_alarm_min_mask%    0x7f
+%tmr_alarm_hr%          0xc08a
+%tmr_alarm_hr_mask%     0x7f
+%tmr_alarm_daydate%     0xc08b
+%tmr_alarm_daydate_mask% 0x3f
+
+%tmr_alarm_AM1%         0xc088
+%tmr_alarm_AM1_mask%    0x80
+%tmr_alarm_AM2%         0xc089
+%tmr_alarm_AM2_mask%    0x80
+%tmr_alarm_AM3%         0xc08a
+%tmr_alarm_AM3_mask%    0x80
+%tmr_alarm_AM4%         0xc08b
+%tmr_alarm_AM4_mask%    0x80
+%tmr_alarm_DYDT%        0xc08b
+%tmr_alarm_DYDT_mask%   0x40
+
+# Timer watchdog registers (all data in BCD)
+%tmr_wdog_subsec%       0xc08c
+%tmr_wdog_sec%          0xc08d
+
+# Timer Battery backed SRAM
+%tmr_sram_addr%         0xc090
+%tmr_sram_data%         0xc093
+
+# Timer control registers
+%tmr_ctrl_a%            0xc08e
+%tmr_flags%             0xc08e
+%tmr_BLF_mask%          0xc0   # battery low flags: active high (2 bits)
+%tmr_PRS_mask%          0x20   # reset select: when low, /PWR is hi-Z when in power failure
+%tmr_PAB_mask%          0x10   # power active-bar control: when low, /PWR is in active-low; when 1, /PWR is in hi-Z
+%tmr_TDF_mask%          0x08   # time of day matches alarm when 1. Reading clears the flag.
+%tmr_KSF_mask%          0x04   # kickstart flag: kickstart has occurred (or write a 1 to force a kickstart)
+%tmr_WDF_mask%          0x02   # watchdog: if not written before %tmr_wdog_*% expires, this bit is set to 1. Clear this by writing a 0.
+%tmr_IRQF_mask%         0x01   # interrupt request: set to one if an interrupt is requested. cleared by reading 0xc08e (flag register)
+
+%tmr_ctrl_b%            0xc08f
+%tmr_TE_mask%           0x80   # transfer enable: when 1, clock data transfers to user side. disable to set alarm/clock data without a transfer interrupting
+%tmr_CS_mask%           0x40   # crystal select: 0=6pF, 1=12.5pF
+%tmr_BME_mask%          0x20   # burst mode enable: when 1, automatic incrementing enabled
+%tmr_TPE_mask%          0x10   # time-of-day/date alarm power-enable
+%tmr_TIE_mask%          0x08   # time-of-day/date interrupt-enable          *** LOW ON POWERUP
+%tmr_KIE_mask%          0x04   # allows KSF flag to assert an interrupt when 1
+%tmr_WDE_mask%          0x02   # watchdog enable, /RST or /IRQ pulled low based on WDS and WDF settings  *** LOW ON POWERUP
+%tmr_WDS_mask%          0x01   # watchdog steering, 0=/IRQ, 1=/RST          *** LOW ON POWERUP
+
+%tmr_ctrl_c%            0xc085
+%tmr_EOSC_mask%         0x80    # oscillator start/stop: active low,        *** LOW ON POWERUP
+%tmr_E32K_mask%         0x40    # 32kHz square wave enable: active low,     *** LOW ON POWERUP
+%tmr_BB32_mask%         0x20    # battery backup 32kHz enable: active high
+
+

@@ -1,0 +1,513 @@
+INFO:root:Reading opcodes.out for opcodes
+INFO:root:Reading ../asm_macros for assembly macros
+INFO:root:Generated grammar
+INFO:root:Replacing ASM macros and localizing labels
+INFO:root:Parsing source
+INFO:root:Incomplete assembly
+INFO:root:0000 00 NOP
+INFO:root:0001 04 MASKINT
+INFO:root:0002 0e ST16
+INFO:root:0003 5f @addr high
+INFO:root:0004 00 @addr low
+INFO:root:0005 hi>.TIMER_TEST_noirq @data high
+INFO:root:0006 lo>.TIMER_TEST_noirq @data low
+INFO:root:0007 0e ST16
+INFO:root:0008 5f @addr high
+INFO:root:0009 02 @addr low
+INFO:root:000a hi>.TIMER_TEST_irq1 @data high
+INFO:root:000b lo>.TIMER_TEST_irq1 @data low
+INFO:root:000c 0e ST16
+INFO:root:000d 5f @addr high
+INFO:root:000e 04 @addr low
+INFO:root:000f hi>.TIMER_TEST_noirq @data high
+INFO:root:0010 lo>.TIMER_TEST_noirq @data low
+INFO:root:0011 0e ST16
+INFO:root:0012 5f @addr high
+INFO:root:0013 06 @addr low
+INFO:root:0014 hi>.TIMER_TEST_irq3 @data high
+INFO:root:0015 lo>.TIMER_TEST_irq3 @data low
+INFO:root:0016 0e ST16
+INFO:root:0017 5f @addr high
+INFO:root:0018 08 @addr low
+INFO:root:0019 hi>.TIMER_TEST_noirq @data high
+INFO:root:001a lo>.TIMER_TEST_noirq @data low
+INFO:root:001b 0e ST16
+INFO:root:001c 5f @addr high
+INFO:root:001d 0a @addr low
+INFO:root:001e hi>.TIMER_TEST_noirq @data high
+INFO:root:001f lo>.TIMER_TEST_noirq @data low
+INFO:root:0020 0e ST16
+INFO:root:0021 5f @addr high
+INFO:root:0022 0c @addr low
+INFO:root:0023 hi>.TIMER_TEST_noirq @data high
+INFO:root:0024 lo>.TIMER_TEST_noirq @data low
+INFO:root:0025 0e ST16
+INFO:root:0026 5f @addr high
+INFO:root:0027 0e @addr low
+INFO:root:0028 hi>.TIMER_TEST_noirq @data high
+INFO:root:0029 lo>.TIMER_TEST_noirq @data low
+INFO:root:002a 54 LDI_AH
+INFO:root:002b 00 $byte
+INFO:root:002c 55 LDI_AL
+INFO:root:002d 3f $byte
+INFO:root:002e 01 CALL
+INFO:root:002f hi>:clear_screen @addr high
+INFO:root:0030 lo>:clear_screen @addr low
+INFO:root:0031 10 ST
+INFO:root:0032 c0 @addr high
+INFO:root:0033 8d @addr low
+INFO:root:0034 00 $data
+INFO:root:0035 10 ST
+INFO:root:0036 c0 @addr high
+INFO:root:0037 8c @addr low
+INFO:root:0038 25 $data
+INFO:root:0039 10 ST
+INFO:root:003a c0 @addr high
+INFO:root:003b 8e @addr low
+INFO:root:003c 00 $data
+INFO:root:003d 10 ST
+INFO:root:003e c0 @addr high
+INFO:root:003f 8f @addr low
+INFO:root:0040 82 $data
+INFO:root:0041 05 UMASKINT
+INFO:root:0042 20 JMP     <-- .TIMER_TEST_main_loop
+INFO:root:0043 hi>.TIMER_TEST_main_loop @addr high
+INFO:root:0044 lo>.TIMER_TEST_main_loop @addr low
+INFO:root:0045 ff HLT
+INFO:root:0046 1e LD_TD     <-- .TIMER_TEST_irq1
+INFO:root:0047 c0 @addr high
+INFO:root:0048 00 @addr low
+INFO:root:0049 03 RETI
+INFO:root:004a 17 LD_AL     <-- .TIMER_TEST_irq3
+INFO:root:004b c0 @addr high
+INFO:root:004c 8e @addr low
+INFO:root:004d 17 LD_AL
+INFO:root:004e c0 @addr high
+INFO:root:004f 80 @addr low
+INFO:root:0050 57 LDI_BL
+INFO:root:0051 0f $byte
+INFO:root:0052 91 ALUOP_PUSH
+INFO:root:0053 12 $op
+INFO:root:0054 98 ALUOP_AL
+INFO:root:0055 1a $op
+INFO:root:0056 98 ALUOP_AL
+INFO:root:0057 1a $op
+INFO:root:0058 98 ALUOP_AL
+INFO:root:0059 1a $op
+INFO:root:005a 91 ALUOP_PUSH
+INFO:root:005b 1a $op
+INFO:root:005c 17 LD_AL
+INFO:root:005d c0 @addr high
+INFO:root:005e 81 @addr low
+INFO:root:005f 91 ALUOP_PUSH
+INFO:root:0060 12 $op
+INFO:root:0061 98 ALUOP_AL
+INFO:root:0062 1a $op
+INFO:root:0063 98 ALUOP_AL
+INFO:root:0064 1a $op
+INFO:root:0065 98 ALUOP_AL
+INFO:root:0066 1a $op
+INFO:root:0067 91 ALUOP_PUSH
+INFO:root:0068 1a $op
+INFO:root:0069 17 LD_AL
+INFO:root:006a c0 @addr high
+INFO:root:006b 82 @addr low
+INFO:root:006c 91 ALUOP_PUSH
+INFO:root:006d 12 $op
+INFO:root:006e 98 ALUOP_AL
+INFO:root:006f 1a $op
+INFO:root:0070 98 ALUOP_AL
+INFO:root:0071 1a $op
+INFO:root:0072 98 ALUOP_AL
+INFO:root:0073 1a $op
+INFO:root:0074 91 ALUOP_PUSH
+INFO:root:0075 1a $op
+INFO:root:0076 52 LDI_C
+INFO:root:0077 40 @word high
+INFO:root:0078 64 @word low
+INFO:root:0079 57 LDI_BL
+INFO:root:007a 30 $byte
+INFO:root:007b 40 POP_AL
+INFO:root:007c 95 ALUOP_ADDR_C
+INFO:root:007d 05 $op
+INFO:root:007e 0a INCR_C
+INFO:root:007f 40 POP_AL
+INFO:root:0080 95 ALUOP_ADDR_C
+INFO:root:0081 05 $op
+INFO:root:0082 0a INCR_C
+INFO:root:0083 5d LDI_TD
+INFO:root:0084 3a $byte
+INFO:root:0085 88 STA_C_TD
+INFO:root:0086 0a INCR_C
+INFO:root:0087 40 POP_AL
+INFO:root:0088 95 ALUOP_ADDR_C
+INFO:root:0089 05 $op
+INFO:root:008a 0a INCR_C
+INFO:root:008b 40 POP_AL
+INFO:root:008c 95 ALUOP_ADDR_C
+INFO:root:008d 05 $op
+INFO:root:008e 0a INCR_C
+INFO:root:008f 5d LDI_TD
+INFO:root:0090 3a $byte
+INFO:root:0091 88 STA_C_TD
+INFO:root:0092 0a INCR_C
+INFO:root:0093 40 POP_AL
+INFO:root:0094 95 ALUOP_ADDR_C
+INFO:root:0095 05 $op
+INFO:root:0096 0a INCR_C
+INFO:root:0097 40 POP_AL
+INFO:root:0098 95 ALUOP_ADDR_C
+INFO:root:0099 05 $op
+INFO:root:009a 17 LD_AL
+INFO:root:009b 40 @addr high
+INFO:root:009c 00 @addr low
+INFO:root:009d 90 ALUOP_FLAGS
+INFO:root:009e 03 $op
+INFO:root:009f 23 JZ
+INFO:root:00a0 hi>.TIMER_TEST_set_star @addr high
+INFO:root:00a1 lo>.TIMER_TEST_set_star @addr low
+INFO:root:00a2 10 ST
+INFO:root:00a3 40 @addr high
+INFO:root:00a4 00 @addr low
+INFO:root:00a5 00 $data
+INFO:root:00a6 03 RETI
+INFO:root:00a7 10 ST     <-- .TIMER_TEST_set_star
+INFO:root:00a8 40 @addr high
+INFO:root:00a9 00 @addr low
+INFO:root:00aa 2a $data
+INFO:root:00ab 03 RETI     <-- .TIMER_TEST_noirq
+INFO:root:00ac 91 ALUOP_PUSH     <-- :clear_screen
+INFO:root:00ad 84 $op
+INFO:root:00ae 91 ALUOP_PUSH
+INFO:root:00af 04 $op
+INFO:root:00b0 31 PUSH_CH
+INFO:root:00b1 32 PUSH_CL
+INFO:root:00b2 33 PUSH_DH
+INFO:root:00b3 34 PUSH_DL
+INFO:root:00b4 51 LDI_B
+INFO:root:00b5 0f @word high
+INFO:root:00b6 00 @word low
+INFO:root:00b7 52 LDI_C
+INFO:root:00b8 40 @word high
+INFO:root:00b9 00 @word low
+INFO:root:00ba 53 LDI_D
+INFO:root:00bb 50 @word high
+INFO:root:00bc 00 @word low
+INFO:root:00bd 95 ALUOP_ADDR_C     <-- .CLEARSCREEN_loop
+INFO:root:00be 43 $op
+INFO:root:00bf 0a INCR_C
+INFO:root:00c0 96 ALUOP_ADDR_D
+INFO:root:00c1 03 $op
+INFO:root:00c2 0c INCR_D
+INFO:root:00c3 9a ALUOP_BL
+INFO:root:00c4 09 $op
+INFO:root:00c5 26 JNO
+INFO:root:00c6 hi>.CLEARSCREEN_decr16_done @addr high
+INFO:root:00c7 lo>.CLEARSCREEN_decr16_done @addr low
+INFO:root:00c8 99 ALUOP_BH
+INFO:root:00c9 89 $op
+INFO:root:00ca 90 ALUOP_FLAGS     <-- .CLEARSCREEN_decr16_done
+INFO:root:00cb 04 $op
+INFO:root:00cc 24 JNZ
+INFO:root:00cd hi>.CLEARSCREEN_loop @addr high
+INFO:root:00ce lo>.CLEARSCREEN_loop @addr low
+INFO:root:00cf 90 ALUOP_FLAGS
+INFO:root:00d0 84 $op
+INFO:root:00d1 24 JNZ
+INFO:root:00d2 hi>.CLEARSCREEN_loop @addr high
+INFO:root:00d3 lo>.CLEARSCREEN_loop @addr low
+INFO:root:00d4 46 POP_DL
+INFO:root:00d5 45 POP_DH
+INFO:root:00d6 44 POP_CL
+INFO:root:00d7 43 POP_CH
+INFO:root:00d8 42 POP_BL
+INFO:root:00d9 41 POP_BH
+INFO:root:00da 02 RET
+INFO:root:00db 91 ALUOP_PUSH     <-- :strcpy
+INFO:root:00dc 43 $op
+INFO:root:00dd 6e LDA_C_AH     <-- .STRCPY_loop
+INFO:root:00de 90 ALUOP_FLAGS
+INFO:root:00df 43 $op
+INFO:root:00e0 23 JZ
+INFO:root:00e1 hi>.STRCPY_done @addr high
+INFO:root:00e2 lo>.STRCPY_done @addr low
+INFO:root:00e3 96 ALUOP_ADDR_D
+INFO:root:00e4 43 $op
+INFO:root:00e5 0a INCR_C
+INFO:root:00e6 0c INCR_D
+INFO:root:00e7 20 JMP
+INFO:root:00e8 hi>.STRCPY_loop @addr high
+INFO:root:00e9 lo>.STRCPY_loop @addr low
+INFO:root:00ea 3f POP_AH     <-- .STRCPY_done
+INFO:root:00eb 02 RET
+INFO:root:Updating labels
+INFO:root:0005: hi>.TIMER_TEST_noirq->00
+INFO:root:0006: lo>.TIMER_TEST_noirq->ab
+INFO:root:000a: hi>.TIMER_TEST_irq1->00
+INFO:root:000b: lo>.TIMER_TEST_irq1->46
+INFO:root:000f: hi>.TIMER_TEST_noirq->00
+INFO:root:0010: lo>.TIMER_TEST_noirq->ab
+INFO:root:0014: hi>.TIMER_TEST_irq3->00
+INFO:root:0015: lo>.TIMER_TEST_irq3->4a
+INFO:root:0019: hi>.TIMER_TEST_noirq->00
+INFO:root:001a: lo>.TIMER_TEST_noirq->ab
+INFO:root:001e: hi>.TIMER_TEST_noirq->00
+INFO:root:001f: lo>.TIMER_TEST_noirq->ab
+INFO:root:0023: hi>.TIMER_TEST_noirq->00
+INFO:root:0024: lo>.TIMER_TEST_noirq->ab
+INFO:root:0028: hi>.TIMER_TEST_noirq->00
+INFO:root:0029: lo>.TIMER_TEST_noirq->ab
+INFO:root:002f: hi>:clear_screen->00
+INFO:root:0030: lo>:clear_screen->ac
+INFO:root:0043: hi>.TIMER_TEST_main_loop->00
+INFO:root:0044: lo>.TIMER_TEST_main_loop->42
+INFO:root:00a0: hi>.TIMER_TEST_set_star->00
+INFO:root:00a1: lo>.TIMER_TEST_set_star->a7
+INFO:root:00c6: hi>.CLEARSCREEN_decr16_done->00
+INFO:root:00c7: lo>.CLEARSCREEN_decr16_done->ca
+INFO:root:00cd: hi>.CLEARSCREEN_loop->00
+INFO:root:00ce: lo>.CLEARSCREEN_loop->bd
+INFO:root:00d2: hi>.CLEARSCREEN_loop->00
+INFO:root:00d3: lo>.CLEARSCREEN_loop->bd
+INFO:root:00e1: hi>.STRCPY_done->00
+INFO:root:00e2: lo>.STRCPY_done->ea
+INFO:root:00e8: hi>.STRCPY_loop->00
+INFO:root:00e9: lo>.STRCPY_loop->dd
+INFO:root:Writing 236 bytes to timer_test.hex
+Final assembly
+0000 00 # NOP
+0001 04 # MASKINT
+0002 0e # ST16
+0003 5f # @addr high
+0004 00 # @addr low
+0005 00 # @data high
+0006 ab # @data low
+0007 0e # ST16
+0008 5f # @addr high
+0009 02 # @addr low
+000a 00 # @data high
+000b 46 # @data low
+000c 0e # ST16
+000d 5f # @addr high
+000e 04 # @addr low
+000f 00 # @data high
+0010 ab # @data low
+0011 0e # ST16
+0012 5f # @addr high
+0013 06 # @addr low
+0014 00 # @data high
+0015 4a # @data low
+0016 0e # ST16
+0017 5f # @addr high
+0018 08 # @addr low
+0019 00 # @data high
+001a ab # @data low
+001b 0e # ST16
+001c 5f # @addr high
+001d 0a # @addr low
+001e 00 # @data high
+001f ab # @data low
+0020 0e # ST16
+0021 5f # @addr high
+0022 0c # @addr low
+0023 00 # @data high
+0024 ab # @data low
+0025 0e # ST16
+0026 5f # @addr high
+0027 0e # @addr low
+0028 00 # @data high
+0029 ab # @data low
+002a 54 # LDI_AH
+002b 00 # $byte
+002c 55 # LDI_AL
+002d 3f # $byte
+002e 01 # CALL
+002f 00 # @addr high
+0030 ac # @addr low
+0031 10 # ST
+0032 c0 # @addr high
+0033 8d # @addr low
+0034 00 # $data
+0035 10 # ST
+0036 c0 # @addr high
+0037 8c # @addr low
+0038 25 # $data
+0039 10 # ST
+003a c0 # @addr high
+003b 8e # @addr low
+003c 00 # $data
+003d 10 # ST
+003e c0 # @addr high
+003f 8f # @addr low
+0040 82 # $data
+0041 05 # UMASKINT
+0042 20 # JMP <-- .TIMER_TEST_main_loop
+0043 00 # @addr high
+0044 42 # @addr low
+0045 ff # HLT
+0046 1e # LD_TD <-- .TIMER_TEST_irq1
+0047 c0 # @addr high
+0048 00 # @addr low
+0049 03 # RETI
+004a 17 # LD_AL <-- .TIMER_TEST_irq3
+004b c0 # @addr high
+004c 8e # @addr low
+004d 17 # LD_AL
+004e c0 # @addr high
+004f 80 # @addr low
+0050 57 # LDI_BL
+0051 0f # $byte
+0052 91 # ALUOP_PUSH
+0053 12 # $op
+0054 98 # ALUOP_AL
+0055 1a # $op
+0056 98 # ALUOP_AL
+0057 1a # $op
+0058 98 # ALUOP_AL
+0059 1a # $op
+005a 91 # ALUOP_PUSH
+005b 1a # $op
+005c 17 # LD_AL
+005d c0 # @addr high
+005e 81 # @addr low
+005f 91 # ALUOP_PUSH
+0060 12 # $op
+0061 98 # ALUOP_AL
+0062 1a # $op
+0063 98 # ALUOP_AL
+0064 1a # $op
+0065 98 # ALUOP_AL
+0066 1a # $op
+0067 91 # ALUOP_PUSH
+0068 1a # $op
+0069 17 # LD_AL
+006a c0 # @addr high
+006b 82 # @addr low
+006c 91 # ALUOP_PUSH
+006d 12 # $op
+006e 98 # ALUOP_AL
+006f 1a # $op
+0070 98 # ALUOP_AL
+0071 1a # $op
+0072 98 # ALUOP_AL
+0073 1a # $op
+0074 91 # ALUOP_PUSH
+0075 1a # $op
+0076 52 # LDI_C
+0077 40 # @word high
+0078 64 # @word low
+0079 57 # LDI_BL
+007a 30 # $byte
+007b 40 # POP_AL
+007c 95 # ALUOP_ADDR_C
+007d 05 # $op
+007e 0a # INCR_C
+007f 40 # POP_AL
+0080 95 # ALUOP_ADDR_C
+0081 05 # $op
+0082 0a # INCR_C
+0083 5d # LDI_TD
+0084 3a # $byte
+0085 88 # STA_C_TD
+0086 0a # INCR_C
+0087 40 # POP_AL
+0088 95 # ALUOP_ADDR_C
+0089 05 # $op
+008a 0a # INCR_C
+008b 40 # POP_AL
+008c 95 # ALUOP_ADDR_C
+008d 05 # $op
+008e 0a # INCR_C
+008f 5d # LDI_TD
+0090 3a # $byte
+0091 88 # STA_C_TD
+0092 0a # INCR_C
+0093 40 # POP_AL
+0094 95 # ALUOP_ADDR_C
+0095 05 # $op
+0096 0a # INCR_C
+0097 40 # POP_AL
+0098 95 # ALUOP_ADDR_C
+0099 05 # $op
+009a 17 # LD_AL
+009b 40 # @addr high
+009c 00 # @addr low
+009d 90 # ALUOP_FLAGS
+009e 03 # $op
+009f 23 # JZ
+00a0 00 # @addr high
+00a1 a7 # @addr low
+00a2 10 # ST
+00a3 40 # @addr high
+00a4 00 # @addr low
+00a5 00 # $data
+00a6 03 # RETI
+00a7 10 # ST <-- .TIMER_TEST_set_star
+00a8 40 # @addr high
+00a9 00 # @addr low
+00aa 2a # $data
+00ab 03 # RETI <-- .TIMER_TEST_noirq
+00ac 91 # ALUOP_PUSH <-- :clear_screen
+00ad 84 # $op
+00ae 91 # ALUOP_PUSH
+00af 04 # $op
+00b0 31 # PUSH_CH
+00b1 32 # PUSH_CL
+00b2 33 # PUSH_DH
+00b3 34 # PUSH_DL
+00b4 51 # LDI_B
+00b5 0f # @word high
+00b6 00 # @word low
+00b7 52 # LDI_C
+00b8 40 # @word high
+00b9 00 # @word low
+00ba 53 # LDI_D
+00bb 50 # @word high
+00bc 00 # @word low
+00bd 95 # ALUOP_ADDR_C <-- .CLEARSCREEN_loop
+00be 43 # $op
+00bf 0a # INCR_C
+00c0 96 # ALUOP_ADDR_D
+00c1 03 # $op
+00c2 0c # INCR_D
+00c3 9a # ALUOP_BL
+00c4 09 # $op
+00c5 26 # JNO
+00c6 00 # @addr high
+00c7 ca # @addr low
+00c8 99 # ALUOP_BH
+00c9 89 # $op
+00ca 90 # ALUOP_FLAGS <-- .CLEARSCREEN_decr16_done
+00cb 04 # $op
+00cc 24 # JNZ
+00cd 00 # @addr high
+00ce bd # @addr low
+00cf 90 # ALUOP_FLAGS
+00d0 84 # $op
+00d1 24 # JNZ
+00d2 00 # @addr high
+00d3 bd # @addr low
+00d4 46 # POP_DL
+00d5 45 # POP_DH
+00d6 44 # POP_CL
+00d7 43 # POP_CH
+00d8 42 # POP_BL
+00d9 41 # POP_BH
+00da 02 # RET
+00db 91 # ALUOP_PUSH <-- :strcpy
+00dc 43 # $op
+00dd 6e # LDA_C_AH <-- .STRCPY_loop
+00de 90 # ALUOP_FLAGS
+00df 43 # $op
+00e0 23 # JZ
+00e1 00 # @addr high
+00e2 ea # @addr low
+00e3 96 # ALUOP_ADDR_D
+00e4 43 # $op
+00e5 0a # INCR_C
+00e6 0c # INCR_D
+00e7 20 # JMP
+00e8 00 # @addr high
+00e9 dd # @addr low
+00ea 3f # POP_AH <-- .STRCPY_done
+00eb 02 # RET
