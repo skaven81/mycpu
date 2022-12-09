@@ -45,7 +45,7 @@ STA_B_{CH,CL,DH,DL,TAL,TD}
 STA_C_{DH,DL,TD}
 STA_D_{CH,CL,TD}
 
-# Jumps - all also have _D variant
+# Jumps to fixed address
 JMP @addr   ** TD **
 JEQ @addr   ** TD **
 JNE @addr   ** TD **
@@ -54,13 +54,14 @@ JNZ @addr   ** TD **
 JO @addr    ** TD **
 JNO @addr   ** TD **
 
-JMP_D @addr
-JEQ_D @addr
-JNE_D @addr
-JZ_D @addr
-JNZ_D @addr
-JO_D @addr
-JNO_D @addr
+# Jumps to address in D register
+JMP_D
+JEQ_D
+JNE_D
+JZ_D
+JNZ_D
+JO_D
+JNO_D
 
 # ALU operations
 ALUOP_FLAGS $op
