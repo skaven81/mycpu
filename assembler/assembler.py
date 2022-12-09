@@ -92,6 +92,18 @@ label = Combine(labelprefix + Word(alphanums+"_"))
 label.setName('label')
 labeloffset = Combine(labelprefix + Word(':', alphanums+"_-+"))
 labeloffset.setName('labeloffset')
+# Variable declarations. `global` assigns a permanent address from the variable pool,
+# and the name will be valid across all assembler files.  `local` assigns an address
+# from the local pool, so an address might get reused across multiple files, and the
+# name is localized to just the file.  Both `byte` and `word` return a single 16-bit
+# address, but `word` also marks the following byte as reserved.
+#  VAR {global|local} {byte|word} $name
+varprefix = Literal('VAR').setResultsName('var_declare')
+varscope = Combine(Literal('global') | Literal('local')).setResultsName('scope')
+varsize = Combine(Literal('byte') | Literal('word')).setResultsName('size')
+varname = Combine(Literal('$') + Word(alphanums+"_")).setResultsName('var')
+var = varprefix + varscope + varsize + varname
+var.setName('var')
 # Bytes can be represented in binary, hex, char, or a number (0-255 or -128-127)
 # and may include embedded arithmetic
 #  OPCODE 0b00001100
@@ -155,9 +167,9 @@ for opcode in opcodes.values():
                 arg_grammar = byte
         elif arg.startswith('@'):
             if arg_grammar:
-                arg_grammar = arg_grammar + word
+                arg_grammar = arg_grammar + (word ^ varname)
             else:
-                arg_grammar = word
+                arg_grammar = (word ^ varname)
         else:
             raise SyntaxError("Argument with unknown sigil: {}".format(arg))
     if arg_grammar:
@@ -167,7 +179,7 @@ for opcode in opcodes.values():
 
 opcode = Or(opcode_syntax)
 # Grammar is all of this OR'd
-grammar = StringStart() + ((data.setResultsName('data') ^ label.setResultsName('label') ^ opcode) + Optional(comment)) | Optional(comment)
+grammar = StringStart() + ((data.setResultsName('data') ^ label.setResultsName('label') ^ opcode ^ var) + Optional(comment)) | Optional(comment)
 logging.info("Generated grammar")
 logging.debug(grammar)
 
@@ -224,8 +236,16 @@ asm_addr = 0
 assembly = [ ]
 labels = { }
 label_addrs = { }
+global_vars = { }
+next_global_var = 0x5f10 # hidden framebuffer, 240 bytes, after interrupt addresses
+current_file = None
 for input_file, line_num, line in concat_source:
     logging.debug("{:16.16s} {:3d}: IN:  {}".format(input_file, line_num, line))
+    if input_file != current_file:
+        # Reset local vars for each new file
+        local_vars = { }
+        next_local_var = 0x4f00 # hidden framebuffer, 256 bytes
+        current_file = input_file
     try:
         match = grammar.parseString(line, parseAll=True).asDict()
     except ParseException:
@@ -247,12 +267,30 @@ for input_file, line_num, line in concat_source:
     if 'data' in match:
         labels[match['data'][0]] = len(assembly)
         label_addrs[len(assembly)] = match['data'][0]
-        logging.debug("{:16.16s} {:3d} Label {} => 0x{:04x} => {}".format(input_file, line_num, match['data'][0], len(assembly), match['data'][1]))
+        logging.debug("{:16.16s} {:3d}: Label {} => 0x{:04x} => {}".format(input_file, line_num, match['data'][0], len(assembly), match['data'][1]))
         match['data'][1] = match['data'][1].replace('\\n', '\n')
         match['data'][1] = match['data'][1].replace('\\r', '\t')
         match['data'][1] = match['data'][1].replace('\\0', '\0')
         for i in match['data'][1]:
             assembly.append({"val": ord(i), "msg": "{} {}".format(match['data'][0], i if ord(i) >= 32 else "\\{:02x}".format(ord(i))) })
+
+    # variable declaration
+    if 'var_declare' in match:
+        if match['scope'] == 'global':
+            logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_global_var))
+            global_vars[match['var']] = next_global_var
+            next_global_var += 1
+            if match['size'] == 'word':
+                next_global_var += 1
+        elif match['scope'] == 'local':
+            logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_local_var))
+            local_vars[match['var']] = next_local_var
+            next_local_var += 1
+            if match['size'] == 'word':
+                next_local_var += 1
+        else:
+            raise SyntaxError('Variable declaration must include local or global scope')
+        continue
 
     # opcode: machine instruction plus args
     if 'opcode' in match:
@@ -281,16 +319,24 @@ for input_file, line_num, line in concat_source:
                         asm.append({"val": match_arg, "msg": op_arg})
                         arg_description.append("{}({}->{:02x})".format(op_arg, match_arg, match_arg))
                 elif op_arg.startswith('@'):
-                    # word = binword | hexword | label | number
+                    # word = binword | hexword | label | number | var
                     if type(match_arg) is str:
-                        if len(match_arg) > 1 and (match_arg.startswith('.') or match_arg.startswith(':')):
+                        if (match_arg in global_vars) or (match_arg in local_vars):
+                            # This is a variable, so substitute the variable name
+                            var_val = local_vars.get(match_arg, global_vars.get(match_arg))
+                            highbyte = (var_val >> 8)
+                            lowbyte = (var_val & 0x00ff)
+                            arg_description.append("{}({}->{:02x}+{:02x})".format(op_arg, match_arg, highbyte, lowbyte))
+                            asm.append({"val": highbyte, "msg": "{} high".format(op_arg)})
+                            asm.append({"val": lowbyte, "msg": "{} low".format(op_arg)})
+                        elif len(match_arg) > 1 and (match_arg.startswith('.') or match_arg.startswith(':')):
                             # For the first pass we just put the label in, and will resolve
                             # it on the second pass.
                             arg_description.append("{}({})".format(op_arg, match_arg))
                             asm.append({"val": "hi>{}".format(match_arg), "msg": "{} high".format(op_arg)})
                             asm.append({"val": "lo>{}".format(match_arg), "msg": "{} low".format(op_arg)})
                         else:
-                            raise SyntaxError("{} Line {}: argument {} is a string, but does not look like a label".format(input_file, line_num, op_arg))
+                            raise SyntaxError("{} Line {}: argument {}:{} is a string, but does not look like a label or declared variable name".format(input_file, line_num, op_arg, match_arg))
                     else:
                         if match_arg < -32768 or match_arg > 65535:
                             raise SyntaxError("{} Line {}: argument {} must be between -32768 and 65535".format(input_file, line_num, op_arg))
