@@ -1,3 +1,6 @@
+# Variable declaration
+VAR {global,local} {byte,word} $name
+
 # Transfer operations
 MOV_CH_{AH,AL,BH,BL,TAL,TD}
 MOV_CL_{AH,AL,BH,BL,TAL,TD}
