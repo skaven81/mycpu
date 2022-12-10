@@ -53,7 +53,7 @@
 %B<<1%        0x1b
 %B>>1%        0x1c
 
-# Arithmetic shifting
+# Arithmetic shifting (preserves MSB of operand)
 %A*2%         0x1d
 %A/2%         0x1e
 
