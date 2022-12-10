@@ -167,9 +167,9 @@ for opcode in opcodes.values():
                 arg_grammar = byte
         elif arg.startswith('@'):
             if arg_grammar:
-                arg_grammar = arg_grammar + (word ^ varname)
+                arg_grammar = arg_grammar + word
             else:
-                arg_grammar = (word ^ varname)
+                arg_grammar = word
         else:
             raise SyntaxError("Argument with unknown sigil: {}".format(arg))
     if arg_grammar:
@@ -246,6 +246,20 @@ for input_file, line_num, line in concat_source:
         local_vars = { }
         next_local_var = 0x4f00 # hidden framebuffer, 256 bytes
         current_file = input_file
+
+    # We have to replace variables inline so that the pyparsing bits that
+    # handle math (e.g. `$some_var+1`) will work as expected.
+    if not line.startswith('VAR'):
+        newline = line
+        for v in re.findall('\$[a-zA-Z0-9_]+', line):
+            varval = local_vars.get(v, global_vars.get(v, None))
+            if not varval:
+                raise SyntaxError(f"In {input_file} line {line_num}: undefined variable {v}")
+            newline = newline.replace(v, f"0x{varval:04x}")
+        if newline != line:
+            logging.debug("{:16.16s} {:3d}: VAR: {}".format(input_file, line_num, newline))
+            line = newline;
+    
     try:
         match = grammar.parseString(line, parseAll=True).asDict()
     except ParseException:
@@ -321,15 +335,7 @@ for input_file, line_num, line in concat_source:
                 elif op_arg.startswith('@'):
                     # word = binword | hexword | label | number | var
                     if type(match_arg) is str:
-                        if (match_arg in global_vars) or (match_arg in local_vars):
-                            # This is a variable, so substitute the variable name
-                            var_val = local_vars.get(match_arg, global_vars.get(match_arg))
-                            highbyte = (var_val >> 8)
-                            lowbyte = (var_val & 0x00ff)
-                            arg_description.append("{}({}->{:02x}+{:02x})".format(op_arg, match_arg, highbyte, lowbyte))
-                            asm.append({"val": highbyte, "msg": "{} high".format(op_arg)})
-                            asm.append({"val": lowbyte, "msg": "{} low".format(op_arg)})
-                        elif len(match_arg) > 1 and (match_arg.startswith('.') or match_arg.startswith(':')):
+                        if len(match_arg) > 1 and (match_arg.startswith('.') or match_arg.startswith(':')):
                             # For the first pass we just put the label in, and will resolve
                             # it on the second pass.
                             arg_description.append("{}({})".format(op_arg, match_arg))
