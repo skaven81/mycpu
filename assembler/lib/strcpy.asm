@@ -9,7 +9,8 @@
 # in D after returning from this function.
 #
 # After execution, both C and D will point to the
-# address of the null byte.
+# address of the null byte (with D not having yet
+# written the null byte)
 #
 # Inputs:
 #  C: Source address
