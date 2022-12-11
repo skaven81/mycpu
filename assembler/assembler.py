@@ -184,11 +184,13 @@ logging.info("Generated grammar")
 logging.debug(grammar)
 
 #####
-# Replace ASM macros and localize labels in the source
+# Replace ASM macros and localize labels in the source.  Also find and define global vars
 #####
-logging.info("Replacing ASM macros and localizing labels")
+logging.info("Replacing ASM macros, localizing labels, and finding global vars")
 line_num = 0
 concat_source = [ ]
+global_vars = { }
+next_global_var = 0x5f10 # hidden framebuffer, 240 bytes, after interrupt addresses
 for input_file in args.sources:
     label_prefix="{}_".format(input_file.split('/')[-1].split('.')[0].replace(' ','_')).upper()
     with open(input_file, 'r') as fh:
@@ -228,6 +230,19 @@ for input_file in args.sources:
                 logging.debug("{:16.16s} Line {}: [{}]->[{}]".format(input_file, line_num, oldline, newline))
             concat_source.append((input_file, line_num, newline))
 
+            # Look for global variable declarations
+            try:
+                match = grammar.parseString(newline, parseAll=True).asDict()
+            except ParseException:
+                pass # ignore parsing exceptions for now, we'll catch them later
+            if match and 'var_declare' in match and match['scope'] == 'global':
+                logging.debug("{:16.16s} Line {}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_global_var))
+                global_vars[match['var']] = next_global_var
+                next_global_var += 1
+                if match['size'] == 'word':
+                    next_global_var += 1
+
+
 #####
 # Parse the assembly
 #####
@@ -236,8 +251,6 @@ asm_addr = 0
 assembly = [ ]
 labels = { }
 label_addrs = { }
-global_vars = { }
-next_global_var = 0x5f10 # hidden framebuffer, 240 bytes, after interrupt addresses
 current_file = None
 for input_file, line_num, line in concat_source:
     logging.debug("{:16.16s} {:3d}: IN:  {}".format(input_file, line_num, line))
@@ -291,11 +304,7 @@ for input_file, line_num, line in concat_source:
     # variable declaration
     if 'var_declare' in match:
         if match['scope'] == 'global':
-            logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_global_var))
-            global_vars[match['var']] = next_global_var
-            next_global_var += 1
-            if match['size'] == 'word':
-                next_global_var += 1
+            logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x} (already defined)".format(input_file, line_num, match['scope'], match['var'], global_vars[match['var']]))
         elif match['scope'] == 'local':
             logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_local_var))
             local_vars[match['var']] = next_local_var
