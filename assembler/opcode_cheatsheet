@@ -103,16 +103,6 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 0x40 cursor x1 xx xx xx
 0x80 blink  1x xx xx xx
 
-# Timer rates
-0x0 1/2 sec
-0x1 1/4 sec
-0x2 1/8 sec
-0x3 1/16 sec
-0x4 1/32 sec
-0x5 1/64 sec
-0x6 1/128 sec
-0x7 1/256 sec
-
 # Memory ranges
 0x0000 - 0x3eff program data (ROM)
 0x4000 - 0x4eff framebuffer chars
