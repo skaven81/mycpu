@@ -13,3 +13,5 @@ opcodes.out: $(OPCODES)
 color_test.hex: $(SOURCES) $(LIBS) opcodes.out $(MACROS)
 	../assembler.py -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(SOURCES) $(LIBS) --output $@
 
+program: color_test.hex
+	/raid/msp430/projects/serial-eeprom-programmer/programmer --verify write color_test.hex
