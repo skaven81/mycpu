@@ -26,6 +26,7 @@ RET
 :cursor_off
 ST $crsr_on 0
 JMP :cursor_display_sync
+
 :cursor_on
 ST $crsr_on 1
 JMP :cursor_display_sync
@@ -64,16 +65,20 @@ RET
 # Outputs:
 #  A = 12 bit absolute offset
 ALUOP_PUSH %B%+%BL%
-ALUOP_AH %AH%+%A>>1%        # shift AH right one position
-JNO .co_one                 # if this did not result in a carry out, skip next steps
+LDI_BL 0b00000001           # mask to get the LSB
+ALUOP_FLAGS %A&B%+%AH%+%BL% # check if LSB is set
+JZ .co_one
 LDI_BL 0b01000000           # mask used to set the 7th bit
 ALUOP_AL %AL%+%BL%+%A|B%    # set the 7th bit in AL
 .co_one
-ALUOP_AH %AH%+%A>>1%        # shift AH right one position
-JNO .co_two                 # if this did not result in a carry out, skip next steps
-LDI_BL 0b10000000           # mask used to set 8th bit
+LDI_BL 0b00000010           # mask to get the LSB-1
+ALUOP_FLAGS %A&B%+%AH%+%BL% # check if LSB-1 is set
+JZ .co_two
+LDI_BL 0b10000000           # mask used to set the 8th bit
 ALUOP_AL %AL%+%BL%+%A|B%    # set the 8th bit in AL
 .co_two
+ALUOP_AH %AH%+%A>>1%        # shift AH right one position
+ALUOP_AH %AH%+%A>>1%        # shift AH right one position
 POP_BL
 RET
 
@@ -90,39 +95,33 @@ ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
 
-# First we need to turn off the cursor at the current cursor location
+# First we need to turn off the cursor at the current cursor location.
 LD_DH $crsr_addr_color
-LD_DL $crsr_addr_color+1                        # D reg has the current cursor address in color space
-LDA_D_AH                                        # Load RAM@D into AH - current color flags for cursor
-ALUOP_ADDR_D %AH%+%A_clrcursor%                 # Clear the cursor bit from that byte and store it back
+LD_DL $crsr_addr_color+1            # D reg has the current cursor address in color space
+LDA_D_AH                            # Load RAM@D into AH - current color flags for cursor
+ALUOP_ADDR_D %AH%+%A_clrcursor%     # Clear the cursor bit from that byte and store it back
 
-# Get our row argument back
+# Get our row argument back off the stack
 PEEK_AH
 
 # Store the new row and column into our global vars
 ALUOP_ADDR %A%+%AL% $crsr_col
 ALUOP_ADDR %A%+%AH% $crsr_row
 
-# turn row,col into an offset
-CALL :cursor_offset         # convert the col,row to an offset in A
+# turn row,col into an offset stored in A
+CALL :cursor_offset
 
 # add %display_chars% to the offset and store in $crsr_addr_chars
-LD_BH $crsr_addr_chars      # put the char base addr in B
-LD_BL $crsr_addr_chars+1    # put the char base addr in B
-ALUOP_ADDR %A+B%+%AL%+%BL% $crsr_addr_chars+1 # add the offset to BL and store in global var
-JNO .cg_one                 # skip BH increment if no overflow
-ALUOP_BH %B+1%+%BH%         # increment BH on overflow
-.cg_one
-ALUOP_ADDR %A+B%+%AH%+%BH% $crsr_addr_chars  # add the offset to BH and store in global var
+LDI_B %display_chars%                   # put the char base addr in B
+CALL :add16_to_b                        # B now contains the new cursor absolute address
+ALUOP_ADDR %B%+%BH% $crsr_addr_chars    # store the new absolute address in RAM
+ALUOP_ADDR %B%+%BL% $crsr_addr_chars+1
 
 # add %display_color% to the offset and store in $crsr_addr_color
-LD_BH $crsr_addr_color      # put the char base addr in B
-LD_BL $crsr_addr_color+1    # put the char base addr in B
-ALUOP_ADDR %A+B%+%AL%+%BL% $crsr_addr_color+1 # add the offset to BL and store in global var
-JNO .cg_one                 # skip BH increment if no overflow
-ALUOP_BH %B+1%+%BH%         # increment BH on overflow
-.cg_one
-ALUOP_ADDR %A+B%+%AH%+%BH% $crsr_addr_color  # add the offset to BH and store in global var
+LDI_B %display_color%                   # put the color base addr in B
+CALL :add16_to_b                        # B now contains the new cursor absolute address
+ALUOP_ADDR %B%+%BH% $crsr_addr_color    # store the new absolute address in RAM
+ALUOP_ADDR %B%+%BL% $crsr_addr_color+1
 
 # Set or clear the cursor bit at the new location
 CALL :cursor_display_sync
