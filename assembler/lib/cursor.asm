@@ -40,13 +40,14 @@ ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
 LD_DH $crsr_addr_color
 LD_DL $crsr_addr_color+1    # address of our cursor in the color space in D
+LDA_D_AH                    # Load the color data at the cursor into AH
 LD_AL $crsr_on              # Load the cursor flag into AL
 ALUOP_FLAGS %A%+%AL%        # Check if AL is 0 or non-zero
 JZ .cs_off
-ALUOP_ADDR_D %AH%+%A_setcursor% # set the cursor bit in AH and store at $crsr_addr_color
+ALUOP_ADDR_D %AH%+%A_setcursor% # set the cursor bit in AH and store it back at $crsr_addr_color
 JMP .cs_done
 .cs_off
-ALUOP_ADDR_D %AH%+%A_clrcursor% # clear the cursor bit in AH and store at $crsr_addr_color
+ALUOP_ADDR_D %AH%+%A_clrcursor% # clear the cursor bit in AH and store it back at $crsr_addr_color
 .cs_done
 POP_AH
 POP_AL
