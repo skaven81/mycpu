@@ -15,8 +15,7 @@ PUSH_DL
 ALUOP_PUSH %A%+%AL%
 
 ####
-# Save the current IRQ1 and IRQ3 addresses.  Use D because it's mangled by
-# the ST16 instruction, so this reduces the backup/restore work we have to do
+# Save the current IRQ1 and IRQ3 addresses.
 LD_DH   %IRQ1addr%
 LD_DL   %IRQ1addr%+1
 PUSH_DH

@@ -23,13 +23,18 @@ PUSH_{CH,CL,DH,DL}
 ST @addr $data  ** TAH TAL TD **
 
 # Store 16-bit @data at @addr (overwrites D reg)
-ST16 @addr @data ** DH DL TD **
+ST16 @addr @data ** TD **
 
 # Store {reg} at @addr
 ST_{CH,CL,DH,DL,TD} @addr   ** TAH TAL **
 
 # Load RAM@addr into {reg}
 LD_{AH,AL,BH,BL,CH,CL,DH,DL,TD} @addr   ** TAH TAL **
+
+# Load 16-bit word at @addr into A or B. Use separate
+# LD_* instructions for C and D.  LD16 takes 10 clocks;
+# LD takes 5, so there is no performance difference.
+LD16_{A,B} @addr
 
 # Load @word into {reg}
 LDI_{A,B,C,D} @word

@@ -11,15 +11,11 @@ VAR global byte $crsr_on
 :cursor_init
 # Initialize the global variables; cursor is set to 0,0 (top left corner) with
 # the cursor showing (on)
-PUSH_DH                         # ST16 overwrites D register
-PUSH_DL                         # ST16 overwrites D register
 ST $crsr_row 0
 ST $crsr_col 0
 ST $crsr_on 1
 ST16 $crsr_addr_chars %display_chars%
 ST16 $crsr_addr_color %display_color%
-POP_DL
-POP_DH
 RET
 
 # Turns the cursor flag on or off, then jumps to :cursor_display_sync

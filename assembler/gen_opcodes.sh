@@ -161,24 +161,36 @@ x 0 IncrementPC DecrementD
 x 1 NextInstruction
 EOF
 
-# 16-bit store immediate: faster than a pair of ST
-# instructions but overwrites the D register.
+# 16-bit store immediate.  This is a single-instruction implementation of:
+# (3) PUSH_DL
+# (3) PUSH_DH
+# (6) ST @addr @data
+# (5) ST @addr+1 @data+1
+# (2) POP_DH
+# (2) POP_DL
+# So doing this in normal instructions would take 21 clocks, but we do it here in 11.
 cat <<EOF
 
 [0x0e] ST16 @addr @data
-x 0 IncrementPC
+x 0 IncrementPC IncrementSP
 # PC now points at high byte of address
-x 1 AddrBusPC WriteDH IncrementPC
+# Push D reg onto stack
+x 1 AddrBusSP DataBusDL WriteRAM IncrementSP
+x 2 AddrBusSP DataBusDH WriteRAM
+x 3 AddrBusPC WriteDH IncrementPC
 # PC now points at low byte of address
-x 2 AddrBusPC WriteDL IncrementPC
+x 4 AddrBusPC WriteDL IncrementPC
 # PC now points at high byte of data
-x 3 AddrBusPC WriteTD IncrementPC
+x 5 AddrBusPC WriteTD IncrementPC
 # PC now points at low byte of data
-x 4 AddrBusD DataBusTD WriteRAM
-x 5 AddrBusPC WriteTD IncrementD
-x 6 AddrBusD DataBusTD WriteRAM IncrementPC
+x 6 AddrBusD DataBusTD WriteRAM
+x 7 AddrBusPC WriteTD IncrementD
+x 8 AddrBusD DataBusTD WriteRAM IncrementPC
 # PC now points at next instruction
-x 7 NextInstruction
+# Pop D reg from stack
+x 9 AddrBusSP WriteDH DecrementSP
+x a AddrBusSP WriteDL DecrementSP
+x b NextInstruction
 EOF
 
 # Leave reserved instructions at the top of the range
@@ -730,6 +742,37 @@ x 1 NextInstruction
 EOF
 let "opcode = opcode + 1"
 done
+
+# Load a whole word from RAM into A or B.  We can't do this into C or
+# D because of limitations in the CDSEL control signal (can't put D
+# on address bus and write CL/CH, or vice-versa).
+opcode=$(hex_to_dec f0)
+for to_reg in A B; do
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] LD16_${to_reg} @addr
+x 0 IncrementPC IncrementSP
+# Push D reg onto stack
+x 1 AddrBusSP DataBusDL WriteRAM IncrementSP
+x 2 AddrBusSP DataBusDH WriteRAM
+# PC now points at high byte of address
+x 3 AddrBusPC WriteDH IncrementPC
+# PC now points at low byte of address
+x 4 AddrBusPC WriteDL IncrementPC
+# D now points at high byte of data
+x 5 AddrBusD Write${to_reg}H
+x 6 IncrementD
+# D now points at low byte of data
+x 7 AddrBusD Write${to_reg}L
+# PC now points at next instruction
+# Pop D reg from stack
+x 8 AddrBusSP WriteDH DecrementSP
+x 9 AddrBusSP WriteDL DecrementSP
+x a NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+
 
 # Halt: goes into infinite loop of loading the program
 # counter address into the opcode register, but never
