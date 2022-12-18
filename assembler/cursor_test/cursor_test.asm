@@ -8,9 +8,9 @@ NOP
 # Install default IRQ handlers.
 MASKINT
 ST16    %IRQ0addr%  .noirq
-ST16    %IRQ1addr%  .noirq
+ST16    %IRQ1addr%  :kb_clear_irq
 ST16    %IRQ2addr%  .noirq
-ST16    %IRQ3addr%  .noirq
+ST16    %IRQ3addr%  :timer_clear_irq
 ST16    %IRQ4addr%  .noirq
 ST16    %IRQ5addr%  .noirq
 ST16    %IRQ6addr%  .noirq
@@ -33,8 +33,10 @@ CALL :clear_screen
 CALL :cursor_init
 CALL :cursor_display_sync
 
-# Setup the keyboard handler
-LD_TD  %kb_key%  # clear any pending KB interrupt
+# Clear any pending KB interrupts
+CALL :timer_clear_irq
+
+# Setup our own keyboard handler
 ST16    %IRQ1addr%  .irq1_kb
 UMASKINT
 
@@ -102,28 +104,21 @@ LDI_AH 0                # loop row to zero after 59
 JMP .irq1_refresh
 
 .irq1_refresh
-PUSH_DH
-PUSH_DL
+# blank out the current char location
 LD_DH $crsr_addr_chars
 LD_DL $crsr_addr_chars+1
 LDI_TD 0x00
 STA_D_TD
-POP_DL
-POP_DH
+# move the cursor to row AH, col AL
 CALL :cursor_goto
-PUSH_DH
-PUSH_DL
+# write a happy face to the new location
 LD_DH $crsr_addr_chars
 LD_DL $crsr_addr_chars+1
 LDI_TD 0x02
 STA_D_TD
-POP_DL
-POP_DH
 
 .irq1_done
 RETI
 
-# Disabled IRQ handlers simply return without doing anything
 .noirq
 RETI
-
