@@ -61,7 +61,7 @@ ALUOP_PUSH %B%+%BH%
 LD_AH   $kb_buf_ptr_write
 LD_AL   $kb_buf_ptr_write+1
 LD_BH   %kb_keyflags%
-LD_BL   0xf0                # mask for ring buffer, lower byte of 0xbef0
+LDI_BL   0xf0               # mask for ring buffer, lower byte of 0xbef0
 ALUOP_ADDR_A    %B%+%BH%    # write keyflags to buffer write location
 ALUOP_AL %A+1%+%AL%         # increment write pointer
 ALUOP_AL %A|B%+%AL%+%BL%    # mask to keep lower byte between f0 and ff
@@ -71,7 +71,7 @@ ALUOP_AL %A+1%+%AL%         # increment write pointer
 ALUOP_AL %A|B%+%AL%+%BL%    # mask to keep lower byte between f0 and ff
 
 # write lower byte of write address back
-ALUOP_ADDR $kb_buf_ptr_write+1 %A%+%AL%
+ALUOP_ADDR %A%+%AL% $kb_buf_ptr_write+1
 
 POP_BH
 POP_BL
@@ -88,7 +88,7 @@ ALUOP_PUSH %B%+%BL%
 
 LD_AL $kb_buf_ptr_write+1
 LD_BL $kb_buf_ptr_read+1
-ALUOP_AL %A-B%+%AL%+%BL%    # $write_addr - $read_addr = bufsize (but might be negative if write has wrapped)
+ALUOP_AL %A-B%+%AL%+%BL%    # write_addr - read_addr = bufsize (but might be negative if write has wrapped)
 LDI_BL 0x0f
 ALUOP_AL %A&B%+%AL%+%BL%    # mask off the top four bits to get the absolute value
 
