@@ -28,6 +28,12 @@ ST16 @addr @data ** TD **
 # Store {reg} at @addr
 ST_{CH,CL,DH,DL,TD} @addr   ** TAH TAL **
 
+# Store into RAM@{addr_reg} from {reg}
+STA_A_{CH,CL,DH,DL,TAL,TD}  ** TAH TAL **
+STA_B_{CH,CL,DH,DL,TAL,TD}
+STA_C_{DH,DL,TD}
+STA_D_{CH,CL,TD}
+
 # Load RAM@addr into {reg}
 LD_{AH,AL,BH,BL,CH,CL,DH,DL,TD} @addr   ** TAH TAL **
 
@@ -46,12 +52,6 @@ LDA_A_{BH,BL,CH,CL,DH,DL,TAL,TD}
 LDA_B_{AH,AL,CH,CL,DH,DL,TAL,TD}
 LDA_C_{AH,AL,BH,BL,TAL,TD}
 LDA_D_{AH,AL,BH,BL,TAL,TD}
-
-# Store into RAM@{addr_reg} from {reg}
-STA_A_{CH,CL,DH,DL,TAL,TD}  ** TAH TAL **
-STA_B_{CH,CL,DH,DL,TAL,TD}
-STA_C_{DH,DL,TD}
-STA_D_{CH,CL,TD}
 
 # Jumps to fixed address
 JMP @addr   ** TD **
@@ -116,7 +116,7 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 0x5f00 - 0x5f0f interrupt addresses
 0x5f10 - 0x5fff hidden framebuffer (global asm vars)
 0x6000 - 0xbdff RAM
-0xbe00 - 0xbeff heap (lib/heap.asm)
+0xbb00 - 0xbeff heap (lib/heap.asm)
 0xbf00 - 0xbfff CPU stack
 0xc000 - 0xffff peripherals
 
