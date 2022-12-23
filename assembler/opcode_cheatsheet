@@ -116,7 +116,8 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 0x5f00 - 0x5f0f interrupt addresses
 0x5f10 - 0x5fff hidden framebuffer (global asm vars)
 0x6000 - 0xbdff RAM
-0xbb00 - 0xbeff heap (lib/heap.asm)
+0xbb00 - 0xbef0 heap (lib/heap.asm)
+0xbef0 - 0xbeff keyboard buffer (lib/keyboard.asm)
 0xbf00 - 0xbfff CPU stack
 0xc000 - 0xffff peripherals
 
