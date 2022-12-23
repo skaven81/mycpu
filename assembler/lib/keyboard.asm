@@ -14,18 +14,15 @@ PUSH_DH
 PUSH_DL
 ALUOP_PUSH %A%+%AL%
 
-####
 # Save the current IRQ1 address
 LD_DH   %IRQ1addr%
 LD_DL   %IRQ1addr%+1
 PUSH_DH
 PUSH_DL
 
-####
 # Set up IRQ1 to use our handler
 ST16    %IRQ1addr%  :kb_clear_irq
 
-####
 # Pause for 0.75 sec
 LDI_AH  0x00    # BCD, seconds
 LDI_AL  0x75    # BCD, subseconds
