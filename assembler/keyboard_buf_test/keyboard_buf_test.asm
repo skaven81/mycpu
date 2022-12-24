@@ -55,17 +55,26 @@ STA_D_TD                # enable blinking cursor
 LD_TD  %kb_key%         # clear any pending KB interrupt
 ST16 %IRQ1addr%  :kb_irq_buf
 UMASKINT                # Enable KB interrupt
+
 .main_loop
 # Put a red box over the current cursor location
 LDI_TD  0xff
 STA_C_TD
 LDI_TD %red%+%cursor%
 STA_D_TD
+
 # Sleep for 1.5 seconds
 LDI_AH 0x01 # BCD seconds
 LDI_AL 0x50 # BCD subseconds
 CALL :sleep
-# Back from sleeping, process any buffered keystrokes
+
+# Back from sleeping, turn red box off
+LDI_TD  0x00
+STA_C_TD
+LDI_TD %white%+%cursor%
+STA_D_TD
+
+# Process any buffered keystrokes
 .buf_loop
 CALL :kb_bufsize # bufsize into AL
 ALUOP_FLAGS %A%+%AL%
