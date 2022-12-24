@@ -35,6 +35,11 @@ CALL :strcpy
 # Initialize the keyboard
 CALL :keyboard_init
 
+# Clear the screen
+LDI_AH  0x00     # char to clear screen with
+LDI_AL  %white%
+CALL :clear_screen
+
 # Track cursor position in regs C (char) and D (color)
 LDI_C   %display_chars%
 LDI_TD  '>'             # prompt character
