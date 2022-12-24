@@ -11,8 +11,8 @@
 MASKINT                 # Don't process interrupts until we're ready
 
 # initialize keyboard buffer pointer
-ST16 $kb_buf_ptr_write 0xbef0
-ST16 $kb_buf_ptr_read 0xbef0
+ST16 $kb_buf_ptr_write 0xbe00
+ST16 $kb_buf_ptr_read 0xbe00
 
 PUSH_DH
 PUSH_DL
@@ -55,26 +55,21 @@ VAR global word $kb_buf_ptr_read
 :kb_irq_buf
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %B%+%BL%
 ALUOP_PUSH %B%+%BH%
 
 LD_AH   $kb_buf_ptr_write
 LD_AL   $kb_buf_ptr_write+1
 LD_BH   %kb_keyflags%
-LDI_BL   0xf0               # mask for ring buffer, lower byte of 0xbef0
 ALUOP_ADDR_A    %B%+%BH%    # write keyflags to buffer write location
-ALUOP_AL %A+1%+%AL%         # increment write pointer
-ALUOP_AL %A|B%+%AL%+%BL%    # mask to keep lower byte between f0 and ff
+ALUOP_AL %A+1%+%AL%         # increment write pointer, wraps back to 00
 LD_BH   %kb_key%
 ALUOP_ADDR_A    %B%+%BH%    # write key to buffer write location
-ALUOP_AL %A+1%+%AL%         # increment write pointer
-ALUOP_AL %A|B%+%AL%+%BL%    # mask to keep lower byte between f0 and ff
+ALUOP_AL %A+1%+%AL%         # increment write pointer, wraps back to 00
 
 # write lower byte of write address back
 ALUOP_ADDR %A%+%AL% $kb_buf_ptr_write+1
 
 POP_BH
-POP_BL
 POP_AH
 POP_AL
 RETI
@@ -88,11 +83,9 @@ ALUOP_PUSH %B%+%BL%
 
 LD_AL $kb_buf_ptr_write+1
 LD_BL $kb_buf_ptr_read+1
-ALUOP_AL %A-B%+%AL%+%BL%    # write_addr - read_addr = bufsize (but might be negative if write has wrapped)
-LDI_BL 0x0f
-ALUOP_AL %A&B%+%AL%+%BL%    # mask off the top four bits to get the absolute value
-
-POP_BL
+ALUOP_AL %A-B%+%AL%+%BL%    # write_addr - read_addr = bufsize. If read_addr>write_addr,
+                            # result is negative, but wraps around so we still get the
+POP_BL                      # absolute value back.
 RET
 
 ######
@@ -111,16 +104,10 @@ ALUOP_PUSH %B%+%BL%
 LD_BH   $kb_buf_ptr_read
 LD_BL   $kb_buf_ptr_read+1
 LDA_B_AH                # load the keyflags into AH
-ALUOP_PUSH %A%+%AH%     # ..and push onto stack as we still need AH for computation
-LDI_AH  0xf0            # mask for wrapping read address
-ALUOP_BL %B+1%+%BL%
-ALUOP_BL %A|B%+%AH%+%BL% # increment BL but wrap ff to f0
+ALUOP_BL %B+1%+%BL%     # increment BL
 LDA_B_AL                # load the character into AL
-ALUOP_BL %B+1%+%BL%
-ALUOP_BL %A|B%+%AH%+%BL% # increment BL but wrap ff to f0
-ALUOP_ADDR %B%+%BL% $kb_buf_ptr_read+1 # save read pointer back to RAM
-
-POP_AH                  # get keyflags off the stack
+ALUOP_BL %B+1%+%BL%     # increment BL
+ALUOP_ADDR %B%+%BL% $kb_buf_ptr_read+1 # save new read pointer back to RAM
 
 POP_BL
 POP_BH

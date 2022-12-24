@@ -2,13 +2,13 @@
 
 # Software heap, generally used for storing extra subroutine arguments
 #
-# The heap lives at 0xbb00 and can grow up to 0xbef0 (just under 1K)
+# The heap lives at 0xba00 and can grow up to 0xbdff (1K)
 VAR global word $heap_ptr
 
 ######
 # Initialize the heap
 :heap_init
-ST16 $heap_ptr 0xbb00
+ST16 $heap_ptr 0xba00
 RET
 
 ######
