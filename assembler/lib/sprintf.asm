@@ -7,16 +7,17 @@
 # C and D still pointing to the beginning of their respective strings.
 #
 # %% - a literal percent sign
-# %2 - a byte is popped and formatted as binary 1s and 0s
-# %b - a byte is popped and formatted as BCD, one number per byte (first four bits are ignored)
-# %B - a byte is popped and formatted as BCD, two numbers per byte
-# %x - a byte is popped and formatted in hex
-# %X - a byte is popped and formatted in hex, with capital letters
-# %d - a byte is popped and formatted as an unsigned integer decimal (0-255)
-# %D - a word is popped and formatted as an unsigned integer decimal (0-65535)
-# %i - a byte is popped and formatted as a signed integer decimal (-128-127)
-# %I - a word is popped and formatted as a signed integer decimal (-32768-32767)
-# %s - a word is popped and used as a pointer to a null-terminated string, which is copied into the formatted string
+# %c - a byte formatted as ASCII (the raw byte is just inserted into the target string)
+# %2 - a byte formatted as binary 1s and 0s
+# %b - a BCD byte formatted as decimal, one digit per byte (first four bits are ignored)
+# %B - a BCD byte formatted as decimal, two digits per byte
+# %x - a byte formatted as hex
+# %X - a byte formatted as hex, with capital letters
+# %u - a byte formatted as unsigned decimal (0-255)
+# %U - a word formatted as unsigned decimal (0-65535)
+# %d - a byte formatted as a signed decimal (-128-127)
+# %D - a word formatted as a signed decimal (-32768-32767)
+# %s - a word used as a pointer to a null-terminated string, which is copied into the formatted string
 
 :sprintf
 ALUOP_PUSH %A%+%AH%
@@ -46,7 +47,8 @@ INCR_D
 JMP .fmt_loop
 
 # the percent itself doesn't get copied to the target string,
-# so increment C and load the next character into BL
+# so increment C and load the next character into BL.  Then
+# increment C again to move past that character
 .handle_percent
 INCR_C
 LDA_C_BL
@@ -56,6 +58,9 @@ INCR_C
 LDI_AL '%'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_literal_percent
+LDI_AL 'c'
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JEQ .handle_char
 LDI_AL '2'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_binary
@@ -71,16 +76,16 @@ JEQ .handle_hex
 LDI_AL 'X'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_hex_capital
-LDI_AL 'd'
+LDI_AL 'u'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_decimal_byte
-LDI_AL 'D'
+LDI_AL 'U'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_decimal_word
-LDI_AL 'i'
+LDI_AL 'd'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_signed_decimal_byte
-LDI_AL 'I'
+LDI_AL 'D'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_signed_decimal_word
 LDI_AL 's'
@@ -113,6 +118,11 @@ INCR_D
 JMP .fmt_loop
 
 
+#### %c char
+.handle_char
+JMP .fmt_loop
+
+
 #### %2 8-bit binary
 .handle_binary
 JMP .fmt_loop
@@ -130,6 +140,23 @@ JMP .fmt_loop
 
 #### %x hex with lowercase chars
 .handle_hex
+PUSH_CL
+LDI_CL 'a'-10
+CALL .handle_hex_real
+POP_CL
+JMP .fmt_loop
+
+#### %X hex with uppercase chars
+.handle_hex_capital
+PUSH_CL
+LDI_CL 'A'-10
+CALL .handle_hex_real
+POP_CL
+JMP .fmt_loop
+
+# The code is the same for upper and lower case, the only difference is
+# the offset for the a-f vs A-F, which we stored in CL above.
+.handle_hex_real
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %B%+%BH%
@@ -150,7 +177,7 @@ JO .hex_letter_upper            # use a-f
 LDI_AH '0'                      # otherwise use numbers
 JMP .hex_apply_upper
 .hex_letter_upper
-LDI_AH 'a'-10                   # use letters
+MOV_CL_AH                       # use letters
 .hex_apply_upper
 ALUOP_AH %A+B%+%AH%+%BL%        # AH now has the char we want
 
@@ -163,7 +190,7 @@ JO .hex_letter_lower            # use a-f
 LDI_BH '0'                      # otherwise use numbers
 JMP .hex_apply_lower
 .hex_letter_lower
-LDI_BH 'a'-10                   # use letters
+MOV_CL_BH                       # use letters
 .hex_apply_lower
 ALUOP_BH %A+B%+%BH%+%AL%        # BH now has the char we want
 
@@ -174,12 +201,7 @@ POP_BL
 POP_BH
 POP_AL
 POP_AH
-JMP .fmt_loop
-
-
-#### %X hex with uppercase chars
-.handle_hex_capital
-JMP .fmt_loop
+RET
 
 
 #### %d unsigned decimal byte 0-255
