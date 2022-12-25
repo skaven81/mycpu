@@ -69,7 +69,7 @@ ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_bcd_one
 LDI_AL 'B'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .handle_bcd_two
+JEQ .handle_hex     # two-char BCD is equivalent to hex conversion
 LDI_AL 'x'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_hex
@@ -125,19 +125,53 @@ JMP .fmt_loop
 
 #### %2 8-bit binary
 .handle_binary
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+PUSH_CL
+
+CALL :heap_pop_AL               # get byte from heap
+LDI_AH 8
+
+.binary_loop
+ALUOP_AL %A<<1%+%AL%            # shift AL left
+JO .binary_one                  # if Cout, that was a one
+LDI_CL '0'                      # otherwise, it's a zero
+JMP .onezero_done
+.binary_one
+LDI_CL '1'
+.onezero_done
+STA_D_CL                        # write the zero or one to the output string
+INCR_D                          # and move to the next place
+
+ALUOP_AH %A-1%+%AH%
+JNZ .binary_loop                # loop 8 times to get all 8 bits
+
+POP_CL
+POP_AH
+POP_AL
 JMP .fmt_loop
 
 
 #### %b BCD with one char per byte
 .handle_bcd_one
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+
+CALL :heap_pop_AL               # get byte from heap
+LDI_BL 0x0f                     # mask for just lower nybble
+ALUOP_AL %A&B%+%AL%+%BL%        # AL now has just the lower nybble
+LDI_BL '0'                      # character offset
+ALUOP_AL %A+B%+%AL%+%BL%        # AL now has the char we want
+
+ALUOP_ADDR_D %A%+%AL%           # store the converted upper nybble into D
+INCR_D                          # and increment the destination address
+
+POP_BL
+POP_AL
 JMP .fmt_loop
 
 
-#### %B BCD with two chars per byte
-.handle_bcd_two
-JMP .fmt_loop
-
-
+#### %B BCD with two chars per byte, or
 #### %x hex with lowercase chars
 .handle_hex
 PUSH_CL
