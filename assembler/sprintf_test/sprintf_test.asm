@@ -42,7 +42,7 @@ CALL :sprintf
 
 HLT
 
-.fmt1 "Percent:[%%] hex:[0x%x%x 0x%x%x] error:[%$]\0"
+.fmt1 "Percent:[%%] hex:[0x%X%x 0x%X%x] error:[%$]\0"
 .fmt2 "An error %y and a substring [%s]\0"
 .substr "Hello, world!\0"
 
