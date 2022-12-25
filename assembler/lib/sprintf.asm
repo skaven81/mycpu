@@ -120,6 +120,11 @@ JMP .fmt_loop
 
 #### %c char
 .handle_char
+ALUOP_PUSH %A%+%AL%
+CALL :heap_pop_AL
+ALUOP_ADDR_D %A%+%AL%
+INCR_D
+POP_AL
 JMP .fmt_loop
 
 
