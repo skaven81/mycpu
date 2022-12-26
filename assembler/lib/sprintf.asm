@@ -159,6 +159,10 @@ JMP .fmt_loop
 
 #### %b BCD with one char per byte
 .handle_bcd_one
+CALL .handle_bcd_one_real
+JMP .fmt_loop
+
+.handle_bcd_one_real
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %B%+%BL%
 
@@ -173,7 +177,7 @@ INCR_D                          # and increment the destination address
 
 POP_BL
 POP_AL
-JMP .fmt_loop
+RET
 
 
 #### %B BCD with two chars per byte, or
@@ -243,12 +247,22 @@ POP_AH
 RET
 
 
-#### %d unsigned decimal byte 0-255
+#### %u unsigned decimal byte 0-255
 .handle_decimal_byte
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+CALL :heap_pop_AL
+CALL :double_dabble_byte        # AH+AL now contains BCD representation [00][00]-[02][55]
+CALL :heap_push_AH
+CALL .handle_bcd_one_real
+CALL :heap_push_AL
+CALL .handle_hex_real           # hex = BCD representation for doubled digits
+POP_AL
+POP_AH
 JMP .fmt_loop
 
 
-#### %D unsigned decimal word 0-65535
+#### %U unsigned decimal word 0-65535
 .handle_decimal_word
 JMP .fmt_loop
 
