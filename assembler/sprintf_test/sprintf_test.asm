@@ -110,6 +110,10 @@ LDI_A 7270
 CALL :heap_push_A
 LDI_A 247
 CALL :heap_push_A
+LDI_A 18 
+CALL :heap_push_A
+LDI_A 4  
+CALL :heap_push_A
 LDI_D %display_chars%+768
 CALL :sprintf
 
@@ -143,7 +147,7 @@ HLT
 .fmt4 "BCD-short HH:MM %b:%b   Raw chars [%c%c%c%c]\0"
 .fmt5 "Decimal 9 [%u] 37 [%u] 125 [%u] 255 [%u] 0 [%u]\0"
 .fmt6 "Signed -9 [%d] 37 [%d] -125 [%d] 127 [%d] -127 [%d]\0"
-.fmt7 "Word 247 [%U] 7270 [%U] 42017 [%U]\0"
+.fmt7 "Word 4 [%U] 18 [%U] 247 [%U] 7270 [%U] 42017 [%U]\0"
 .fmt8 "Signed Word 247 [%D] 7270 [%D] 32017 [%D]\0"
 .fmt9 "Signed Word -247 [%D] -7270 [%D] -32017 [%D]\0"
 

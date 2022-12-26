@@ -246,6 +246,58 @@ POP_AL
 POP_AH
 RET
 
+# writes decimal byte while ignoring leading zeroes
+.write_decimal_byte_without_leading_zeros
+ALUOP_PUSH %B%+%BH%
+LDI_BH 0x0f
+ALUOP_FLAGS %A&B%+%AH%+%BH%     # See if AH lower nybble is zero. If so, don't print anything
+JZ .hdb1
+CALL :heap_push_AH
+CALL .handle_bcd_one_real
+.hdb1
+CALL :heap_push_AL
+LDI_BH 0xf0
+ALUOP_FLAGS %A&B%+%AL%+%BH%     # see if AL upper nybble is zero.  If so, only print the lower one
+JZ .hdb2
+CALL .handle_hex_real           # hex = BCD representation for doubled digits
+JMP .hdb_done
+.hdb2
+CALL .handle_bcd_one_real
+.hdb_done
+POP_BH
+RET
+
+# writes decimal word while ignoring leading zeros
+.write_decimal_word_without_leading_zeros
+ALUOP_PUSH %B%+%BH%
+ALUOP_FLAGS %B%+%BL%
+JZ .hdw1                        # skip ten thousands if zero
+CALL :heap_push_BL
+CALL .handle_bcd_one_real
+.hdw1
+ALUOP_FLAGS %A%+%AH%            # skip thousands and hundreds if zero
+JZ .hdw3
+CALL :heap_push_AH
+LDI_BH 0xf0
+ALUOP_FLAGS %A&B%+%AH%+%BH%     # check if upper nybble of AH is nonzero
+JZ .hdw2
+CALL .handle_hex_real           # hex = BCD representation for doubled digits
+JMP .hdw3
+.hdw2
+CALL .handle_bcd_one_real
+.hdw3
+CALL :heap_push_AL
+LDI_BH 0xf0
+ALUOP_FLAGS %A&B%+%AL%+%BH%     # check if upper nybble of AL is nonzero
+JZ .hdw4
+CALL .handle_hex_real           # hex = BCD representation for doubled digits
+JMP .hdw5
+.hdw4
+CALL .handle_bcd_one_real
+.hdw5
+POP_BH
+RET
+
 
 #### %u unsigned decimal byte 0-255
 .handle_decimal_byte
@@ -253,10 +305,7 @@ ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
 CALL :heap_pop_AL
 CALL :double_dabble_byte        # AH+AL now contains BCD representation [00][00]-[02][55]
-CALL :heap_push_AH
-CALL .handle_bcd_one_real
-CALL :heap_push_AL
-CALL .handle_hex_real           # hex = BCD representation for doubled digits
+CALL .write_decimal_byte_without_leading_zeros
 POP_AL
 POP_AH
 JMP .fmt_loop
@@ -269,12 +318,7 @@ ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %B%+%BL%
 CALL :heap_pop_A
 CALL :double_dabble_word        # BL+AH+AL now contains BCD representation
-CALL :heap_push_BL
-CALL .handle_bcd_one_real
-CALL :heap_push_AH
-CALL .handle_hex_real           # hex = BCD representation for doubled digits
-CALL :heap_push_AL
-CALL .handle_hex_real           # hex = BCD representation for doubled digits
+CALL .write_decimal_word_without_leading_zeros
 POP_BL
 POP_AL
 POP_AH
@@ -288,21 +332,15 @@ ALUOP_PUSH %B%+%BL%
 CALL :heap_pop_AL
 LDI_BL 0b10000000
 ALUOP_FLAGS %A&B%+%AL%+%BL%     # check first bit of AL
-JZ .sdb_positive                # if negative,
+JZ .sdb_posnegdone              # if negative,
 ALUOP_AL %~A%+%AL%              #   invert AL to make it positive
 ALUOP_AL %A+1%+%AL%             #   and add one to get absolute value
 LDI_BL '-'                      #   write a minus
-JMP .sdb_posnegdone
-.sdb_positive                   # if positive,
-LDI_BL ' '                      #   write a space
-.sdb_posnegdone
 ALUOP_ADDR_D %B%+%BL%
 INCR_D
+.sdb_posnegdone
 CALL :double_dabble_byte        # AH+AL now contains BCD representation [00][00]-[01][27]
-CALL :heap_push_AH
-CALL .handle_bcd_one_real
-CALL :heap_push_AL
-CALL .handle_hex_real           # hex = BCD representation for doubled digits
+CALL .write_decimal_byte_without_leading_zeros
 POP_BL
 POP_AL
 JMP .fmt_loop
@@ -316,24 +354,16 @@ ALUOP_PUSH %B%+%BL%
 CALL :heap_pop_A
 LDI_BL 0b10000000
 ALUOP_FLAGS %A&B%+%AH%+%BL%     # check first bit of AH
-JZ .sdw_positive                # if negative,
+JZ .sdw_posnegdone              # if negative,
 ALUOP_AL %~A%+%AL%              #   invert AL to make it positive
 ALUOP_AH %~A%+%AH%              #   invert AH to make it positive
 CALL :incr16_a                  #   and add one to get absolute value
 LDI_BL '-'                      #   write a minus
-JMP .sdw_posnegdone
-.sdw_positive                   # if positive,
-LDI_BL ' '                      #   write a space
-.sdw_posnegdone
 ALUOP_ADDR_D %B%+%BL%
 INCR_D
+.sdw_posnegdone
 CALL :double_dabble_word        # BL+AH+AL now contains BCD representation
-CALL :heap_push_BL
-CALL .handle_bcd_one_real
-CALL :heap_push_AH
-CALL .handle_hex_real           # hex = BCD representation for doubled digits
-CALL :heap_push_AL
-CALL .handle_hex_real           # hex = BCD representation for doubled digits
+CALL .write_decimal_word_without_leading_zeros
 POP_BL
 POP_AL
 POP_AH
