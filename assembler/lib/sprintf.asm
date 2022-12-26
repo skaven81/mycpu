@@ -264,6 +264,20 @@ JMP .fmt_loop
 
 #### %U unsigned decimal word 0-65535
 .handle_decimal_word
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+CALL :heap_pop_A
+CALL :double_dabble_word        # BL+AH+AL now contains BCD representation
+CALL :heap_push_BL
+CALL .handle_bcd_one_real
+CALL :heap_push_AH
+CALL .handle_hex_real           # hex = BCD representation for doubled digits
+CALL :heap_push_AL
+CALL .handle_hex_real           # hex = BCD representation for doubled digits
+POP_BL
+POP_AL
+POP_AH
 JMP .fmt_loop
 
 
@@ -296,6 +310,33 @@ JMP .fmt_loop
 
 #### %D signed decimal word -32768-32767
 .handle_signed_decimal_word
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+CALL :heap_pop_A
+LDI_BL 0b10000000
+ALUOP_FLAGS %A&B%+%AH%+%BL%     # check first bit of AH
+JZ .sdw_positive                # if negative,
+ALUOP_AL %~A%+%AL%              #   invert AL to make it positive
+ALUOP_AH %~A%+%AH%              #   invert AH to make it positive
+CALL :incr16_a                  #   and add one to get absolute value
+LDI_BL '-'                      #   write a minus
+JMP .sdw_posnegdone
+.sdw_positive                   # if positive,
+LDI_BL ' '                      #   write a space
+.sdw_posnegdone
+ALUOP_ADDR_D %B%+%BL%
+INCR_D
+CALL :double_dabble_word        # BL+AH+AL now contains BCD representation
+CALL :heap_push_BL
+CALL .handle_bcd_one_real
+CALL :heap_push_AH
+CALL .handle_hex_real           # hex = BCD representation for doubled digits
+CALL :heap_push_AL
+CALL .handle_hex_real           # hex = BCD representation for doubled digits
+POP_BL
+POP_AL
+POP_AH
 JMP .fmt_loop
 
 

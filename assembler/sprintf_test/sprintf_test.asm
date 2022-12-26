@@ -103,6 +103,36 @@ CALL :heap_push_AL
 LDI_D %display_chars%+640
 CALL :sprintf
 
+LDI_C .fmt7
+LDI_A 42017
+CALL :heap_push_A
+LDI_A 7270
+CALL :heap_push_A
+LDI_A 247
+CALL :heap_push_A
+LDI_D %display_chars%+768
+CALL :sprintf
+
+LDI_C .fmt8
+LDI_A 32017
+CALL :heap_push_A
+LDI_A 7270
+CALL :heap_push_A
+LDI_A 247
+CALL :heap_push_A
+LDI_D %display_chars%+896
+CALL :sprintf
+
+LDI_C .fmt9
+LDI_A -32017
+CALL :heap_push_A
+LDI_A -7270
+CALL :heap_push_A
+LDI_A -247
+CALL :heap_push_A
+LDI_D %display_chars%+1024
+CALL :sprintf
+
 
 HLT
 
@@ -113,6 +143,9 @@ HLT
 .fmt4 "BCD-short HH:MM %b:%b   Raw chars [%c%c%c%c]\0"
 .fmt5 "Decimal 9 [%u] 37 [%u] 125 [%u] 255 [%u] 0 [%u]\0"
 .fmt6 "Signed -9 [%d] 37 [%d] -125 [%d] 127 [%d] -127 [%d]\0"
+.fmt7 "Word 247 [%U] 7270 [%U] 42017 [%U]\0"
+.fmt8 "Signed Word 247 [%D] 7270 [%D] 32017 [%D]\0"
+.fmt9 "Signed Word -247 [%D] -7270 [%D] -32017 [%D]\0"
 
 .noirq
 RETI

@@ -74,12 +74,24 @@ RET
 
 :shift16_a_left
 # Performs a 16-bit left shift of A
+# overflow flag will be set if a bit carried out
 ALUOP_AL %A<<1%+%AL%                # shift AL
 JNO .shift16_a_left_nooverflow      # if overflow,
 ALUOP_AH %A<<1%+%AH%+%Cin%          #   shift AH with Cin
 RET                                 #   and return
 .shift16_a_left_nooverflow          # otherwise,
 ALUOP_AH %A<<1%+%AH%                #   shift AH without Cin
+RET                                 #   and return
+
+:shift16_b_left
+# Performs a 16-bit left shift of B
+# overflow flag will be set if a bit carried out
+ALUOP_BL %B<<1%+%BL%                # shift BL
+JNO .shift16_b_left_nooverflow      # if overflow,
+ALUOP_BH %B<<1%+%BH%+%Cin%          #   shift BH with Cin
+RET                                 #   and return
+.shift16_b_left_nooverflow          # otherwise,
+ALUOP_BH %B<<1%+%BH%                #   shift BH without Cin
 RET                                 #   and return
 
 :double_dabble_byte
@@ -117,10 +129,10 @@ ALUOP_PUSH %A%+%AL%
 LDI_AL 4
 ALUOP_FLAGS %A-B%+%AL%+%BL%     # set overflow flag if BL is >= 5
 POP_AL
-JNO .dd_dabble_1_noover         # do nothing if no overflow
+JNO .dd_byte_dabble_1_noover    # do nothing if no overflow
 LDI_BL 3
 ALUOP_AL %A+B%+%AL%+%BL%        # add three to AL lower nybble
-.dd_dabble_1_noover
+.dd_byte_dabble_1_noover
 
 # AL, upper nybble
 ALUOP_BL %A%+%AL%               # copy AL to BL
@@ -132,10 +144,10 @@ ALUOP_PUSH %A%+%AL%
 LDI_AL 4
 ALUOP_FLAGS %A-B%+%AL%+%BL%     # set overflow flag if BL is >= 5
 POP_AL
-JNO .dd_dabble_2_noover         # do nothing if no overflow
+JNO .dd_byte_dabble_2_noover    # do nothing if no overflow
 LDI_BL 0x30
 ALUOP_AL %A+B%+%AL%+%BL%        # add 3 to upper nybble
-.dd_dabble_2_noover
+.dd_byte_dabble_2_noover
 
 # AH lower nybble will never exceed 2 (0-255), so no need to
 # check for >= 5 in this nybble.
@@ -155,12 +167,145 @@ POP_BL
 POP_BH
 RET
 
+.ddword_shiftleft
+# Shift the original number in C left
+ALUOP_PUSH %B%+%BL%
+MOV_CL_BL
+MOV_CH_BH
+CALL :shift16_b_left
+JO .ddword_origshift_carry      # if there was not a carry-out when B shifted,
+PUSH 0x00                       #   store a 0 for later
+JMP .ddword_origshift_done
+.ddword_origshift_carry         # else,
+PUSH 0x01                       #   store a 1 for later
+.ddword_origshift_done          # we'll use this value to carry-in a bit if needed into AL
+ALUOP_CH %B%+%BH%               # store original number back to C
+ALUOP_CL %B%+%BL%
+POP_BH                          # put our carry flag into BH
+POP_BL
+
+# Shift thousands, hundreds, tens and ones (A) to the left
+CALL :shift16_a_left
+JO .ddword_ashift_carry         # if there was not a carry-out when A shifted,
+PUSH 0x00                       #   store a 0 for later
+JMP .ddword_ashift_done
+.ddword_ashift_carry            # else,
+PUSH 0x01                       #   store a 1 for later
+.ddword_ashift_done             # we'll use this value to carry-in a bit if needed into BL
+ALUOP_AL %A+B%+%AL%+%BH%        # set the lower bit if there was a carry-out earlier
+POP_BH                          # our new carry bit (from the A shift) is now in BH
+
+# Shift ten thousands (BL) to the left
+ALUOP_FLAGS %B%+%BH%            # check our carry bit
+JZ .ddword_bshift_nocarry
+ALUOP_BL %B<<1%+%BL%+%Cin%
+JMP .ddword_bshift_done
+.ddword_bshift_nocarry
+ALUOP_BL %B<<1%+%BL%
+.ddword_bshift_done
+RET
+
 :double_dabble_word
-# Performs the double-dabble algirthm to convert a word (in A)
+# Performs the double-dabble algorithm to convert a word (in A)
 # into a three-byte BCD representation:
 #  * BL, lower nybble - ten thousands
 #  * AH, upper nybble - thousands
 #  * AH, lower nybble - hundreds
 #  * AL, upper nybble - tens
 #  * AL, lower nybble - units
+ALUOP_PUSH %B%+%BH%
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+
+# We will keep the original number in CH/CL and do swaps 
+# into BH/BL as needed for shifting
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%
+
+# Initialize our output registers
+LDI_A 0x0000
+LDI_BL 0x00
+
+# We will perform 15 shift+dabble operations, and one last shift at the end.
+# Since we need all of our A/B registers for output and math, we'll keep our
+# loop counter in D[L].
+LDI_D 0x000f
+
+.ddword_loop
+CALL .ddword_shiftleft          # shift everything to the left
+
+ALUOP_PUSH %B%+%BL%             # save BL (ten thousands), will restore after dabbling A
+
+# Dabble AL, lower nybble (ones)
+LDI_BH 0x0f                     # mask for lower nybble
+ALUOP_BL %A&B%+%AL%+%BH%        # put lower nybble of AL into BL
+ALUOP_PUSH %A%+%AL%
+LDI_AL 4
+ALUOP_FLAGS %A-B%+%AL%+%BL%     # set overflow flag if BL is >= 5
+POP_AL
+JNO .dd_word_dabble_1_noover    # do nothing if no overflow
+LDI_BL 3
+ALUOP_AL %A+B%+%AL%+%BL%        # add three to AL lower nybble
+.dd_word_dabble_1_noover
+
+# Dabble AL, upper nybble (tens)
+ALUOP_BL %A%+%AL%               # copy AL to BL
+ALUOP_BL %B>>1%+%BL%            # shift BL right four places
+ALUOP_BL %B>>1%+%BL%
+ALUOP_BL %B>>1%+%BL%
+ALUOP_BL %B>>1%+%BL%
+ALUOP_PUSH %A%+%AL%
+LDI_AL 4
+ALUOP_FLAGS %A-B%+%AL%+%BL%     # set overflow flag if BL is >= 5
+POP_AL
+JNO .dd_word_dabble_2_noover    # do nothing if no overflow
+LDI_BL 0x30
+ALUOP_AL %A+B%+%AL%+%BL%        # add 3 to upper nybble
+.dd_word_dabble_2_noover
+
+# Dabble AH, lower nybble (hundreds)
+LDI_BH 0x0f                     # mask for lower nybble
+ALUOP_BL %A&B%+%AH%+%BH%        # put lower nybble of AH into BL
+ALUOP_PUSH %A%+%AL%
+LDI_AL 4
+ALUOP_FLAGS %A-B%+%AL%+%BL%     # set overflow flag if BL is >= 5
+POP_AL
+JNO .dd_word_dabble_3_noover    # do nothing if no overflow
+LDI_BL 3
+ALUOP_AH %A+B%+%AH%+%BL%        # add three to AL lower nybble
+.dd_word_dabble_3_noover
+
+# Dabble AH, upper nybble (thousands)
+ALUOP_BL %A%+%AH%               # copy AH to BL
+ALUOP_BL %B>>1%+%BL%            # shift BL right four places
+ALUOP_BL %B>>1%+%BL%
+ALUOP_BL %B>>1%+%BL%
+ALUOP_BL %B>>1%+%BL%
+ALUOP_PUSH %A%+%AL%
+LDI_AL 4
+ALUOP_FLAGS %A-B%+%AL%+%BL%     # set overflow flag if BL is >= 5
+POP_AL
+JNO .dd_word_dabble_4_noover    # do nothing if no overflow
+LDI_BL 0x30
+ALUOP_AH %A+B%+%AH%+%BL%        # add 3 to upper nybble
+.dd_word_dabble_4_noover
+
+# No need to dabble BL (ten thousands) as it can never
+# get large enough to need a carry.
+POP_BL                          # restore BL (ten thousands)
+
+DECR_D                          # decrement loop counter
+MOV_DL_BH                       # grab our loop counter from DL
+ALUOP_FLAGS %B%+%BH%
+JNZ .ddword_loop                # loop if we have bits left
+
+CALL .ddword_shiftleft          # one more shift before we leave
+
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+POP_BH
 RET
