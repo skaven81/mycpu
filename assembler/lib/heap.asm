@@ -30,6 +30,25 @@ POP_DH
 RET
 
 ######
+# Push a register value onto the heap from AH
+#
+# Input:
+#   AH - byte to push onto the heap
+:heap_push_AH
+PUSH_DH
+PUSH_DL
+LD_DH  $heap_ptr
+LD_DL  $heap_ptr+1
+INCR_D
+ALUOP_ADDR_D %A%+%AH%
+ST_DH  $heap_ptr
+ST_DL  $heap_ptr+1
+POP_DL
+POP_DH
+RET
+
+
+######
 # Pop a value from the heap into AL
 :heap_pop_AL
 PUSH_DH
