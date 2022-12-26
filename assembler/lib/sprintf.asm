@@ -267,12 +267,34 @@ JMP .fmt_loop
 JMP .fmt_loop
 
 
-#### %i signed decimal byte -128-127
+#### %d signed decimal byte -128-127
 .handle_signed_decimal_byte
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+CALL :heap_pop_AL
+LDI_BL 0b10000000
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # check first bit of AL
+JZ .sdb_positive                # if negative,
+ALUOP_AL %~A%+%AL%              #   invert AL to make it positive
+ALUOP_AL %A+1%+%AL%             #   and add one to get absolute value
+LDI_BL '-'                      #   write a minus
+JMP .sdb_posnegdone
+.sdb_positive                   # if positive,
+LDI_BL ' '                      #   write a space
+.sdb_posnegdone
+ALUOP_ADDR_D %B%+%BL%
+INCR_D
+CALL :double_dabble_byte        # AH+AL now contains BCD representation [00][00]-[01][27]
+CALL :heap_push_AH
+CALL .handle_bcd_one_real
+CALL :heap_push_AL
+CALL .handle_hex_real           # hex = BCD representation for doubled digits
+POP_BL
+POP_AL
 JMP .fmt_loop
 
 
-#### %I signed decimal word -32768-32767
+#### %D signed decimal word -32768-32767
 .handle_signed_decimal_word
 JMP .fmt_loop
 

@@ -89,6 +89,20 @@ CALL :heap_push_AL
 LDI_D %display_chars%+512
 CALL :sprintf
 
+LDI_C .fmt6
+LDI_AL -127
+CALL :heap_push_AL
+LDI_AL 127
+CALL :heap_push_AL
+LDI_AL -125
+CALL :heap_push_AL
+LDI_AL 37
+CALL :heap_push_AL
+LDI_AL -9
+CALL :heap_push_AL
+LDI_D %display_chars%+640
+CALL :sprintf
+
 
 HLT
 
@@ -98,6 +112,7 @@ HLT
 .fmt3 "BCD HH:MM %B:%B or in binary %2:%2\0"
 .fmt4 "BCD-short HH:MM %b:%b   Raw chars [%c%c%c%c]\0"
 .fmt5 "Decimal 9 [%u] 37 [%u] 125 [%u] 255 [%u] 0 [%u]\0"
+.fmt6 "Signed -9 [%d] 37 [%d] -125 [%d] 127 [%d] -127 [%d]\0"
 
 .noirq
 RETI
