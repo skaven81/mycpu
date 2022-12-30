@@ -96,11 +96,12 @@ labeloffset.setName('labeloffset')
 # and the name will be valid across all assembler files.  `local` assigns an address
 # from the local pool, so an address might get reused across multiple files, and the
 # name is localized to just the file.  Both `byte` and `word` return a single 16-bit
-# address, but `word` also marks the following byte as reserved.
-#  VAR {global|local} {byte|word} $name
+# address, but `word` also marks the following byte as reserved.  If a number of bytes
+# is specified instead of `byte` or `word`, then an array is reserved.
+#  VAR {global|local} {byte|word|<num_bytes>} $name
 varprefix = Literal('VAR').setResultsName('var_declare')
 varscope = Combine(Literal('global') | Literal('local')).setResultsName('scope')
-varsize = Combine(Literal('byte') | Literal('word')).setResultsName('size')
+varsize = Combine(Literal('byte') | Literal('word') | Word(nums)).setResultsName('size')
 varname = Combine(Literal('$') + Word(alphanums+"_")).setResultsName('var')
 var = varprefix + varscope + varsize + varname
 var.setName('var')
@@ -190,7 +191,9 @@ logging.info("Replacing ASM macros, localizing labels, and finding global vars")
 line_num = 0
 concat_source = [ ]
 global_vars = { }
-next_global_var = 0x5f10 # hidden framebuffer, 240 bytes, after interrupt addresses
+global_arrays = { }
+next_global_var = 0x4f00 # hidden framebuffer, 256 bytes
+next_global_array = 0xb5ff # grows downward
 for input_file in args.sources:
     label_prefix="{}_".format(input_file.split('/')[-1].split('.')[0].replace(' ','_')).upper()
     with open(input_file, 'r') as fh:
@@ -237,10 +240,18 @@ for input_file in args.sources:
                 pass # ignore parsing exceptions for now, we'll catch them later
             if match and 'var_declare' in match and match['scope'] == 'global':
                 logging.debug("{:16.16s} Line {}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_global_var))
-                global_vars[match['var']] = next_global_var
-                next_global_var += 1
-                if match['size'] == 'word':
+                if match['size'] == 'byte':
+                    global_vars[match['var']] = next_global_var
                     next_global_var += 1
+                    assert 0x4f00 <= next_global_var <= 0x4fff
+                elif match['size'] == 'word':
+                    global_vars[match['var']] = next_global_var
+                    next_global_var += 2
+                    assert 0x4f00 <= next_global_var <= 0x4fff
+                else:
+                    next_global_array -= int(match['size'])
+                    global_arrays[match['var']] = next_global_array + 1
+                    assert 0xb000 <= next_global_array <= 0xb5ff
 
 
 #####
@@ -257,7 +268,9 @@ for input_file, line_num, line in concat_source:
     if input_file != current_file:
         # Reset local vars for each new file
         local_vars = { }
-        next_local_var = 0x4f00 # hidden framebuffer, 256 bytes
+        local_arrays = { }
+        next_local_var = 0x5f10 # hidden framebuffer, 240 bytes, after interrupt addresses
+        next_local_array = 0xb600 # grows upward
         current_file = input_file
 
     # We have to replace variables inline so that the pyparsing bits that
@@ -307,10 +320,18 @@ for input_file, line_num, line in concat_source:
             logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x} (already defined)".format(input_file, line_num, match['scope'], match['var'], global_vars[match['var']]))
         elif match['scope'] == 'local':
             logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_local_var))
-            local_vars[match['var']] = next_local_var
-            next_local_var += 1
-            if match['size'] == 'word':
+            if match['size'] == 'byte':
+                local_vars[match['var']] = next_local_var
                 next_local_var += 1
+                assert 0x5f10 <= next_local_var <= 0x5fff
+            elif match['size'] == 'word':
+                local_vars[match['var']] = next_local_var
+                next_local_var += 2
+                assert 0x5f10 <= next_local_var <= 0x5fff
+            else:
+                local_arrays[match['var']] = next_local_array
+                next_local_array += int(match['size'])
+                assert 0xb600 <= next_local_array <= 0xb9ff
         else:
             raise SyntaxError('Variable declaration must include local or global scope')
         continue

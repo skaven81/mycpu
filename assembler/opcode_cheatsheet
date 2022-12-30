@@ -111,14 +111,16 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 # Memory ranges
 0x0000 - 0x3eff program data (ROM)
 0x4000 - 0x4eff framebuffer chars
-0x4f00 - 0x4fff hidden framebuffer (local asm vars)
+0x4f00 - 0x4fff hidden framebuffer (global asm vars)
 0x5000 - 0x5eff framebuffer color
 0x5f00 - 0x5f0f interrupt addresses
-0x5f10 - 0x5fff hidden framebuffer (global asm vars)
-0x6000 - 0xbdff RAM
-0xba00 - 0xbdff heap (lib/heap.asm)
-0xbe00 - 0xbeff keyboard buffer (lib/keyboard.asm)
-0xbf00 - 0xbfff CPU stack
+0x5f10 - 0x5fff hidden framebuffer (local asm vars)
+0x6000 - 0xafff 20k RAM
+0xb000 - 0xb5ff 1.5k global asm arrays (but may grow beyond 0xb000)
+0xb600 - 0xb9ff 1k local asm arrays
+0xba00 - 0xbdff 1k heap (lib/heap.asm)
+0xbe00 - 0xbeff 256b keyboard buffer (lib/keyboard.asm)
+0xbf00 - 0xbfff 256b CPU stack
 0xc000 - 0xffff peripherals
 
 # Interrupt handling
