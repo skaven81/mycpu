@@ -185,6 +185,23 @@ POP_DH
 RET
 
 ######
+# Pop a word from the heap into C
+:heap_pop_C
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+LD_AH   $heap_ptr
+LD_AL   $heap_ptr+1
+LDA_A_CL
+CALL :decr16_a
+LDA_A_CH
+CALL :decr16_a
+ALUOP_ADDR %A%+%AH% $heap_ptr
+ALUOP_ADDR %A%+%AL% $heap_ptr+1
+POP_AL
+POP_AH
+RET
+
+######
 # Push all registers onto the heap
 :heap_push_all
 PUSH_DH
