@@ -1,7 +1,7 @@
 # vim: ts=4 sts=4 sw=4 noexpandtab
 
 SOURCES := keyboard_test.asm 
-LIBS := ../lib/clearscreen.asm ../lib/strcpy.asm
+LIBS := ../lib/clearscreen.asm ../lib/string.asm
 OPCODES := ../gen_opcodes.sh
 MACROS := ../asm_macros
 
