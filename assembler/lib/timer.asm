@@ -29,9 +29,9 @@ ALUOP_ADDR %A%+%AL% %tmr_wdog_subsec%
 
 LDI_AL  0  # set up spinlock
 
-# set control_a (flag) bits to zeroes, this
-# also clears any pending interrupts
-ST      %tmr_ctrl_a%        0x00
+# read control_a register, this
+# clears any pending interrupts
+LD_TD   %tmr_ctrl_a%
 # set control_b (control) bits
 # TE=1 (enable transfers)
 # CS=0 (don't care)
@@ -67,7 +67,7 @@ RET
 
 .sleep_timer
 LDI_AL  1                       # toggle our spinlock when timer triggers
-ST %tmr_ctrl_a% 0x00            # clear interrupt
+LD_TD %tmr_ctrl_a%              # clear interrupt
 ST %tmr_ctrl_b% %tmr_TE_mask%   # clear WDE bit
 RETI
 
@@ -75,6 +75,6 @@ RETI
 # no-op target that does nothing else
 # but clear the timer IRQ
 :timer_clear_irq
-ST %tmr_ctrl_a% 0x00
+LD_TD %tmr_ctrl_a%
 RETI
 

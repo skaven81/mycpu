@@ -42,9 +42,9 @@ LDI_AL  0  # set up spinlock
 LDI_DH  0
 LDI_DL  0
 
-# set control_a (flag) bits to zeroes, this
-# also clears any pending interrupts
-ST      %tmr_ctrl_a%        0x00
+# read control_a register, this
+# clears any pending interrupts
+LD_TD   %tmr_ctrl_a%
 # set control_b (control) bits
 # TE=1 (enable transfers)
 # CS=0 (don't care)
@@ -82,6 +82,8 @@ LD_TD $dummy                        # 5         89
 INCR_D                              # 2         91
 ALUOP_FLAGS %AxB%+%AL%+%BL%         # 4         95
 JNE .sys_clock_speed_wait2          # 5 if NE   100
+#ALUOP_FLAGS %A-B%+%AL%+%BL%         # 4         95
+#JNO .sys_clock_speed_wait2          # 5 if NO   100
 
 MASKINT
 
@@ -108,5 +110,5 @@ RET
 
 .sys_clock_speed_timer
 ALUOP_AL %A+1%+%AL%
-ST %tmr_ctrl_a% 0x00            # clear interrupt
+LD_TD %tmr_ctrl_a%              # clear interrupt
 RETI
