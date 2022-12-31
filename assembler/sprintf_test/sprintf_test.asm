@@ -108,7 +108,7 @@ LDI_A 42017
 CALL :heap_push_A
 LDI_A 7270
 CALL :heap_push_A
-LDI_A 247
+LDI_A 207
 CALL :heap_push_A
 LDI_A 18 
 CALL :heap_push_A
@@ -122,7 +122,7 @@ LDI_A 32017
 CALL :heap_push_A
 LDI_A 7270
 CALL :heap_push_A
-LDI_A 247
+LDI_A 207
 CALL :heap_push_A
 LDI_D %display_chars%+896
 CALL :sprintf
@@ -132,11 +132,18 @@ LDI_A -32017
 CALL :heap_push_A
 LDI_A -7270
 CALL :heap_push_A
-LDI_A -247
+LDI_A -207
 CALL :heap_push_A
 LDI_D %display_chars%+1024
 CALL :sprintf
 
+.loop
+CALL :sys_clock_speed
+CALL :heap_push_A
+LDI_C .fmt10
+LDI_D %display_chars%+1152
+CALL :sprintf
+JMP .loop
 
 HLT
 
@@ -147,9 +154,10 @@ HLT
 .fmt4 "BCD-short HH:MM %b:%b   Raw chars [%c%c%c%c]\0"
 .fmt5 "Decimal 9 [%u] 37 [%u] 125 [%u] 255 [%u] 0 [%u]\0"
 .fmt6 "Signed -9 [%d] 37 [%d] -125 [%d] 127 [%d] -127 [%d]\0"
-.fmt7 "Word 4 [%U] 18 [%U] 247 [%U] 7270 [%U] 42017 [%U]\0"
-.fmt8 "Signed Word 247 [%D] 7270 [%D] 32017 [%D]\0"
-.fmt9 "Signed Word -247 [%D] -7270 [%D] -32017 [%D]\0"
+.fmt7 "Word 4 [%U] 18 [%U] 207 [%U] 7270 [%U] 42017 [%U]\0"
+.fmt8 "Signed Word 207 [%D] 7270 [%D] 32017 [%D]\0"
+.fmt9 "Signed Word -207 [%D] -7270 [%D] -32017 [%D]\0"
+.fmt10 "Current clock speed: %UkHz\0"
 
 .noirq
 RETI
