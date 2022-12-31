@@ -250,19 +250,28 @@ RET
 .write_decimal_byte_without_leading_zeros
 ALUOP_PUSH %B%+%BH%
 LDI_BH 0x0f
-ALUOP_FLAGS %A&B%+%AH%+%BH%     # See if AH lower nybble is zero. If so, don't print anything
+ALUOP_FLAGS %A&B%+%AH%+%BH%     # skip hundreds if zero
 JZ .hdb1
+
+CALL :heap_push_AL              # Write all three digits otherwise
 CALL :heap_push_AH
 CALL .handle_bcd_one_real
-.hdb1
-CALL :heap_push_AL
-LDI_BH 0xf0
-ALUOP_FLAGS %A&B%+%AL%+%BH%     # see if AL upper nybble is zero.  If so, only print the lower one
-JZ .hdb2
-CALL .handle_hex_real           # hex = BCD representation for doubled digits
+CALL .handle_hex_real
 JMP .hdb_done
+
+.hdb1
+LDI_BH 0xf0
+ALUOP_FLAGS %A&B%+%AL%+%BH%
+JZ .hdb2                        # skip tens if zero
+
+CALL :heap_push_AL              # Write 2 digits otherwise
+CALL .handle_hex_real
+JMP .hdb_done
+
 .hdb2
+CALL :heap_push_AL              # Write 1 digit (which might be zero)
 CALL .handle_bcd_one_real
+
 .hdb_done
 POP_BH
 RET
@@ -272,29 +281,51 @@ RET
 ALUOP_PUSH %B%+%BH%
 ALUOP_FLAGS %B%+%BL%
 JZ .hdw1                        # skip ten thousands if zero
+
+CALL :heap_push_AL              # Write all 5 digits otherwise
+CALL :heap_push_AH
 CALL :heap_push_BL
 CALL .handle_bcd_one_real
+CALL .handle_hex_real
+CALL .handle_hex_real
+JMP .hdw_done
+
 .hdw1
-ALUOP_FLAGS %A%+%AH%            # skip thousands and hundreds if zero
-JZ .hdw3
-CALL :heap_push_AH
 LDI_BH 0xf0
-ALUOP_FLAGS %A&B%+%AH%+%BH%     # check if upper nybble of AH is nonzero
+ALUOP_FLAGS %A&B%+%AH%+%BH%     # skip thousands if zero
 JZ .hdw2
-CALL .handle_hex_real           # hex = BCD representation for doubled digits
-JMP .hdw3
+
+CALL :heap_push_AL              # Write 4 digits otherwise
+CALL :heap_push_AH
+CALL .handle_hex_real
+CALL .handle_hex_real
+JMP .hdw_done
+
 .hdw2
+LDI_BH 0x0f
+ALUOP_FLAGS %A&B%+%AH%+%BH%
+JZ .hdw3                        # skip hundreds if zero
+
+CALL :heap_push_AL              # Write 3 digits otherwise
+CALL :heap_push_AH
 CALL .handle_bcd_one_real
+CALL .handle_hex_real
+JMP .hdw_done
+
 .hdw3
-CALL :heap_push_AL
 LDI_BH 0xf0
-ALUOP_FLAGS %A&B%+%AL%+%BH%     # check if upper nybble of AL is nonzero
-JZ .hdw4
-CALL .handle_hex_real           # hex = BCD representation for doubled digits
-JMP .hdw5
+ALUOP_FLAGS %A&B%+%AL%+%BH%
+JZ .hdw4                        # skip tens if zero
+
+CALL :heap_push_AL              # Write 2 digits otherwise
+CALL .handle_hex_real
+JMP .hdw_done
+
 .hdw4
+CALL :heap_push_AL              # Write 1 digit (which might be zero)
 CALL .handle_bcd_one_real
-.hdw5
+
+.hdw_done
 POP_BH
 RET
 
