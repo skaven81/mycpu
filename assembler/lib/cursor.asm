@@ -51,7 +51,7 @@ POP_DH
 POP_DL
 RET
 
-:cursor_offset
+:cursor_conv_rowcol
 # Given a column,row coordinate, returns a 12-bit value representing the
 # offset in memory from the base of %display_chars% or %display_color%
 #
@@ -77,6 +77,50 @@ ALUOP_AL %AL%+%BL%+%A|B%    # set the 8th bit in AL
 ALUOP_AH %AH%+%A>>1%        # shift AH right one position
 ALUOP_AH %AH%+%A>>1%        # shift AH right one position
 POP_BL
+RET
+
+:cursor_conv_addr
+# Given an address within the chars or colors memory range in A,
+# returns the corresponding row/col in AH and AL.
+#
+# Inputs:
+#  A - Address within the colors or chars ranges
+#
+# Oputputs:
+#  AL - col (0-63)
+#  AH - row (0-59)
+ALUOP_PUSH %B%+%BH%
+
+# Mask out the top nybble of AH to return a 12-bit offset
+LDI_BH 0x0f
+ALUOP_AH %A&B%+%AH%+%BH%
+
+# If the MSB of AL is 1, shift AH left with Cin, otherwise without
+LDI_BH 0x80
+ALUOP_FLAGS %A&B%+%AL%+%BH%
+JZ .cca_nocin1
+ALUOP_AH %A<<1%+%AH%+%Cin%
+JMP .cca_2ndbit
+.cca_nocin1
+ALUOP_AH %A<<1%+%AH%
+
+# Now do the same for the second bit of AL
+.cca_2ndbit
+LDI_BH 0x40
+ALUOP_FLAGS %A&B%+%AL%+%BH%
+JZ .cca_nocin2
+ALUOP_AH %A<<1%+%AH%+%Cin%
+JMP .cca_doneshifting
+.cca_nocin2
+ALUOP_AH %A<<1%+%AH%
+
+# Mask out the top two bits of AL
+.cca_doneshifting
+LDI_BH 0x03
+ALUOP_AL %A&B%+%AL%+%BH%
+
+# AH now contains the row, and AL now contains the column
+POP_BH
 RET
 
 :cursor_goto
@@ -106,7 +150,7 @@ ALUOP_ADDR %A%+%AL% $crsr_col
 ALUOP_ADDR %A%+%AH% $crsr_row
 
 # turn row,col into an offset stored in A
-CALL :cursor_offset
+CALL :cursor_conv_rowcol
 
 # add %display_chars% to the offset and store in $crsr_addr_chars
 LDI_B %display_chars%                   # put the char base addr in B
