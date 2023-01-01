@@ -116,7 +116,7 @@ ALUOP_AH %A<<1%+%AH%
 
 # Mask out the top two bits of AL
 .cca_doneshifting
-LDI_BH 0x03
+LDI_BH 0x3f
 ALUOP_AL %A&B%+%AL%+%BH%
 
 # AH now contains the row, and AL now contains the column
