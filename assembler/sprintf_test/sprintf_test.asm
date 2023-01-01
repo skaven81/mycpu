@@ -137,11 +137,38 @@ CALL :heap_push_A
 LDI_D %display_chars%+1024
 CALL :sprintf
 
+LDI_C .fmt10
+LDI_D %tmr_clk_sec%
+LDA_D_AL
+CALL :heap_push_AL
+LDI_D %tmr_clk_min%
+LDA_D_AL
+CALL :heap_push_AL
+LDI_D %tmr_clk_hr%
+LDA_D_AL
+CALL :heap_push_AL
+LDI_D %tmr_clk_date%
+LDA_D_AL
+CALL :heap_push_AL
+LDI_D %tmr_clk_month%
+LDA_D_AL
+LDI_BL %tmr_clk_month_mask%
+ALUOP_AL %A&B%+%AL%+%BL%
+CALL :heap_push_AL
+LDI_D %tmr_clk_year%
+LDA_D_AL
+CALL :heap_push_AL
+LDI_D %tmr_clk_century%
+LDA_D_AL
+CALL :heap_push_AL
+LDI_D %display_chars%+1152
+CALL :sprintf
+
 .loop
 CALL :sys_clock_speed
 CALL :heap_push_A
-LDI_C .fmt10
-LDI_D %display_chars%+1152
+LDI_C .fmt11
+LDI_D %display_chars%+1280
 CALL :sprintf
 JMP .loop
 
@@ -157,7 +184,8 @@ HLT
 .fmt7 "Word 4 [%U] 18 [%U] 207 [%U] 7270 [%U] 42017 [%U]\0"
 .fmt8 "Signed Word 207 [%D] 7270 [%D] 32017 [%D]\0"
 .fmt9 "Signed Word -207 [%D] -7270 [%D] -32017 [%D]\0"
-.fmt10 "Current clock speed: %UkHz\0"
+.fmt10 "yyyy-mm-dd HH:MM:SS %B%B-%B-%B %B:%B:%B\0"
+.fmt11 "Current clock speed: %UkHz\0"
 
 .noirq
 RETI
