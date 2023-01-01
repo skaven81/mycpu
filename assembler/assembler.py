@@ -210,17 +210,20 @@ for input_file in args.sources:
             partline = [*line.partition('#')]
             splitline = partline[0].split(' ')
             newsplitline = [ *splitline ]
-            for idx, token in enumerate(splitline[1:]):
-                while True:
-                    foundmacro = False
-                    for m, v in asm_macros.items():
-                        newtoken = token.replace(m, v)
-                        if newtoken != token:
-                            foundmacro = True
-                            newsplitline[idx+1] = newtoken
-                        token = newtoken
-                    if not foundmacro:
-                        break
+            if splitline[0].startswith('.'):
+                logging.debug("{:16.16s} Line {}: Not processing tokens because label [{}]".format(input_file, line_num, splitline[0]))
+            else:
+                for idx, token in enumerate(splitline[1:]):
+                    while True:
+                        foundmacro = False
+                        for m, v in asm_macros.items():
+                            newtoken = token.replace(m, v)
+                            if newtoken != token:
+                                foundmacro = True
+                                newsplitline[idx+1] = newtoken
+                            token = newtoken
+                        if not foundmacro:
+                            break
 
             oldline = ' '.join(splitline) + partline[1] + partline[2]
             newline = ' '.join(newsplitline) + partline[1] + partline[2]
