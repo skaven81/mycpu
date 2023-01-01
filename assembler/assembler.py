@@ -125,7 +125,7 @@ number = Word(nums+'-')
 number.setName('number')
 number.setParseAction(lambda t: [int(t[0])])
 allbytes = binbyte | hexbyte | chrbyte | number
-mathtoken = Combine(oneOf('+ - & |') + allbytes)
+mathtoken = Combine(oneOf('* / + - & |') + allbytes)
 bytemathexpression = Combine(allbytes + OneOrMore(mathtoken))
 bytemathexpression.setParseAction(lambda t: [eval(t[0])])
 byte = bytemathexpression | allbytes
@@ -143,8 +143,8 @@ hexword = Combine(Literal('0x') + Char(srange("[0-9a-fA-F]")) * 4)
 hexword.setName('hexword')
 hexword.setParseAction(lambda t: [int(t[0], 16)])
 allwords = binword | hexword | number
-wordmathtoken = Combine(oneOf('+ - & |') + allwords)
-wordmathexpression = Combine(allwords + OneOrMore(mathtoken))
+wordmathtoken = Combine(oneOf('* / + - & |') + allwords)
+wordmathexpression = Combine(allwords + OneOrMore(wordmathtoken))
 wordmathexpression.setParseAction(lambda t: [eval(t[0])])
 word = wordmathexpression | label | allwords
 word.setName('word')
