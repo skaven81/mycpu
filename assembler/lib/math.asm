@@ -72,6 +72,19 @@ ALUOP_BH %B+1%+%BH%
 ALUOP_BH %A+B%+%AH%+%BH%
 RET
 
+:sub16_a_minus_b
+# Subtracts 16-bit values A-B, stores result in A
+#
+# Inputs:
+#  AL+AH - first operand
+#  BL+BH - second operand
+ALUOP_AL %A-B%+%AL%+%BL%
+JNO .sub16_a_minus_b_high
+ALUOP_AH %A-1%+%AH%
+.sub16_a_minus_b_high
+ALUOP_AH %A-B%+%AH%+%BH%
+RET
+
 :shift16_a_left
 # Performs a 16-bit left shift of A
 # overflow flag will be set if a bit carried out
