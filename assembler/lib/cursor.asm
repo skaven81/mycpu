@@ -123,6 +123,78 @@ ALUOP_AL %A&B%+%AL%+%BH%
 POP_BH
 RET
 
+# Moves the cursor left one column (wraps if necessary)
+:cursor_left
+ALUOP_PUSH %A%+%AL%
+LDI_AL -1
+CALL .cursor_move_real
+POP_AL
+RET
+# Moves the cursor right one column (wraps if necessary)
+:cursor_right
+ALUOP_PUSH %A%+%AL%
+LDI_AL 1
+CALL .cursor_move_real
+POP_AL
+RET
+# Moves the cursor up one row
+:cursor_up
+ALUOP_PUSH %A%+%AL%
+LDI_AL -64
+CALL .cursor_move_real
+POP_AL
+RET
+# Moves the cursor down one row
+:cursor_down
+ALUOP_PUSH %A%+%AL%
+LDI_AL 64
+CALL .cursor_move_real
+POP_AL
+RET
+
+.cursor_move_real
+CALL :heap_push_all
+
+# AL is our movement amount, but it's an 8-bit value, so extend into
+# AH if it's negative
+LDI_AH 0x00
+LDI_BL 0x80
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JZ .cmr_1                   # if AL was positive, continue.
+LDI_AH 0xff                 # otherwise, ensure A is negative
+.cmr_1
+LD16_B $crsr_addr_chars
+CALL :add16_to_b            # B now contains the new cursor addr
+ALUOP_CH %B%+%BH%
+ALUOP_CL %B%+%BL%           # save new cursor addr in C
+
+# if the cursor moves, will the new addr be < %display_chars% ??
+LDI_A %display_chars%
+CALL :sub16_b_minus_a       # B now contains the delta, >= 0 if greater than %display_chars% and OK, but < 0 if out of range.
+LDI_AL 0x80
+ALUOP_FLAGS %A&B%+%AL%+%BH% # so if B is negative (MSB is set)
+JNZ .cmr_done               # don't move the cursor
+
+# if the cursor moves, will the new addr be >= %display_chars%+64x60?
+MOV_CH_BH
+MOV_CL_BL                   # new cursor addr in B
+LDI_A %display_chars%+3839  # 64 col x 60 row, minus 1 to get to last valid addr
+CALL :sub16_a_minus_b       # A now contains the delta, >= 0 if less than or equal to %display_chars%+3839 and OK, but < 0 if out of range.
+LDI_BL 0x80
+ALUOP_FLAGS %A&B%+%AH%+%BL% # if B is negative (MSB is set)
+JNZ .cmr_done               # don't move the cursor
+
+# cursor move is OK, so let's sync at the new position
+MOV_CH_AH
+MOV_CL_AL                   # new cursor addr in A
+CALL :cursor_conv_addr      # get row:col from address
+CALL :cursor_goto           # sync the cursor to the new location
+
+.cmr_done
+CALL :heap_pop_all
+RET
+
+
 :cursor_goto
 # Moves the cursor to an absolute col,row position
 #
