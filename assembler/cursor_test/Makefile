@@ -1,7 +1,7 @@
 # vim: ts=4 sts=4 sw=4 noexpandtab
 
 SOURCES := cursor_test.asm 
-LIBS := ../lib/clearscreen.asm ../lib/timer.asm ../lib/cursor.asm ../lib/keyboard.asm ../lib/math.asm
+LIBS := ../lib/clearscreen.asm ../lib/timer.asm ../lib/cursor.asm ../lib/keyboard.asm ../lib/math.asm ../lib/heap.asm
 OPCODES := ../gen_opcodes.sh
 MACROS := ../asm_macros
 
