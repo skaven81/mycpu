@@ -123,6 +123,11 @@ ALUOP_AL %A&B%+%AL%+%BH%
 POP_BH
 RET
 
+######
+# Single-step cursor movement.
+# No inputs or outputs.
+######
+
 # Moves the cursor left one column (wraps if necessary)
 :cursor_left
 ALUOP_PUSH %A%+%AL%
@@ -152,6 +157,12 @@ CALL .cursor_move_real
 POP_AL
 RET
 
+######
+# The actual function that moves the cursor. Allows the cursor to move within
+# the 0x4000-0x4eff range and does nothing if the cursor would go out of bounds.
+#
+# Inputs:
+#  AL - cursor movement amount, in absolute address steps
 .cursor_move_real
 CALL :heap_push_all
 
