@@ -199,6 +199,12 @@ RET
 #
 # Inputs:
 #  C - address of string to print
+#
+# TODO - add something similar to ANSI escape code sequence support.  If a known
+# escape string, say `#xx` where xx is hex, then instead of printing those
+# characters, instead the "current color" is updated and written to color space
+# as characters are printed.  A special code, say #!, would cause "painting" to stop,
+# keeping whatever existing color data is there unchanged.
 :print
 ALUOP_PUSH %A%+%AL%
 .print_loop
