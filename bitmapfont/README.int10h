@@ -1,0 +1,4 @@
+Turns out the fonts at https://int10h.org/blog/2019/05/fontraption-vga-text-mode-font-editor/
+are stored in a native character ROM format.  The `.F08` files are exactly 2048 bytes as
+needed, and so we can just concatenate 16 different fonts together to make a 16-font
+character ROM.  Easy!
