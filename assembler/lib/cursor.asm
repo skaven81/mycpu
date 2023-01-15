@@ -198,13 +198,67 @@ JNZ .cmr_done               # don't move the cursor
 # cursor move is OK, so let's sync at the new position
 MOV_CH_AH
 MOV_CL_AL                   # new cursor addr in A
-CALL :cursor_conv_addr      # get row:col from address
-CALL :cursor_goto_rowcol    # sync the cursor to the new location
+CALL :cursor_goto_addr      # sync the cursor to the new location
 
 .cmr_done
 CALL :heap_pop_all
 RET
 
+:cursor_goto_addr
+# Moves the cursor to an absolute addr (or offset).
+# The top four bits of the address are ignored.
+#
+# Inputs:
+#  A - address/offset
+PUSH_DL
+PUSH_DH
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+
+# First we need to turn off the cursor at the current cursor location.
+LD_DH $crsr_addr_color
+LD_DL $crsr_addr_color+1            # D reg has the current cursor address in color space
+LDA_D_AH                            # Load RAM@D into AH - current color flags for cursor
+ALUOP_ADDR_D %AH%+%A_clrcursor%     # Clear the cursor bit from that byte and store it back
+
+# Get AH back from the stack
+PEEK_AH
+
+# Mask the top four bits of the offset
+LDI_BH 0x0f
+ALUOP_AH %A&B%+%AH%+%BH%
+
+# add %display_chars% to the offset and store in $crsr_addr_chars
+LDI_B %display_chars%                   # put the char base addr in B
+CALL :add16_to_b                        # B now contains the new cursor absolute address
+ALUOP_ADDR %B%+%BH% $crsr_addr_chars    # store the new absolute address in RAM
+ALUOP_ADDR %B%+%BL% $crsr_addr_chars+1
+
+# add %display_color% to the offset and store in $crsr_addr_color
+LDI_B %display_color%                   # put the color base addr in B
+CALL :add16_to_b                        # B now contains the new cursor absolute address
+ALUOP_ADDR %B%+%BH% $crsr_addr_color    # store the new absolute address in RAM
+ALUOP_ADDR %B%+%BL% $crsr_addr_color+1
+
+# turn offset into row,col in A
+CALL :cursor_conv_rowcol
+
+# Store the new row and column into our global vars
+ALUOP_ADDR %A%+%AL% $crsr_col
+ALUOP_ADDR %A%+%AH% $crsr_row
+
+# Set or clear the cursor bit at the new location
+CALL :cursor_display_sync
+
+POP_AH
+POP_AL
+POP_BH
+POP_BL
+POP_DH
+POP_DL
+RET
 
 :cursor_goto_rowcol
 # Moves the cursor to an absolute col,row position
