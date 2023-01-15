@@ -52,12 +52,12 @@ POP_DL
 RET
 
 :cursor_conv_rowcol
-# Given a column,row coordinate, returns a 12-bit value representing the
+# Given a row,col coordinate, returns a 12-bit value representing the
 # offset in memory from the base of %display_chars% or %display_color%
 #
 # Inputs:
-#  AL - col (0-63)
 #  AH - row (0-59)
+#  AL - col (0-63)
 #
 # Outputs:
 #  A = 12 bit absolute offset
@@ -87,8 +87,8 @@ RET
 #  A - Address within the colors or chars ranges
 #
 # Oputputs:
-#  AL - col (0-63)
 #  AH - row (0-59)
+#  AL - col (0-63)
 ALUOP_PUSH %B%+%BH%
 
 # Mask out the top nybble of AH to return a 12-bit offset
@@ -199,19 +199,19 @@ JNZ .cmr_done               # don't move the cursor
 MOV_CH_AH
 MOV_CL_AL                   # new cursor addr in A
 CALL :cursor_conv_addr      # get row:col from address
-CALL :cursor_goto           # sync the cursor to the new location
+CALL :cursor_goto_rowcol    # sync the cursor to the new location
 
 .cmr_done
 CALL :heap_pop_all
 RET
 
 
-:cursor_goto
+:cursor_goto_rowcol
 # Moves the cursor to an absolute col,row position
 #
 # Inputs:
-#  AL - col (0-63)
 #  AH - row (0-59)
+#  AL - col (0-63)
 PUSH_DL
 PUSH_DH
 ALUOP_PUSH %B%+%BL%

@@ -80,7 +80,7 @@ JMP .putchar_done
 CALL .cursor_down_scroll
 LD_AH $crsr_row                 # load current row of cursor
 LDI_AL 0x00                     # set column to zero
-CALL :cursor_goto
+CALL :cursor_goto_rowcol
 JMP .putchar_done
 
 # Exit putchar
@@ -191,7 +191,7 @@ POP_AL
 RET
 
 ######
-# Print a null-terminated string found at the memory address in A (AH+AL) at
+# Print a null-terminated string found at the memory address in C (CH+CL) at
 # the current cursor location. The cursor will be placed at the end of the
 # string.  If at any point, the cursor wraps beyond the bottom of the display,
 # scroll the display. Any newlines will be processed as expected.  The terminating
