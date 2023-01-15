@@ -278,7 +278,7 @@ for input_file, line_num, line in concat_source:
 
     # We have to replace variables inline so that the pyparsing bits that
     # handle math (e.g. `$some_var+1`) will work as expected.
-    if not line.startswith('VAR'):
+    if not line.startswith('VAR') and not line.startswith('#'):
         newline = line
         for v in re.findall('\$[a-zA-Z0-9_]+', line):
             varval = local_vars.get(v, global_vars.get(v, local_arrays.get(v, global_arrays.get(v ))))
@@ -288,7 +288,7 @@ for input_file, line_num, line in concat_source:
         if newline != line:
             logging.debug("{:16.16s} {:3d}: VAR: {}".format(input_file, line_num, newline))
             line = newline;
-    
+
     try:
         match = grammar.parseString(line, parseAll=True).asDict()
     except ParseException:
@@ -319,8 +319,10 @@ for input_file, line_num, line in concat_source:
 
     # variable declaration
     if 'var_declare' in match:
-        if match['scope'] == 'global':
+        if match['scope'] == 'global' and match['size'] in ('byte', 'word',):
             logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x} (already defined)".format(input_file, line_num, match['scope'], match['var'], global_vars[match['var']]))
+        elif match['scope'] == 'global':
+            logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x} (already defined)".format(input_file, line_num, match['scope'], match['var'], global_arrays[match['var']]))
         elif match['scope'] == 'local':
             logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_local_var))
             if match['size'] == 'byte':
