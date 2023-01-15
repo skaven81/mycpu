@@ -93,12 +93,16 @@
 
 # Keyflag register bits
 %kb_keyflag_BREAK%       0x01
-%kb_keyflag_SHIFT%       0x02
-%kb_keyflag_CTRL%        0x04
-%kb_keyflag_ALT%         0x08
-%kb_keyflag_SUPER%       0x10
+%kb_keyflag_CTRL%        0x02
+%kb_keyflag_ALT%         0x04
+%kb_keyflag_FUNCTION%    0x08
+%kb_keyflag_SHIFT%       0x10
+# bit 0x20 is stuck on for some reason,
+# also SUPER and GUI report as normal
+# chars, not flags.  Need to check KB
+# controller code.
+%kb_keyflag_SUPER%       0x20
 %kb_keyflag_GUI%         0x20
-%kb_keyflag_FUNCTION%    0x40
 
 # Timer clock (all data in BCD)
 %tmr_clk_sec%           0xc080
