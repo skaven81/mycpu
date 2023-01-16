@@ -40,9 +40,9 @@ RET
 #
 # Inputs:
 #  BL+BH - the value to be incremented
-ALUOP_AL %B-1%+%BL%
+ALUOP_BL %B-1%+%BL%
 JNO .decr16b_done
-ALUOP_AH %B-1%+%BH%
+ALUOP_BH %B-1%+%BH%
 .decr16b_done
 RET
 
