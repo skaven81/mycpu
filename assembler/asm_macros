@@ -29,12 +29,23 @@
 %A_setblink%    0x2a
 %A_clrblink%    0x0a
 %A_tglblink%    0x0b
+%A_setmsb%      0x2a
+%A_clrmsb%      0x0a
+%A_tglmsb%      0x0b
+
 %A_setcursor%   0x2c
 %A_clrcursor%   0x0c
 %A_tglcursor%   0x0d
+%A_setmsb-1%    0x2c
+%A_clrmsb-1%    0x0c
+%A_tglmsb-1%    0x0d
+
 %A_setblcur%    0x2e
 %A_clrblcur%    0x0e
 %A_tglblcur%    0x0f
+%A_setbltoptwo% 0x2e
+%A_clrbltoptwo% 0x0e
+%A_tglbltoptwo% 0x0f
 
 # Logic
 %~A%          0x10
