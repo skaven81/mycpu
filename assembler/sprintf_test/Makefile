@@ -11,7 +11,7 @@ opcodes.out: $(OPCODES)
 	bash -c "$(OPCODES) > $@"
 
 sprintf_test.hex: $(SOURCES) $(LIBS) opcodes.out $(MACROS)
-	../assembler.py -v -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(SOURCES) $(LIBS) --output $@
+	../assembler.py -v -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(SOURCES) $(LIBS) --output $@ 2>&1 | tee assembler.log
 
 program: sprintf_test.hex
 	/raid/msp430/projects/serial-eeprom-programmer/programmer --verify write sprintf_test.hex
