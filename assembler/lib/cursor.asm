@@ -9,6 +9,16 @@ VAR global word $crsr_addr_color
 VAR global byte $crsr_on
 VAR global 64 $crsr_marks
 
+VAR global byte $input_flags
+# msb 7
+#     6
+#     5
+#     4
+#     3
+#     2
+#     1
+# lsb 0 insert (set) overwrite (clear)
+
 :cursor_init
 # Initialize the global variables; cursor is set to 0,0 (top left corner) with
 # the cursor showing (on)
@@ -17,6 +27,7 @@ ST $crsr_col 0
 ST $crsr_on 1
 ST16 $crsr_addr_chars %display_chars%
 ST16 $crsr_addr_color %display_color%
+ST $input_flags 0x01
 
 # Initialize the cursor marks, ensuring all marks have the top bit set to
 # mark them as undefined
@@ -183,6 +194,73 @@ POP_CH
 POP_DL
 POP_DH
 RET
+
+######
+# Transcribes the characters between two marks into a string
+# at the address in D
+#
+# Inputs:
+#  AL - left mark (0..31)
+#  BL - right mark (0..31)
+#  D - address of string
+:cursor_mark_getstring
+CALL :heap_push_all
+
+ALUOP_CL %A%+%AL%                   # save left mark ID in CL
+
+# get right mark character address into C
+ALUOP_AL %B%+%BL%
+CALL :cursor_get_mark               # A now has right mark offset
+LDI_BH 0x80
+ALUOP_FLAGS %A&B%+%AH%+%BH%         # Check if mark is defined
+JNZ .cmg_finish
+LDI_BH 0x0f
+ALUOP_AH %A&B%+%AH%+%BH%            # mask top four bits of AH
+LDI_BH 0x40
+ALUOP_CH %A+B%+%AH%+%BH%            # CH now has top byte of char address of right mark
+ALUOP_PUSH %A%+%AL%                 # top of stack has lower byte of char address of right mark
+MOV_CL_AL                           # put left mark back into AL
+POP_CL                              # CL now has lower byte of char address of right mark
+
+# get left mark character address into A
+CALL :cursor_get_mark               # A now has left mark offset
+LDI_BH 0x80
+ALUOP_FLAGS %A&B%+%AH%+%BH%         # Check if mark is defined
+JNZ .cmg_finish
+LDI_BH 0x0f
+ALUOP_AH %A&B%+%AH%+%BH%            # mask top four bits of AH
+LDI_BH 0x40
+ALUOP_AH %A+B%+%AH%+%BH%            # AH now has top byte of char address of left mark
+
+# get right mark character address into B
+MOV_CH_BH
+MOV_CL_BL
+
+# get number of chars to transcribe into B
+CALL :sub16_b_minus_a               # B now contains num chars to transcribe
+ALUOP_PUSH %A%+%AH%
+LDI_AH 0x80
+ALUOP_FLAGS %A&B%+%AH%+%BH%
+POP_AH
+JNZ .cmg_finish                     # if negative, do nothing
+
+# Transcribe the characters
+.cmg_loop
+LDA_A_TD                            # get character at A (left mark)
+STA_D_TD                            # write it to string at D
+CALL :incr16_a
+INCR_D                              # move right
+CALL :decr16_b                      # count this char
+ALUOP_FLAGS %B%+%BL%
+JNZ .cmg_loop
+ALUOP_FLAGS %B%+%BH%
+JNZ .cmg_loop
+
+.cmg_finish
+ALUOP_ADDR_D %zero%                 # write terminating null at D
+CALL :heap_pop_all
+RET
+
 
 # Turns the cursor flag on or off, then jumps to :cursor_display_sync
 :cursor_off
@@ -409,7 +487,7 @@ ALUOP_ADDR %B%+%BH% $crsr_addr_color    # store the new absolute address in RAM
 ALUOP_ADDR %B%+%BL% $crsr_addr_color+1
 
 # turn offset into row,col in A
-CALL :cursor_conv_rowcol
+CALL :cursor_conv_addr
 
 # Store the new row and column into our global vars
 ALUOP_ADDR %A%+%AL% $crsr_col
