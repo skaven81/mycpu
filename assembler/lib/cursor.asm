@@ -71,7 +71,7 @@ POP_BH
 RET
 
 ######
-# Clears the given mark, by zeroing out both bytes of the  mark
+# Clears the given mark, by zeroing out both bytes of the mark
 #
 # Inputs:
 #  AL - mark to clear (0..31)
@@ -116,6 +116,73 @@ POP_BL
 POP_BH
 RET
 
+######
+# Moves all the marks up one row - used when scrolling the terminal.
+# When a mark goes negative (scrolls off top of screen) then its high
+# bit gets set, which invalidates it.
+:cursor_scroll_marks
+CALL :heap_push_all
+LDI_D $crsr_marks                   # track address of mark in D
+LDI_BL 32                           # we will update 32 marks, but we decrement and check at the beginning of the loop
+.cscroll_loop
+LDA_D_AH                            # load upper byte of mark into AH
+INCR_D
+LDA_D_AL                            # load lower byte of mark into AL
+DECR_D                              # put pointer back to known location at first byte of this mark
+LDI_BH 0x80
+ALUOP_FLAGS %A&B%+%AH%+%BH%         # check MSB of high byte
+JNZ .cscroll_2                      # Don't bother modifying this mark if it's disabled
+LDI_BH 0xf0
+ALUOP_CH %A&B%+%AH%+%BH%            # save the mark's flags in CH
+LDI_BH 0x0f
+ALUOP_AH %A&B%+%AH%+%BH%            # wipe the flags in AH
+CALL :cursor_conv_addr              # A is now split AH=row, AL=col
+ALUOP_AH %A-1%+%AH%                 # decrement row by one
+JO .cscroll_3                       # If the row overflowed, don't bother converting back to offset
+CALL :cursor_conv_rowcol            # A now contains the offset again
+MOV_CH_BH                           # grab our flags from CH
+ALUOP_AH %A|B%+%AH%+%BH%            # set flags again
+.cscroll_3
+ALUOP_ADDR_D %A%+%AH%               # write upper byte back
+INCR_D
+ALUOP_ADDR_D %A%+%AL%               # write lower byte back
+DECR_D                              # move D pointer back to known location
+.cscroll_2
+INCR_D                              # move D pointer to next mark
+INCR_D
+ALUOP_BL %B-1%+%BL%
+JNZ .cscroll_loop                   # we are done if BL==0 after decrementing
+CALL :heap_pop_all
+RET
+
+######
+# Shifts all marks right by one position, discarding the last
+# mark.  The 0th mark is set as disabled.
+:cursor_shift_marks
+PUSH_DH
+PUSH_DL
+PUSH_CH
+PUSH_CL
+ALUOP_PUSH %A%+%AL%
+LDI_D $crsr_marks+64                # right mark in D
+LDI_C $crsr_marks+62                # left mark in C
+LDI_AL 62                           # we will move 62 bytes
+.cshift_loop
+DECR_D
+DECR_C
+LDA_C_TD
+STA_D_TD                            # move the left mark to the right
+ALUOP_AL %A-1%+%AL%
+JNZ .cshift_loop
+ALUOP_ADDR_C %negone%               # clear the 0th mark
+INCR_C
+ALUOP_ADDR_C %negone%
+POP_AL
+POP_CL
+POP_CH
+POP_DL
+POP_DH
+RET
 
 # Turns the cursor flag on or off, then jumps to :cursor_display_sync
 :cursor_off

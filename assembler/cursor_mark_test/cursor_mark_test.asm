@@ -89,8 +89,22 @@ JMP .irq1_done
 .irq1_down
 LDI_BL   0x19           # down arrow
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .irq1_number
+JNE .irq1_space
 CALL :cursor_down
+JMP .irq1_done
+
+.irq1_space
+LDI_BL   ' '
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JNE .irq1_enter
+CALL :cursor_shift_marks
+JMP .irq1_done
+
+.irq1_enter
+LDI_BL   0x0d 
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JNE .irq1_number
+CALL :cursor_scroll_marks
 JMP .irq1_done
 
 .irq1_number
@@ -127,7 +141,7 @@ CALL :cursor_save_mark
 
 # Display first ten mark locations
 
-LDI_BL 9                        # start with tenth mark
+LDI_BL 31                       # start with 32nd mark
 .mark_render_loop
 ALUOP_AL %B%+%BL%               # put the mark id in AL
 CALL :cursor_get_mark           # A now contains the mark offset
