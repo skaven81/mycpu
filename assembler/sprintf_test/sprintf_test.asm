@@ -164,11 +164,53 @@ CALL :heap_push_AL
 LDI_D %display_chars%+1152
 CALL :sprintf
 
+VAR global 64 $teststring
+LDI_C .ts1
+LDI_D $teststring
+CALL :strcpy                    # copy .ts into RAM at $teststring
+ALUOP_ADDR_D %zero%             # null-terminate the copied string
+LDI_D %display_chars%+1280
+LDI_C $teststring
+CALL :sprintf                   # print "A test string"
+
+LDI_A .ts2
+CALL :heap_push_A
+LDI_A .ts1
+CALL :heap_push_A
+LDI_AL 2
+LDI_D $teststring
+CALL :strcat
+LDI_D %display_chars%+1344
+LDI_C $teststring
+CALL :sprintf                   # print "A test string we can test with"
+
+LDI_AL '1'
+LDI_D $teststring
+CALL :strprepend
+LDI_D %display_chars%+1408
+LDI_C $teststring
+CALL :sprintf                   # print "1A test string we can test with"
+
+LDI_AL '2'
+LDI_D $teststring+10
+CALL :strprepend
+LDI_D %display_chars%+1472
+LDI_C $teststring
+CALL :sprintf                   # print "1A test st2ring we can test with"
+
+LDI_AL '3'
+LDI_D $teststring+32
+CALL :strprepend
+LDI_D %display_chars%+1536
+LDI_C $teststring
+CALL :sprintf                   # print "1A test st2ring we can test with3"
+
+
 .loop
 CALL :sys_clock_speed
 CALL :heap_push_A
 LDI_C .fmt11
-LDI_D %display_chars%+1280
+LDI_D %display_chars%+1664
 CALL :sprintf
 JMP .loop
 
@@ -186,6 +228,8 @@ HLT
 .fmt9 "Signed Word -207 [%D] -7270 [%D] -32017 [%D]\0"
 .fmt10 "yyyy-mm-dd HH:MM:SS %B%B-%B-%B %B:%B:%B\0"
 .fmt11 "Current clock speed: %UkHz\0"
+.ts1 "A test string\0"
+.ts2 " we can test with\0"
 
 .noirq
 RETI

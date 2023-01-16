@@ -31,6 +31,48 @@ POP_AH
 RET
 
 #######
+# Prepends a character to the string referenced
+# by D. Walks the string until a null is found,
+# then extends the string to the right by one
+# byte, then inserts the new character at the
+# original location.
+#
+# Inputs:
+#  AL: character to insert
+#  D: insertion address point
+:strprepend
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AL%
+LDI_B 0
+.strprepend_find_null_loop
+LDA_D_AL
+ALUOP_FLAGS %A%+%AL%    # Does D point at a null?
+JZ .strprepend_found_null
+INCR_D
+CALL :incr16_b          # count how many bytes we need to copy
+JMP .strprepend_find_null_loop
+.strprepend_found_null
+CALL :incr16_b          # new string is +1 chars so we have +1 char to copy
+.strprepend_copy_loop   # D points to null at end of string
+LDA_D_AL                # get this character
+INCR_D
+ALUOP_ADDR_D %A%+%AL%   # copy it one spot to the right
+DECR_D
+DECR_D                  # move D to spots to the left
+CALL :decr16_b
+ALUOP_FLAGS %B%+%BL%
+JNZ .strprepend_copy_loop
+ALUOP_FLAGS %B%+%BH%
+JNZ .strprepend_copy_loop
+INCR_D                  # Done copying, put D back at the insertion point
+POP_AL                  # Restore char to insert from the stack
+ALUOP_ADDR_D %A%+%AL%   # Write the character to insert
+POP_BL
+POP_BH
+RET
+
+#######
 # Concatenates null-terminated strings referenced on the heap.
 #
 # After execution, the D register will point at the beginning

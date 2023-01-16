@@ -1,7 +1,7 @@
 # vim: ts=4 sts=4 sw=4 noexpandtab
 
 SOURCES := sprintf_test.asm
-LIBS := ../lib/clearscreen.asm ../lib/sprintf.asm ../lib/math.asm ../lib/heap.asm ../lib/keyboard.asm ../lib/timer.asm ../lib/system.asm
+LIBS := ../lib/clearscreen.asm ../lib/sprintf.asm ../lib/math.asm ../lib/heap.asm ../lib/keyboard.asm ../lib/timer.asm ../lib/system.asm ../lib/string.asm
 OPCODES := ../gen_opcodes.sh
 MACROS := ../asm_macros
 
