@@ -7,6 +7,7 @@ VAR global byte $crsr_col
 VAR global word $crsr_addr_chars
 VAR global word $crsr_addr_color
 VAR global byte $crsr_on
+VAR global 64 $crsr_marks
 
 :cursor_init
 # Initialize the global variables; cursor is set to 0,0 (top left corner) with
@@ -16,7 +17,105 @@ ST $crsr_col 0
 ST $crsr_on 1
 ST16 $crsr_addr_chars %display_chars%
 ST16 $crsr_addr_color %display_color%
+
+# Initialize the cursor marks, ensuring all marks have the top bit set to
+# mark them as undefined
+ALUOP_PUSH %A%+%AL%
+PUSH_CH
+PUSH_CL
+LDI_C $crsr_marks
+LDI_AL 64
+.cursor_init_loop
+ALUOP_ADDR_C %negone%
+INCR_C
+ALUOP_AL %A-1%+%AL%
+JNZ .cursor_init_loop
+POP_CL
+POP_CH
+POP_AL
 RET
+
+######
+# Saves the current cursor location in a cursor mark.  Each mark
+# is a 12-bit absolute offset.  The top four bits of the mark
+# are used as flags:
+#  0x80 - mark is undefined if set, defined if clear
+#  0x40 - ??
+#  0x20 - ??
+#  0x10 - ??
+#
+# Inputs:
+#  AL - mark to save (0..31)
+:cursor_save_mark
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+LDI_B $crsr_marks                   # B points to 0th mark
+ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
+ALUOP_AH %zero%
+CALL :add16_to_b                    # B points to ALth mark
+ALUOP_PUSH %B%+%BL%
+LD_AL $crsr_addr_chars              # AL contains high byte of char address
+LDI_BL 0x0f                         # mask to clear the high bits so we just get the offset
+ALUOP_AL %A&B%+%AL%+%BL%            # AL high byte is ready to save
+POP_BL
+ALUOP_ADDR_B %A%+%AL%               # save AL to high byte of mark
+CALL :incr16_b                      # move to low byte of mark
+LD_AL $crsr_addr_chars+1            # AL contains low byte of char address
+ALUOP_ADDR_B %A%+%AL%               # save AL to low byte of mark
+POP_AL
+POP_AH
+POP_BL
+POP_BH
+RET
+
+######
+# Clears the given mark, by zeroing out both bytes of the  mark
+#
+# Inputs:
+#  AL - mark to clear (0..31)
+:cursor_clear_mark
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+LDI_B $crsr_marks                   # B points to 0th mark
+ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
+ALUOP_AH %zero%
+CALL :add16_to_b                    # B points to ALth mark
+ALUOP_ADDR_B %negone%               # undefined value
+CALL :incr16_b                      # move to low byte of mark
+ALUOP_ADDR_B %negone%               # undefined value
+POP_AL
+POP_AH
+POP_BL
+POP_BH
+RET
+
+######
+# Returns the selected mark in A.  If the mark is undefined, then
+# AH will have its high bit set.
+#
+# Inputs:
+#  AL - mark to retrieve (0..31)
+# Outputs:
+#  A[11..0] - mark offset value
+#  A[15] - set if mark is undefined
+:cursor_get_mark
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+LDI_B $crsr_marks                   # B points to 0th mark
+ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
+ALUOP_AH %zero%
+CALL :add16_to_b                    # B points to ALth mark
+LDA_B_AH                            # fetch high byte
+CALL :incr16_b
+LDA_B_AL                            # fetch low byte
+POP_BL
+POP_BH
+RET
+
 
 # Turns the cursor flag on or off, then jumps to :cursor_display_sync
 :cursor_off
