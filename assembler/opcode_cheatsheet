@@ -121,7 +121,42 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 0xba00 - 0xbdff 1k heap (lib/heap.asm)
 0xbe00 - 0xbeff 256b keyboard buffer (lib/keyboard.asm)
 0xbf00 - 0xbfff 256b CPU stack
-0xc000 - 0xffff peripherals
+0xc000 - 0xcfef peripherals
+         0xcff0 ext RAM bank select
+         0xcff1 storage bank select
+0xd000 - 0xdfff ext RAM window (4k)
+0xe000 - 0xefff storage window (4k)
+0xf000 - 0xfffe unallocated
+         0xffff reserved (idle bus) 
+
+0xc000 - 0xc07f keyboard
+    0xc000 keyboard key
+    0xc001 keyboard flags
+0xc080 - 0xc0ff timer
+    0xc080 seconds
+    0xc081 minutes
+    0xc082 hours
+    0xc083 day
+    0xc084 date
+    0xc085 ctrl_c / month
+    0xc086 year
+    0xc087 century
+    0xc088 alarm sec
+    0xc089 alarm min
+    0xc08a alarm hour
+    0xc08b alarm day/date
+    0xc08c watchdog subsec
+    0xc08d watchdog sec
+    0xc08e ctrl_a
+    0xc08f ctrl_b
+    0xc090 sram addr
+    0xc093 sram data
+0xc100 - 0xc0ff UART
+    0xc100 - transmitter buffer register (write) / receiver buffer register (read)
+    0xc101 - UART control register (write) / UART status register (read)
+    0xc102 - Modem control register (write/read)
+    0xc103 - Bit rate select register (write) / modem status register (read)
+
 
 # Interrupt handling
 When CPU comes out of reset, IRQMASK will be set.  In order to take advantage
@@ -130,11 +165,11 @@ locations.  The first byte is 0x5f, the second byte is the IRQ number, shifted
 left one place (so a 16-bit address can be placed at each location):
 
  * IRQ0 0x5f00
- * IRQ1 0x5f02
+ * IRQ1 0x5f02 - keyboard
  * IRQ2 0x5f04
- * IRQ3 0x5f06
- * IRQ4 0x5f08
- * IRQ5 0x5f0a
+ * IRQ3 0x5f06 - timer
+ * IRQ4 0x5f08 - UART data ready
+ * IRQ5 0x5f0a - UART interrupt
  * IRQ6 0x5f0c
  * IRQ7 0x5f0e
 
