@@ -288,6 +288,9 @@ JNZ .color_loop
 ALUOP_FLAGS %A%+%AH%
 JNZ .color_loop
 
+# And finally scroll our marks
+CALL :cursor_scroll_marks
+
 CALL :heap_pop_all
 RET
 

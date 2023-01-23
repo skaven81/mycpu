@@ -48,12 +48,12 @@ RET
 
 ######
 # Saves the current cursor location in a cursor mark.  Each mark
-# is a 12-bit absolute offset.  The top four bits of the mark
-# are used as flags:
+# is a 12-bit absolute offset.  The top bit of the mark
+# are used as an active flag
 #  0x80 - mark is undefined if set, defined if clear
-#  0x40 - ??
-#  0x20 - ??
-#  0x10 - ??
+#  0x40 - unused
+#  0x20 - unused
+#  0x10 - unused
 #
 # Inputs:
 #  AL - mark to save (0..31)
@@ -80,6 +80,151 @@ POP_AH
 POP_BL
 POP_BH
 RET
+
+######
+# Saves the given offset as a mark
+#
+# Inputs:
+#  A - 12-bit offset (top 4 bits are ignored)
+#  BL - mark ID (0..31)
+:cursor_save_mark_offset
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_AL %B%+%BL%                   # mark ID into AL
+LDI_B $crsr_marks                   # B points to 0th mark
+ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
+ALUOP_AH %zero%
+CALL :add16_to_b                    # B points to ALth mark
+POP_AL
+POP_AH                              # A now contains offset or addr
+ALUOP_PUSH %B%+%BH%
+LDI_BH 0x0f                         # mask to clear high bits of offset
+ALUOP_AH %A&B%+%AH%+%BH%            # offset is now just 12 bits
+POP_BH
+ALUOP_ADDR_B %A%+%AH%               # save high byte of offset
+CALL :incr16_b                      # move to low byte of mark
+ALUOP_ADDR_B %A%+%AL%               # save low byte of offset
+POP_BL
+POP_BH
+RET
+
+######
+# Saves the given row/col as a mark
+#
+# Inputs:
+#  AH - row (0..59)
+#  AL - col (0..63)
+#  BL - mark ID (0..31)
+:cursor_save_mark_rowcol
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_AL %B%+%BL%                   # mark ID into AL
+LDI_B $crsr_marks                   # B points to 0th mark
+ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
+ALUOP_AH %zero%
+CALL :add16_to_b                    # B points to ALth mark
+POP_AL
+POP_AH                              # A now contains row/col
+CALL :cursor_conv_rowcol            # A now contains offset
+ALUOP_PUSH %B%+%BH%
+LDI_BH 0x0f                         # mask to clear high bits of offset
+ALUOP_AH %A&B%+%AH%+%BH%            # offset is now just 12 bits
+POP_BH
+ALUOP_ADDR_B %A%+%AH%               # save high byte of offset
+CALL :incr16_b                      # move to low byte of mark
+ALUOP_ADDR_B %A%+%AL%               # save low byte of offset
+POP_BL
+POP_BH
+RET
+
+######
+# Moves the given mark up/down/left/right by one character/row
+#
+# Inputs:
+#  AL - mark ID (0..31)
+:cursor_mark_left
+ALUOP_PUSH %A%+%AH%
+LDI_AH -1
+CALL :cursor_mark_move
+POP_AH
+RET
+
+:cursor_mark_right
+ALUOP_PUSH %A%+%AH%
+LDI_AH 1
+CALL :cursor_mark_move
+POP_AH
+RET
+
+:cursor_mark_up
+ALUOP_PUSH %A%+%AH%
+LDI_AH -64
+CALL :cursor_mark_move
+POP_AH
+RET
+
+:cursor_mark_down
+ALUOP_PUSH %A%+%AH%
+LDI_AH 64
+CALL :cursor_mark_move
+POP_AH
+RET
+
+######
+# Moves the given mark by a given offset.  If the move
+# takes the mark out of the screen boundary (mark offset
+# less than zero or greater than 0x0eff) then the mark
+# is disabled.  If the selected mark is already disabled,
+# it remains disabled and is unchanged.
+#
+# Inputs:
+#  AH - offset amount (-128..127)
+#  AL - mark ID (0..31)
+:cursor_mark_move
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
+
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%                 # ensure offset is on top of stack
+CALL :cursor_get_mark               # load the requested mark into AH+AL
+LDI_BH 0x80
+ALUOP_FLAGS %A&B%+%AH%+%BH%         # check high bit of mark data
+JZ .cmm_valid_mark
+POP_AH                              # if this mark is already disabled, just abort
+POP_AL
+JMP .cmm_done
+
+.cmm_valid_mark                     # this is currently a valid mark
+LDI_BH 0                            # blank out BH for 16-bit math
+POP_BL                              # offset (from AH) popped into BL
+CALL :add16_to_a                    # A contains new offset
+LDI_BH 0x80
+ALUOP_FLAGS %A&B%+%AH%+%BH%         # check if offset is negative
+JNZ .cmm_out_of_bounds
+LDI_BH 0x0e
+ALUOP_FLAGS %B-A%+%AH%+%BH%         # if 0x0e - top byte of new offset overflows, then new offset was > 0x0eff
+JO .cmm_out_of_bounds
+POP_BL                              # offset in A is in bounds; BL contains mark ID
+CALL :cursor_save_mark_offset
+JMP .cmm_done
+
+.cmm_out_of_bounds
+POP_AL                              # AL contains mark ID
+CALL :cursor_clear_mark
+
+.cmm_done
+POP_BH
+POP_BL
+POP_AH
+POP_AL
+RET
+
 
 ######
 # Clears the given mark, by zeroing out both bytes of the mark
@@ -167,7 +312,7 @@ CALL :heap_pop_all
 RET
 
 ######
-# Shifts all marks right by one position, discarding the last
+# Shifts all mark IDs right by one position, discarding the last
 # mark.  The 0th mark is set as disabled.
 :cursor_shift_marks
 PUSH_DH
@@ -246,15 +391,18 @@ JNZ .cmg_finish                     # if negative, do nothing
 
 # Transcribe the characters
 .cmg_loop
+ALUOP_FLAGS %B%+%BL%
+JNZ .cmg_continue
+ALUOP_FLAGS %B%+%BH%
+JNZ .cmg_continue
+JMP .cmg_finish                     # If the counter in B is now zero, exit the loop
+.cmg_continue
 LDA_A_TD                            # get character at A (left mark)
 STA_D_TD                            # write it to string at D
 CALL :incr16_a
 INCR_D                              # move right
 CALL :decr16_b                      # count this char
-ALUOP_FLAGS %B%+%BL%
-JNZ .cmg_loop
-ALUOP_FLAGS %B%+%BH%
-JNZ .cmg_loop
+JMP .cmg_loop
 
 .cmg_finish
 ALUOP_ADDR_D %zero%                 # write terminating null at D
