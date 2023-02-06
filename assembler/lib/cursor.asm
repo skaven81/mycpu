@@ -201,8 +201,17 @@ POP_AL
 JMP .cmm_done
 
 .cmm_valid_mark                     # this is currently a valid mark
-LDI_BH 0                            # blank out BH for 16-bit math
 POP_BL                              # offset (from AH) popped into BL
+ALUOP_PUSH %A%+%AH%
+LDI_AH 0x80                         # mask to see if BL is negative
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JZ .cmm_pos
+LDI_BH 0xff                         # If BL was negative, extend negation into BH
+JMP .cmm_posnegdone
+.cmm_pos
+LDI_BH 0x00                         # If BL was positive, extend zeros into BH
+.cmm_posnegdone
+POP_AH
 CALL :add16_to_a                    # A contains new offset
 LDI_BH 0x80
 ALUOP_FLAGS %A&B%+%AH%+%BH%         # check if offset is negative
