@@ -32,8 +32,11 @@ CALL :clear_screen
 # Initialize the cursor at 0,0
 CALL :cursor_init
 CALL :cursor_display_sync
+LDI_AL 0
+CALL :cursor_save_mark
 
 # Clear any pending KB interrupts
+CALL :kb_clear_irq
 CALL :timer_clear_irq
 
 # Setup our own keyboard handler
@@ -70,6 +73,8 @@ LDI_BL   0x1a           # right arrow
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .irq1_left
 CALL :cursor_right
+LDI_AL 0
+CALL :cursor_mark_right
 JMP .irq1_done
 
 .irq1_left
@@ -77,6 +82,8 @@ LDI_BL   0x1b           # left arrow
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .irq1_up
 CALL :cursor_left
+LDI_AL 0
+CALL :cursor_mark_left
 JMP .irq1_done
 
 .irq1_up
@@ -84,6 +91,8 @@ LDI_BL   0x18           # up arrow
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .irq1_down
 CALL :cursor_up
+LDI_AL 0
+CALL :cursor_mark_up
 JMP .irq1_done
 
 .irq1_down
@@ -91,6 +100,8 @@ LDI_BL   0x19           # down arrow
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .irq1_space
 CALL :cursor_down
+LDI_AL 0
+CALL :cursor_mark_down
 JMP .irq1_done
 
 .irq1_space
@@ -135,11 +146,22 @@ LD_DL $crsr_addr_chars+1
 LDI_TD 0x02
 STA_D_TD
 
-# save this location mark 0
-LDI_AL 0
-CALL :cursor_save_mark
+# Display the cursor position on line zero
+LD16_A $crsr_addr_color
+CALL :heap_push_AL
+CALL :heap_push_AH
+LD16_A $crsr_addr_chars
+CALL :heap_push_AL
+CALL :heap_push_AH
+LD_AL $crsr_col
+CALL :heap_push_AL
+LD_AL $crsr_row
+CALL :heap_push_AL
+LDI_C .fmt0
+LDI_D %display_chars%
+CALL :sprintf
 
-# Display first ten mark locations
+# Display all 32 marks
 
 LDI_BL 31                       # start with 32nd mark
 .mark_render_loop
@@ -152,7 +174,7 @@ JZ .mark_is_valid
 # undefined mark
 ALUOP_PUSH %B%+%BL%
 CALL :heap_push_BL
-ALUOP_AH %B%+%BL%               # row (mark id) in AH
+ALUOP_AH %B+1%+%BL%             # row (mark id+1) in AH
 ALUOP_AL %zero%                 # col (zero) in AL
 CALL :cursor_conv_rowcol        # offset now in A
 LDI_B %display_chars%
@@ -167,11 +189,13 @@ JMP .done_rendering_mark
 # defined mark
 .mark_is_valid
 ALUOP_PUSH %B%+%BL%
-CALL :cursor_conv_addr          # AH=row, AL=col
 CALL :heap_push_AL
-CALL :heap_push_AH
-CALL :heap_push_BL
-ALUOP_AH %B%+%BL%               # row (mark id) in AH
+CALL :heap_push_AH              # mark offset
+CALL :cursor_conv_addr          # AH=row, AL=col
+CALL :heap_push_AL              # col
+CALL :heap_push_AH              # row
+CALL :heap_push_BL              # mark ID
+ALUOP_AH %B+1%+%BL%             # row (mark id+1) in AH
 ALUOP_AL %zero%                 # col (zero) in AL
 CALL :cursor_conv_rowcol        # offset now in A
 LDI_B %display_chars%
@@ -191,8 +215,9 @@ JMP .mark_render_loop
 
 RETI
 
-.fmt1 "Mark %u is undefined   \0"
-.fmt2 "Mark %u row %u col %u\0"
+.fmt0 "Cursor row %u col %u chars 0x%x%x colors 0x%x%x\0"
+.fmt1 "Mark %u is undefined            \0"
+.fmt2 "Mark %u row %u col %u raw 0x%x%x\0"
 
 
 .noirq
