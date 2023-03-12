@@ -181,4 +181,45 @@
 %tmr_E32K_mask%         0x40    # 32kHz square wave enable: active low,     *** LOW ON POWERUP
 %tmr_BB32_mask%         0x20    # battery backup 32kHz enable: active high
 
+# UART control registers
+%uart_tbr%              0xc100  # transmit buffer register (write)
+%uart_rbr%              0xc100  # receive buffer register (read)
+
+%uart_ucr%              0xc101  # UART control register (write)
+%uart_ucr_stop%         0x01    #   0=1 stop bit, 1=2 stop bits for 6,7 bit data
+%uart_ucr_parity%       0x07    #   [TR] 0=ee 1=oo 2=eo 3=oe 4=ex 5=ox 6,7,8=xx
+%uart_ucr_wordsize%     0x30    #   0=5 1=6 2=7 3=8 bit words
+%uart_ucr_8n1%          0x3e    #   8 bit word, no parity bits, 1 stop bit
+
+%uart_usr%              0xc101  # UART status register (read)
+%uart_usr_PE%           0x01    #   parity error
+%uart_usr_FE%           0x02    #   framing error
+%uart_usr_OE%           0x04    #   overrun error
+%uart_usr_RBRK%         0x08    #   received break
+%uart_usr_MS%           0x10    #   modem status change
+%uart_usr_TC%           0x20    #   transmission complete
+%uart_usr_TBRE%         0x40    #   transmit buffer register empty
+%uart_usr_DR%           0x80    #   data ready
+
+%uart_mcr%              0xc102  # modem control register (read/write)
+%uart_mcr_RTS%          0x01    #   request to send
+%uart_mcr_DTR%          0x02    #   data terminal ready
+%uart_mcr_ITEN%         0x04    #   interrupts enabled
+%uart_mcr_mode%         0x18    #   0=normal 1=Tx-brk 2=echo 3=loop test
+%uart_mcr_REN%          0x20    #   receiver enabled
+%uart_mcr_MIEN%         0x40    #   modem interrupt enable
+
+%uart_brsr%             0xc103  # bit rate select register (write)
+%uart_brsr_2400%        0x26    #   prescaler 4x 0x02 divisor 64   0x24   (1.73% error)
+%uart_brsr_4800%        0x22    #   prescaler 4x 0x02 divisor 32   0x20   (1.73% error)
+%uart_brsr_9600%        0x1d    #   prescaler 3x 0x01 divisor 22   0x1c   (1.36% error)
+%uart_brsr_19200%       0x1e    #   prescaler 4x 0x02 divisor 8    0x0c   (1.73% error)
+%uart_brsr_38400%       0x14    #   prescaler 1x 0x00 divisor 16   0x14   (1.73% error)
+%uart_brsr_57600%       0x10    #   prescaler 1x 0x00 divisor 32/3 0x10   (1.73% error)
+%uart_brsr_115200%      0x08    #   prescaler 1x 0x00 divisor 16/3 0x08   (1.73% error)
+
+%uart_msr%              0xc103  # modem status register (read)
+%uart_msr_CTS%          0x01    #   clear to send
+%uart_msr_DSR%          0x02    #   data set ready
+
 

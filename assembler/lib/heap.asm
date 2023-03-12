@@ -2,7 +2,8 @@
 
 # Software heap, generally used for storing extra subroutine arguments
 #
-# The heap lives at 0xba00 and can grow up to 0xbdff (1K)
+# The heap lives at 0xba00 and may grow up to 0xbcff (768b), but there
+# is no validation to prevent overrun.
 VAR global word $heap_ptr
 
 ######
