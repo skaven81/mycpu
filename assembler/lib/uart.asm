@@ -69,10 +69,6 @@ LD_TD %uart_rbr%
 ST16 $uart_buf_ptr_write 0xbd00
 ST16 $uart_buf_ptr_read 0xbd00
 
-# configure IRQ4 and IRQ5
-ST16    %IRQ4addr%  :uart_irq_dr_buf
-ST16    %IRQ5addr%  :uart_clear_usr_msr
-
 RET
 
 ######
@@ -105,7 +101,7 @@ ALUOP_PUSH %B%+%BH%
 
 LD_AH   $uart_buf_ptr_write
 LD_AL   $uart_buf_ptr_write+1
-LD_BH   %uart_rdr%
+LD_BH   %uart_rbr%
 ALUOP_ADDR_A %B%+%BH%                           # write character to buffer
 ALUOP_ADDR %A+1%+%AL% $uart_buf_ptr_write+1     # increment write pointer, wraps back to 00
 
