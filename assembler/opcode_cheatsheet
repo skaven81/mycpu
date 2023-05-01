@@ -169,8 +169,8 @@ left one place (so a 16-bit address can be placed at each location):
  * IRQ1 0x5f02 - keyboard
  * IRQ2 0x5f04
  * IRQ3 0x5f06 - timer
- * IRQ4 0x5f08 - UART data ready
- * IRQ5 0x5f0a - UART interrupt
+ * IRQ4 0x5f08 - UART modem interrupt
+ * IRQ5 0x5f0a - UART data ready
  * IRQ6 0x5f0c
  * IRQ7 0x5f0e
 

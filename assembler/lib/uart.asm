@@ -72,7 +72,7 @@ ST16 $uart_buf_ptr_read 0xbd00
 RET
 
 ######
-# IRQ5 (INTR) target that does nothing except read from the
+# IRQ4 (INTR) target that does nothing except read from the
 # USR and MSR registers to clear the interrupt.
 :uart_clear_usr_msr
 LD_TD %uart_msr%
@@ -80,14 +80,14 @@ LD_TD %uart_usr%
 RETI
 
 ######
-# IRQ4 (DR/data ready) target that does nothing but clear
+# IRQ5 (DR/data ready) target that does nothing but clear
 # the interrupt
 :uart_clear_dr
 LD_TD %uart_rbr%
 RETI
 
 ######
-# IRQ4 (DR/data ready) target that reads from the UART's receive buffer
+# IRQ5 (DR/data ready) target that reads from the UART's receive buffer
 # register (RBR) and shifts it into the uart read buffer in RAM. Like
 # the keyboard read buffer, the write address pointer is incremented and
 # wraps around after 256 bytes.  The read pointer "chases" the write
