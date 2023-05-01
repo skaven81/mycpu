@@ -11,8 +11,8 @@ ST16    %IRQ0addr%  .noirq
 ST16    %IRQ1addr%  :kb_clear_irq
 ST16    %IRQ2addr%  .noirq
 ST16    %IRQ3addr%  :timer_clear_irq
-ST16    %IRQ4addr%  :uart_irq_dr_buf
-ST16    %IRQ5addr%  :uart_clear_usr_msr
+ST16    %IRQ4addr%  :uart_clear_usr_msr
+ST16    %IRQ5addr%  :uart_irq_dr_buf
 ST16    %IRQ6addr%  .noirq
 ST16    %IRQ7addr%  .noirq
 
@@ -39,6 +39,7 @@ UMASKINT
 CALL :uart_bufsize
 ALUOP_FLAGS %A%+%AL%
 JZ .main_loop
+CALL :uart_readbuf
 CALL :putchar
 JMP .main_loop
 HLT
