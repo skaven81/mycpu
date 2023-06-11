@@ -6,6 +6,11 @@
 
 ######
 # Initializes the UART to a particular speed setting
+:uart_init_1200_8n1
+ST %uart_ucr% %uart_ucr_8n1%
+ST %uart_brsr% %uart_brsr_1200%+%uart_brsr_cobaud%
+JMP .uart_init
+
 :uart_init_2400_8n1
 ST %uart_ucr% %uart_ucr_8n1%
 ST %uart_brsr% %uart_brsr_2400%+%uart_brsr_cobaud%

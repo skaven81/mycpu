@@ -210,6 +210,7 @@
 %uart_mcr_MIEN%         0x40    #   modem interrupt enable
 
 %uart_brsr%             0xc103  # bit rate select register (write)
+%uart_brsr_1200%        0x3c    #   prescaler 1x 0x00 divisor 512  0x3c   (1.73% error)
 %uart_brsr_2400%        0x26    #   prescaler 4x 0x02 divisor 64   0x24   (1.73% error)
 %uart_brsr_4800%        0x22    #   prescaler 4x 0x02 divisor 32   0x20   (1.73% error)
 %uart_brsr_9600%        0x1d    #   prescaler 3x 0x01 divisor 22   0x1c   (1.36% error)
