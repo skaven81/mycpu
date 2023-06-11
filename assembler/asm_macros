@@ -217,6 +217,7 @@
 %uart_brsr_38400%       0x14    #   prescaler 1x 0x00 divisor 16   0x14   (1.73% error)
 %uart_brsr_57600%       0x10    #   prescaler 1x 0x00 divisor 32/3 0x10   (1.73% error)
 %uart_brsr_115200%      0x08    #   prescaler 1x 0x00 divisor 16/3 0x08   (1.73% error)
+%uart_brsr_cobaud%      0x80    #   switch CO to baud clock (1) or input clock (0)
 
 %uart_msr%              0xc103  # modem status register (read)
 %uart_msr_CTS%          0x01    #   clear to send

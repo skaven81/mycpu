@@ -8,37 +8,37 @@
 # Initializes the UART to a particular speed setting
 :uart_init_2400_8n1
 ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_2400%
+ST %uart_brsr% %uart_brsr_2400%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_4800_8n1
 ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_4800%
+ST %uart_brsr% %uart_brsr_4800%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_9600_8n1
 ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_9600%
+ST %uart_brsr% %uart_brsr_9600%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_19200_8n1
 ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_19200%
+ST %uart_brsr% %uart_brsr_19200%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_38400_8n1
 ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_38400%
+ST %uart_brsr% %uart_brsr_38400%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_57600_8n1
 ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_57600%
+ST %uart_brsr% %uart_brsr_57600%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_115200_8n1
 ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_115200%
+ST %uart_brsr% %uart_brsr_115200%+%uart_brsr_cobaud%
 JMP .uart_init
 
 ######
