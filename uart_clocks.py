@@ -4,9 +4,10 @@
 import pprint
 
 results = dict()
-for xtal_khz in (4000, 4096, 6000, 8000, 10000, 11059.2, 12000, 16000,):
+#for xtal_khz in (4000, 4096, 6000, 8000, 10000, 11059.2, 12000, 16000,):
+for xtal_khz in (10000,):
     results[xtal_khz] = dict()
-    for baud in (2400, 4800, 9600, 19200, 38400, 57600, 115200,):
+    for baud in (300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200):
         target_frequency_khz = 16 * (baud / 1000)
         results[xtal_khz][baud] = [ ]
         for prescaler in (1, 3, 4, 5,):
