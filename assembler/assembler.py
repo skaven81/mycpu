@@ -195,7 +195,7 @@ global_arrays = { }
 next_global_var = 0x4f00 # hidden framebuffer, 256 bytes
 next_global_array = 0xb5ff # grows downward
 for input_file in args.sources:
-    label_prefix="{}_".format(input_file.split('/')[-1].split('.')[0].replace(' ','_')).upper()
+    label_prefix="{}_".format(input_file.split('/')[-1].split('.')[0].replace(' ','_').replace('-','_')).upper()
     with open(input_file, 'r') as fh:
         while True:
             line = fh.readline()
