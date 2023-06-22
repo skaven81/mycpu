@@ -16,8 +16,8 @@
 # current cursor position, and mark 1 will be moved over mark 0
 # before returning, so the result will be an zero-length string.
 #
-# If the user presses the up or down arrow keys, the list of marks is
-# consulted so previous inputs can be retrieved.
+# TODO: If the user presses the up or down arrow keys, the list of
+# marks is consulted so previous inputs can be retrieved.
 #
 # Inputs:
 #  AL - maximum input length, 0xff = infinite
