@@ -20,7 +20,7 @@
 # marks is consulted so previous inputs can be retrieved.
 #
 # Inputs:
-#  AL - maximum input length, 0xff = infinite
+#  none
 # Outputs:
 #  cursor marks 0 and 1 will be set to mark the user's input
 
@@ -35,10 +35,6 @@ PUSH_CL
 LD_TD  %kb_key%                 # clear any pending KB interrupt
 ST16 %IRQ1addr%  :kb_irq_buf    # use buffered keyboard input
 UMASKINT
-
-# TODO Compute the value that mark 1 would be at the end of our
-# allowed input size (in AL).  If AL is 0xff (infinite) then
-# set this to 0xffff.  Store in C.
 
 # Store our current cursor position at mark 0 and mark 1
 LDI_AL 0
