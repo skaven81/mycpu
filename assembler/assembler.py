@@ -230,7 +230,7 @@ for input_file in args.sources:
 
             # Look for dot-style labels and replace them with localized
             # versions that have the filename prepended
-            newline = re.sub(r"\.([a-zA-Z0-9_]+)", f".{label_prefix}\\1", newline)
+            newline = re.sub(r"\.([a-zA-Z0-9_]{3}[a-zA-Z0-9_]+)", f".{label_prefix}\\1", newline)
 
             if newline != oldline:
                 logging.debug("{:16.16s} Line {}: [{}]->[{}]".format(input_file, line_num, oldline, newline))
