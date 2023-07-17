@@ -227,7 +227,7 @@ RET
 # Inputs:
 #  C - address of format string to print
 #  heap - parameters for the format string
-VAR local 128 $printf_buf
+VAR global 128 $printf_buf
 :printf
 PUSH_DH
 PUSH_DL

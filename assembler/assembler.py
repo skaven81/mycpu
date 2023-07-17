@@ -92,15 +92,15 @@ label = Combine(labelprefix + Word(alphanums+"_"))
 label.setName('label')
 labeloffset = Combine(labelprefix + Word(':', alphanums+"_-+"))
 labeloffset.setName('labeloffset')
-# Variable declarations. `global` assigns a permanent address from the variable pool,
-# and the name will be valid across all assembler files.  `local` assigns an address
-# from the local pool, so an address might get reused across multiple files, and the
-# name is localized to just the file.  Both `byte` and `word` return a single 16-bit
-# address, but `word` also marks the following byte as reserved.  If a number of bytes
-# is specified instead of `byte` or `word`, then an array is reserved.
-#  VAR {global|local} {byte|word|<num_bytes>} $name
+# Variable declarations. `global` assigns a permanent address from the variable
+# pool, and the name will be valid across all assembler files. Both `byte` and
+# `word` return a single 16-bit address, but `word` also marks the following
+# byte as reserved.  If a number of bytes is specified instead of `byte` or
+# `word`, then an array is reserved. Currently `global` is the only scope but
+# we reserve the syntax to add other scopes later.
+#  VAR {global} {byte|word|<num_bytes>} $name
 varprefix = Literal('VAR').setResultsName('var_declare')
-varscope = Combine(Literal('global') | Literal('local')).setResultsName('scope')
+varscope = Literal('global').setResultsName('scope')
 varsize = Combine(Literal('byte') | Literal('word') | Word(nums)).setResultsName('size')
 varname = Combine(Literal('$') + Word(alphanums+"_")).setResultsName('var')
 var = varprefix + varscope + varsize + varname
@@ -192,8 +192,8 @@ line_num = 0
 concat_source = [ ]
 global_vars = { }
 global_arrays = { }
-next_global_var = 0x4f00 # hidden framebuffer, 256 bytes
-next_global_array = 0xb5ff # grows downward
+next_global_var = 0x4f00 # hidden framebuffer, 256 bytes, when full goes to 0x5f10 (more hidden framebuffer)
+next_global_array = 0xb9ff
 for input_file in args.sources:
     label_prefix="{}_".format(input_file.split('/')[-1].split('.')[0].replace(' ','_').replace('-','_')).upper()
     with open(input_file, 'r') as fh:
@@ -246,15 +246,21 @@ for input_file in args.sources:
                 if match['size'] == 'byte':
                     global_vars[match['var']] = next_global_var
                     next_global_var += 1
-                    assert 0x4f00 <= next_global_var <= 0x4fff
                 elif match['size'] == 'word':
                     global_vars[match['var']] = next_global_var
                     next_global_var += 2
-                    assert 0x4f00 <= next_global_var <= 0x4fff
                 else:
                     next_global_array -= int(match['size'])
                     global_arrays[match['var']] = next_global_array + 1
-                    assert 0xb000 <= next_global_array <= 0xb5ff
+                    assert 0xb000 <= next_global_array <= 0xb9ff
+                # If we have filled up the first global var range, roll to the next one
+                if match['size'] in ('byte', 'word',):
+                    if next_global_var <= 0x4fff:
+                        if next_global_var >= 0x4ffd:
+                            logging.debug("{:16.16s} Line {}: first global var zone is full, moving to 0x5f10".format(input_file, line_num))
+                            next_global_var = 0x5f10
+                    assert (0x4f00 <= next_global_var <= 0x4fff) or (0x5f10 <= next_global_var <= 0x5fff)
+
 
 
 #####
@@ -269,11 +275,6 @@ current_file = None
 for input_file, line_num, line in concat_source:
     logging.debug("{:16.16s} {:3d}: IN:  {}".format(input_file, line_num, line))
     if input_file != current_file:
-        # Reset local vars for each new file
-        local_vars = { }
-        local_arrays = { }
-        next_local_var = 0x5f10 # hidden framebuffer, 240 bytes, after interrupt addresses
-        next_local_array = 0xb600 # grows upward
         current_file = input_file
 
     # We have to replace variables inline so that the pyparsing bits that
@@ -281,7 +282,7 @@ for input_file, line_num, line in concat_source:
     if not line.startswith('VAR') and not line.startswith('#'):
         newline = line
         for v in re.findall('\$[a-zA-Z0-9_]+', line):
-            varval = local_vars.get(v, global_vars.get(v, local_arrays.get(v, global_arrays.get(v ))))
+            varval = global_vars.get(v, global_arrays.get(v))
             if not varval:
                 raise SyntaxError(f"In {input_file} line {line_num}: undefined variable {v}")
             newline = newline.replace(v, f"0x{varval:04x}")
@@ -323,22 +324,8 @@ for input_file, line_num, line in concat_source:
             logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x} (already defined)".format(input_file, line_num, match['scope'], match['var'], global_vars[match['var']]))
         elif match['scope'] == 'global':
             logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x} (already defined)".format(input_file, line_num, match['scope'], match['var'], global_arrays[match['var']]))
-        elif match['scope'] == 'local':
-            logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_local_var))
-            if match['size'] == 'byte':
-                local_vars[match['var']] = next_local_var
-                next_local_var += 1
-                assert 0x5f10 <= next_local_var <= 0x5fff
-            elif match['size'] == 'word':
-                local_vars[match['var']] = next_local_var
-                next_local_var += 2
-                assert 0x5f10 <= next_local_var <= 0x5fff
-            else:
-                local_arrays[match['var']] = next_local_array
-                next_local_array += int(match['size'])
-                assert 0xb600 <= next_local_array <= 0xb9ff
         else:
-            raise SyntaxError('Variable declaration must include local or global scope')
+            raise SyntaxError('Variable declaration must include valid scope')
         continue
 
     # opcode: machine instruction plus args

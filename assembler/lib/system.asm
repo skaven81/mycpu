@@ -69,7 +69,7 @@ JNE .sys_clock_speed_wait
 # We now want to count iterations of this loop, which
 # should take 100 clocks, until AL >= 2.
 LDI_BL  2
-VAR local word $dummy               # ST16 takes 11 clocks but we need somewhere to write data
+VAR global word $dummy              # ST16 takes 11 clocks but we need somewhere to write data
 .sys_clock_speed_wait2              # op        total
 ST16 $dummy 0x0000                  # 12        12
 ST16 $dummy 0x0000                  # 12        24
