@@ -109,6 +109,20 @@ RET                                 #   and return
 ALUOP_AH %A<<1%+%AH%                #   shift AH without Cin
 RET                                 #   and return
 
+:shift16_a_right
+# Performs a 16-bit right shift of A
+ALUOP_PUSH %B%+%BL%
+ALUOP_AL %A>>1%+%AL%                # shift AL
+LDI_BL 0x01                         # mask to check if AH's LSB is set
+ALUOP_FLAGS %A&B%+%AH%+%BL%         # check if AH LSB is set
+JZ .shift16_a_right_zero            # if AH LSB is set,
+ALUOP_AL %A_setmsb%+%AL%            #   set AL's MSB
+.shift16_a_right_zero
+ALUOP_AH %A>>1%+%AH%                # shift AH
+POP_BL                              # restore BL
+RET                                 # and return
+
+
 :shift16_b_left
 # Performs a 16-bit left shift of B
 # overflow flag will be set if a bit carried out
@@ -119,6 +133,21 @@ RET                                 #   and return
 .shift16_b_left_nooverflow          # otherwise,
 ALUOP_BH %B<<1%+%BH%                #   shift BH without Cin
 RET                                 #   and return
+
+:shift16_b_right
+# Performs a 16-bit right shift of B
+ALUOP_PUSH %A%+%AL%
+ALUOP_AL %B>>1%+%BL%                # shift BL
+LDI_AL 0x01                         # mask to check if BH's LSB is set
+ALUOP_FLAGS %A&B%+%BH%+%AL%         # check if BH LSB is set
+JZ .shift16_b_right_zero            # if BH LSB is set,
+LDI_AL 0x80
+ALUOP_BL %A|B%+%BL%+%AL%            #   set BL's MSB
+.shift16_b_right_zero
+ALUOP_BH %B>>1%+%BH%                # shift BH
+POP_AL                              # restore AL
+RET                                 # and return
+
 
 :double_dabble_byte
 # Performs the double-dabble algorithm to convert a byte (in AL)
