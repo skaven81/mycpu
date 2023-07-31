@@ -295,33 +295,18 @@ RET
 #
 # Inputs:
 #  AL: Size of desired allocation, 16*(AL+1) (0 = 16 bytes, 1 = 32 bytes, ... 255 = 4096 bytes)
-#      Allowed values for AL are:
-#       * 0 (16 bytes)
-#       * 1 (32 bytes)
-#       * 2 (48 bytes)
-#       * 3 (64 bytes) ^- allocated by the ledger nybble
-#       * 7 (128 bytes)
-#       * 15 (256 bytes)
-#       * 23 (384 bytes)
-#       * 31 (512 bytes)
-#       * (n*8)-1 (n*128 bytes)
-#       * 247 (3952 bytes)
-#       * 255 (4096 bytes) ^- allocated by the ledger byte
 #     Values >= 7 will be shifted right three places and incremented to
 #     obtain the number of contiguous ledger bytes to locate.  Values
-#     <= 3 will be incremented to find the number of contiguous bits in
-#     a nybble to locate.  Values 4-6 are invalid.
+#     <= 6 will be incremented to find the number of contiguous bits in
+#     a nybble to locate.
 #
 # Output:
 #  A:  Memory address of allocated memory (will be zero if allocation failed)
 :malloc
 CALL :heap_push_all
-LDI_BL 0x03
-ALUOP_FLAGS %A-B%+%AL%+%BL%                 # if AL-0x03 causes an overflow, then AL is less than 3
-JO .malloc_blocks
 LDI_BL 0x07
-ALUOP_FLAGS %A-B%+%AL%+%BL%                 # if AL-0x08 causes an overflow, then AL is less than 7, and is invalid
-JO .malloc_invalid
+ALUOP_FLAGS %A-B%+%AL%+%BL%                 # if AL-0x07 causes an overflow, then AL is less than 7, use nybble allocator
+JO .malloc_blocks
 
 # otherwise, AL is >= 7 and we use segment-based allocation for 8/16/24/32/.../256 blocks
 .malloc_segments
