@@ -65,6 +65,21 @@ POP_DH
 RET
 
 ######
+# Pop a value from the heap into AH
+:heap_pop_AH
+PUSH_DH
+PUSH_DL
+LD_DH  $heap_ptr
+LD_DL  $heap_ptr+1
+LDA_D_AH
+DECR_D
+ST_DH  $heap_ptr
+ST_DL  $heap_ptr+1
+POP_DL
+POP_DH
+RET
+
+######
 # Push a register value onto the heap from BL
 #
 # Input:
@@ -116,6 +131,20 @@ POP_DL
 POP_DH
 RET
 
+######
+# Pop a value from the heap into BH
+:heap_pop_BH
+PUSH_DH
+PUSH_DL
+LD_DH  $heap_ptr
+LD_DL  $heap_ptr+1
+LDA_D_BH
+DECR_D
+ST_DH  $heap_ptr
+ST_DL  $heap_ptr+1
+POP_DL
+POP_DH
+RET
 
 ######
 # Push 16-bit word from A onto the heap
