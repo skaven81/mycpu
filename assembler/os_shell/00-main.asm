@@ -39,7 +39,7 @@ CALL :print
 
 # Initialize malloc space 0x6000 .. 0xafff
 LDI_A 0x6000
-LDI_BL 160   # 160 segments = 20KiB
+LDI_BL 159   # 160 segments = 20KiB
 CALL :malloc_init
 LDI_C .malloc_init_banner
 LDI_A 0xb000-0x6000
