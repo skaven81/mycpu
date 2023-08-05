@@ -108,7 +108,7 @@
 #
 # Inputs:
 #  A:  address of the beginning of the range
-#  BL: number of 128 byte segments to allocate. Max is 254, which allocates 32KiB.
+#  BL: number of 128 byte segments to allocate. Max is 254, which allocates just under 32KiB.
 #      But there is only ~20KiB of free RAM in main memory so in practical terms, 158 is
 #      likely the largest value that should be used.
 #
@@ -211,7 +211,6 @@ CALL :add16_to_a                            # A = real address
 POP_BH
 RET
 
-
 #######
 # addr_to_ledger - takes a memory address and returns the ledger address
 # and bit mask of that address.  Addresses are rounded down to the nearest block.
@@ -274,6 +273,7 @@ CALL :shift16_a_right
 
 # Add the ledger index to the range base address
 CALL :add16_to_a                    # Add base addr (B) to ledger idx (A) and store in A
+ALUOP_PUSH %A%+%AL%                 # Save AL since we mangle it below
 
 # Construct a mask in BL from the bit_pos value in CL
 LDI_BL 0x80
@@ -286,6 +286,7 @@ ALUOP_AL %A-1%+%AL%                 # decrement AL (bit_pos)
 JMP .map_shift_loop
 .map_shift_loop_done
 
+POP_AL
 POP_CL
 POP_BH
 RET
@@ -295,8 +296,8 @@ RET
 #
 # Inputs:
 #  AL: Size of desired allocation, 16*(AL+1) (0 = 16 bytes, 1 = 32 bytes, ... 255 = 4096 bytes)
-#     Values >= 7 will be shifted right three places and incremented to
-#     obtain the number of contiguous ledger bytes to locate.  Values
+#     Values >= 7 (>= 128 bytes) will be shifted right three places and incremented to
+#     obtain the number of contiguous ledger bytes (segments) to locate.  Values
 #     <= 6 will be incremented to find the number of contiguous bits in
 #     a nybble to locate.
 #
@@ -305,7 +306,7 @@ RET
 :malloc
 CALL :heap_push_all
 LDI_BL 0x07
-ALUOP_FLAGS %A-B%+%AL%+%BL%                 # if AL-0x07 causes an overflow, then AL is less than 7, use nybble allocator
+ALUOP_FLAGS %A-B%+%AL%+%BL%                 # if AL-7 causes an overflow, then AL is <=6, use nybble allocator
 JO .malloc_blocks
 
 # otherwise, AL is >= 7 and we use segment-based allocation for 8/16/24/32/.../256 blocks
@@ -323,10 +324,7 @@ ALUOP_AL %A+B%+%AL%+%BH%
 JNO .malloc_segments_1
 ALUOP_AH %A+1%+%AH%
 .malloc_segments_1                          # A now contains the address of the first data byte (after the ledger)
-ALUOP_AL %A-B%+%AL%+%BL%
-JNO .malloc_segments_2
-ALUOP_AH %A-1%+%AH%
-.malloc_segments_2
+
 ALUOP_DH %A%+%AH%                           # D now contains the first invalid address in the ledger.
 ALUOP_DL %A%+%AL%                           # If our hunt for contiguous NULL runs lands us at this
                                             # address, we abort with an invalid malloc.
@@ -334,11 +332,13 @@ ALUOP_DL %A%+%AL%                           # If our hunt for contiguous NULL ru
 ALUOP_PUSH %B%+%BL%                         # Save our target segment count to the stack
 
 .malloc_segments_loop
+ALUOP_PUSH %B%+%BL%
 MOV_CH_AH
 MOV_CL_AL
 MOV_DH_BH
 MOV_DL_BL
 ALUOP_FLAGS %AxB%+%AL%+%BL%
+POP_BL                                      # ensure we don't destroy target segment counter
 JNE .malloc_segments_loop_2
 ALUOP_FLAGS %AxB%+%AH%+%BH%
 JNE .malloc_segments_loop_2
@@ -346,14 +346,13 @@ POP_TD                                      # If we get here, C (ledger pointer)
 JMP .malloc_invalid                         # are equal, so return 0, no allocation done.
 
 .malloc_segments_loop_2
-PEEK_BL                                     # BL = target segment count
 LDA_C_AL                                    # Load ledger byte into BH
-ALUOP_FLAGS %A%+%AH%                        # is the byte null?
+ALUOP_FLAGS %A%+%AL%                        # is the byte null?
 JNZ .malloc_segments_loop_notnull
 ALUOP_BL %B-1%+%BL%                         # yes, so decrement our null segment count
-JNZ .malloc_segments_loop_done              # if our null segment count goes to zero, break out of the loop
-INCR_C                                      # otherwise, move to the next ledger byte
-JMP .malloc_segments_loop                   # and check for the next null byte
+INCR_C                                      # and move to the next ledger byte.  If our null
+JZ .malloc_segments_loop_done               # segment count goes to zero, break out of the loop.
+JMP .malloc_segments_loop                   # otherwise, continue looping to check for the next null byte
 
 .malloc_segments_loop_notnull               # found a non-null byte, so
 PEEK_BL                                     # BL = reset target segment count back to original value
@@ -383,7 +382,9 @@ POP_AH
 POP_AL                                      # Put return value back into A
 RET
 
-# block-based allocation for 1, 2, 3, or 4 blocks
+########
+# block-based allocation for 1, 2, 3 ... 7 blocks
+########
 .malloc_blocks
 ALUOP_BL %A+1%+%AL%                         # BL is now the number of contiguous ledger bits we need to find
 
@@ -401,7 +402,10 @@ ALUOP_DL %A%+%AL%                           # If our hunt for free blocks encoun
 
 ALUOP_PUSH %B%+%BL%                         # Save our target block count to the stack
 
+#####
+# Main malloc blocks loop
 .malloc_blocks_loop
+## Ensure we are not beyond the end of the ledger
 MOV_CH_AH
 MOV_CL_AL
 MOV_DH_BH
@@ -413,6 +417,8 @@ JNE .malloc_blocks_loop_2
 POP_TD                                      # If we get here, C (ledger pointer) and D (first invalid ledger addr)
 JMP .malloc_invalid                         # are equal, so return 0, no allocation done.
 
+## Load the current ledger byte and see if it has
+## sufficient zeroes to accommodate our request
 .malloc_blocks_loop_2
 PEEK_BL                                     # BL = target block count
 LDA_C_AL                                    # Load ledger byte into AL
@@ -427,13 +433,16 @@ JNO .malloc_blocks_loop_3                   # if no overflow, we have enough zer
 INCR_C                                      # otherwise, move to the next byte in the ledger
 JMP .malloc_blocks_loop                     # and try again
 
+## Build a mask representing the desired allocation
 .malloc_blocks_loop_3                       # this ledger block has sufficient zeros, but
                                             # we don't know if they are contiguous
 LDI_BH 0x00                                 # start with an empty mask in BH
-ALUOP_FLAGS %B%+%BL%
-JZ .malloc_blocks_loop_4                    # if BL==0 we are done building the mask
+.malloc_blocks_loop_3a
 ALUOP_BH %B>>1%+%BH%+%Cin%                  # shift a new bit into AH
 ALUOP_BL %B-1%+%BL%                         # decrement our target block count
+JNZ .malloc_blocks_loop_3a                  # if BL==0 we are done building the mask
+
+## See if the mask fits in the ledger byte
 .malloc_blocks_loop_4                       # BH = mask, on MSB side
 PEEK_BL                                     # get our target block count back
 .malloc_blocks_loop_5
@@ -449,6 +458,7 @@ JEQ .malloc_blocks_loop_5                   # if so, loop back and check again i
 INCR_C                                      # otherwise, move to next ledger byte
 JMP .malloc_blocks_loop                     # and try again
 
+## We found a spot for the allocation
 .malloc_blocks_loop_6                       # we found a place for the allocation, BH contains the mask
                                             # and C contains the address of the ledger byte
 MOV_CH_AH                                   # Move C to A so we can call mark_used
@@ -491,14 +501,15 @@ RET
 #
 # Inputs:
 #  A:  real address to be freed
-#  BL: Size of allocation to return, in blocks
+#  BL: Size of allocation to return, blocks-1
 #
 # Output:
 #  none
 :free
 ALUOP_PUSH %B%+%BH%
 LDI_BH 0x00
-CALL .mark
+ALUOP_BL %B+1%+%BL%     # .mark expects BL to have the absolute number of bits,
+CALL .mark              # not an allocation (blocks minus 1)
 POP_BH
 RET
 
@@ -517,10 +528,12 @@ RET
 PUSH_CH
 PUSH_CL
 PUSH_DL
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
 
 ALUOP_DL %B%+%BH%                   # Save our used/free flag in DL
 
-ALUOP_BH %B%+%BL%                   # BH=number of bits to set
+ALUOP_BH %B%+%BL%                   # BH=number of bits to set, minus 1
 
 # Get ledger address and bit position of address in A
 CALL .addr_to_ledger                # A=ledger byte addr, BL=bit in byte (as mask)
@@ -553,6 +566,8 @@ ALUOP_BL %B>>1%+%BL%                # shift mask one position right
 ALUOP_BH %B-1%+%BH%                 # decrement our bit counter
 JNZ .mark_loop                      # done if bit counter is zero
 
+POP_AL
+POP_AH
 POP_DL
 POP_CL
 POP_CH
