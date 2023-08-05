@@ -33,26 +33,69 @@ CALL :heap_pop_all
 RET                             # if equal, return without doing anything
 
 .process_input
-# save the byte just after mark 1
-CALL :incr16_a                  # A now points to byte after mark 1
-LDA_A_CL                        # load byte into CL
-PUSH_CL                         # save byte for later
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%             # save location for later
-# put a null just after mark 1 (so we can use mark 0 addr as a string pointer)
-ALUOP_ADDR_A %zero%             # write null to address in A
+VAR global word $user_input_buf
+VAR global 32 $user_input_tokens # store up to 16 tokens
+LDI_AL 7                        # allocate 8 blocks (1 segment, 128 bytes)
+CALL :malloc                    # for storing the user's input
+ALUOP_DH %A%+%AH%
+ALUOP_DL %A%+%AL%               # copy memory address to D
+ALUOP_ADDR %A%+%AH% $user_input_buf     # Save our user input buffer
+ALUOP_ADDR %A%+%AL% $user_input_buf+1   # address so we can free it later
+LDI_AL 0                        # left mark = 0
+LDI_BL 1                        # right mark = 1
+CALL :cursor_mark_getstring     # D now points at a null-terminated copy of the user's input
 
-# pass the string to the tokenizer - pointers to tokens end up on the heap
+CALL :heap_push_D
+LDI_C .outstr1
+CALL :printf
 
-# put the saved byte back
-POP_AL
-POP_AH
-POP_CL
-STA_A_CL
+PUSH_DH                         # copy D to C
+PUSH_DL                         # |
+POP_CL                          # |
+POP_CH                          # C now points at our input string
+LDI_D $user_input_tokens        # D now points at our token array
+LDI_AH ' '                      # split on spaces
+LDI_AL 1                        # allocate 2 blocks (32 bytes) for each token
+CALL :strsplit
 
-# pop the first token from the heap
-# compare to list of known commands
-# call command handler (args are on the heap)
+CALL :heap_push_AH
+LDI_C .outstr2
+CALL :printf
+
+LDI_BH 0                        # output token counter
+
+.print_token_loop
+LDA_D_AH
+INCR_D
+LDA_D_AL                        # this token's pointer now in A
+INCR_D
+ALUOP_FLAGS %A%+%AH%
+JNZ .print_token_loop_continue
+ALUOP_FLAGS %A%+%AL%
+JNZ .print_token_loop_continue
+JMP .print_token_loop_done
+
+.print_token_loop_continue
+CALL :heap_push_A
+CALL :heap_push_AL
+CALL :heap_push_AH
+CALL :heap_push_BH
+LDI_C .outstr3
+CALL :printf
+LDI_BL 1
+CALL :free                      # A = current token pointer, BL=size, so we can free now
+ALUOP_BH %B+1%+%BH%             # increment token count
+JMP .print_token_loop
+
+.print_token_loop_done
+LD16_A $user_input_buf
+LDI_BL 7
+CALL :free                      # Free the memory where we stored user input
+
 CALL :heap_pop_all
 RET
+
+.outstr1 "Your input: [%s]\n\0"
+.outstr2 "Split into %u tokens\n\0"
+.outstr3 "Token %u at 0x%x%x: [%s]\n\0"
 
