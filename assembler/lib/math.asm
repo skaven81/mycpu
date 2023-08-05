@@ -137,7 +137,7 @@ RET                                 #   and return
 :shift16_b_right
 # Performs a 16-bit right shift of B
 ALUOP_PUSH %A%+%AL%
-ALUOP_AL %B>>1%+%BL%                # shift BL
+ALUOP_BL %B>>1%+%BL%                # shift BL
 LDI_AL 0x01                         # mask to check if BH's LSB is set
 ALUOP_FLAGS %A&B%+%BH%+%AL%         # check if BH LSB is set
 JZ .shift16_b_right_zero            # if BH LSB is set,
