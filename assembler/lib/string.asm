@@ -147,3 +147,90 @@ POP_BH
 POP_AH
 RET
 
+#######
+# Splits a string, into multiple strings.
+#
+# Walks the string referenced in C, and upon encountering the split character
+# (AH), callocs some memory and copies the token into it.  Contiguous split
+# characters are ignored.
+#
+# Upon return, the array referenced by D will contain pointers to the split
+# strings, with a null value marking the end of the list.  AH will contain
+# the number of tokens that were found (and thus the number of pointers in
+# the target array).
+#
+# Inputs:
+#  AH: character to split the string by
+#  AL: size of calloc allocation, as number of 16-byte blocks minus 1
+#   C: address of null-terminated string to split
+#   D: address of array where token pointers will be stored
+#
+# Outputs:
+#  AH: number of tokens found
+:strsplit
+CALL :heap_push_all
+
+# Handle the corner case of C pointing at any empty string
+LDA_C_BL
+ALUOP_FLAGS %B%+%BL%
+JNZ .strsplit_loop_start                # start normal tokenizing if first char is non-null
+ALUOP_ADDR_D %zero%                     # otherwise, store two NULLs in the array referenced by D
+INCR_D                                  # |
+ALUOP_ADDR_D %zero%                     # '
+CALL :heap_pop_all                      # restore all the registers
+LDI_AH 0                                # set AH (number of tokens) to zero
+RET                                     # and return
+
+.strsplit_loop_start
+LDI_BH 0                                # initialize token counter (BH)
+.strsplit_loop_newtoken
+# Start by allocating a new memory block for the next token
+CALL :heap_push_A                       # Save A as we're going to overwrite it when calling calloc
+CALL :calloc                            # A now contains a pointer to allocated memory
+ALUOP_ADDR_D %A%+%AH%                   # Save high byte of pointer to token array
+INCR_D
+ALUOP_ADDR_D %A%+%AL%                   # Save low byte of pointer to token array
+INCR_D
+PUSH_DL                                 # Save token array pointer for later
+PUSH_DH
+
+ALUOP_DH %A%+%AH%                       # Copy destination string pointer to D
+ALUOP_DL %A%+%AL%                       # '
+CALL :heap_pop_A                        # Restore AH (split character)
+                                        # Restore AL (calloc size)
+ALUOP_BH %B+1%+%BH%                     # Increment BH (number of tokens)
+.strsplit_loop_copystring
+# Copy the source string (C) to the destination string (D)
+# until we encounter the split character (AH)
+LDA_C_BL                                # next character from source string into BL
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .strsplit_loop_skipsplitchars       # check if character (BL) is is the split char (AH)
+ALUOP_FLAGS %B%+%BL%
+JZ .strsplit_loop_done                  # check if character (BL) is is null
+ALUOP_ADDR_D %B%+%BL%                   # not the split char or NULL, so write the character to the target string
+INCR_D                                  # and move to the next target char
+INCR_C                                  # and move to the next source char
+JMP .strsplit_loop_copystring           # then loop back to copying
+
+.strsplit_loop_skipsplitchars           # if we are here, C points at a split char
+INCR_C                                  # move to next source char
+LDA_C_BL                                # next character from source string into BL
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .strsplit_loop_skipsplitchars       # continue looping if character (BL) == split character (AH)
+ALUOP_FLAGS %B%+%BL%
+JZ .strsplit_loop_done                  # bail if we encounter a NULL
+POP_DH                                  # otherwise,
+POP_DL                                  #  Restore token array pointer into D
+JMP .strsplit_loop_newtoken             #  and allocate a new string and continue copying
+
+.strsplit_loop_done
+# We arrive here when the source string (C) points at a NULL
+POP_DH                                  # Restore token array pointer into D
+POP_DL
+ALUOP_ADDR_D %zero%                     # write the terminating NULLs to the array
+INCR_D
+ALUOP_ADDR_D %zero%
+ALUOP_PUSH %B%+%BH%                     # save BH (token counter) on stack
+CALL :heap_pop_all
+POP_AH                                  # and restore it into AH
+RET
