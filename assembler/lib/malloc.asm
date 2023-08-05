@@ -573,5 +573,50 @@ POP_CL
 POP_CH
 RET
 
+#######
+# calloc - Allocate a block of RAM, initialize it with NULLs and return its address
+#
+# Inputs: same as malloc
+# Output: same as malloc
+#
+:calloc
+ALUOP_PUSH %A%+%AL%                     # save the request size
+CALL :malloc
 
+# Check if malloc succeeded
+ALUOP_FLAGS %A%+%AH%
+JNZ .calloc_continue
+ALUOP_FLAGS %A%+%AL%
+JNZ .calloc_continue
+POP_TD                                  # discard saved request size and
+RET                                     # return without doing anything if malloc returned zero
+
+.calloc_continue
+CALL :heap_push_all
+
+# copy allocated memory address into C
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%
+# fill memory with NULLs
+LDI_AH 0x00
+
+# If request size was 0-6, use the block filler, otherwise
+# use the segment filler which is more efficient.
+POP_AL                                  # pop saved request size into AL
+LDI_BL 0x07
+ALUOP_FLAGS %A-B%+%AL%+%BL%             # if AL-7 causes an overflow, then AL is <=6, use block filler
+JO .calloc_fill_blocks
+
+.calloc_fill_segments
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%                    # divide AL by 8 to get the number of segments
+CALL :memfill_segments
+CALL :heap_pop_all
+RET
+
+.calloc_fill_blocks
+CALL :memfill_blocks                    # AL already contains the number of blocks
+CALL :heap_pop_all
+RET
 
