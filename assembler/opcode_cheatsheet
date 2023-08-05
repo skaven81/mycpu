@@ -1,5 +1,5 @@
 # Variable declaration
-VAR {global,local} {byte,word} $name
+VAR global {byte,word,num_bytes} $name
 
 # Transfer operations
 MOV_CH_{AH,AL,BH,BL,TAL,TD}
