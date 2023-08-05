@@ -37,6 +37,21 @@ CALL :heap_init
 LDI_C .ok
 CALL :print
 
+# Initialize malloc space 0x6000 .. 0xafff
+LDI_A 0x6000
+LDI_BL 160   # 160 segments = 20KiB
+CALL :malloc_init
+LDI_C .malloc_init_banner
+LDI_A 0xb000-0x6000
+CALL :heap_push_A
+LDI_A 0xafff
+CALL :heap_push_AL
+CALL :heap_push_AH
+LDI_A 0x6000
+CALL :heap_push_AL
+CALL :heap_push_AH
+CALL :printf
+
 # Initialize keyboard
 LDI_C .kb_init_banner
 CALL :print
@@ -96,6 +111,8 @@ RETI
 .ok "OK\n\0"
 .hello_banner "PKCPU OS v0.1\n\0"
 .heap_init_banner "Heap init \0"
+.malloc_init_banner "Dynamic memory range 0x%x%x-0x%x%x (%U bytes)\n\0"
 .kb_init_banner "Keyboard init \0"
 .uart_init_banner "UART init 9600,8n1 \0"
 .clock_banner "Current clock %B%B-%B-%B %B:%B:%B\n\0" # YYYY-MM-DD HH:MM:SS
+
