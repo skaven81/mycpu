@@ -112,3 +112,29 @@ RET
 ALUOP_AL %A+1%+%AL%
 LD_TD %tmr_ctrl_a%              # clear interrupt
 RETI
+
+
+#######
+# Utility functions to push and pop the entire register stack,
+# which is about twice as fast as heap_push/pop_all, but eats
+# valuable stack space.
+:push_all
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%BH%
+ALUOP_PUSH %A%+%BL%
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+RET
+
+:pop_all
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+POP_BL
+POP_BH
+POP_AL
+POP_AH
