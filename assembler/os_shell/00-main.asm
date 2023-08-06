@@ -13,6 +13,9 @@ ST16    %IRQ5addr%  :uart_clear_dr
 ST16    %IRQ6addr%  .noirq
 ST16    %IRQ7addr%  .noirq
 
+# Initialize the heap - this is needed for most commands to work (including :print)
+CALL :heap_init
+
 # Clear the screen
 LDI_AH  0x00
 LDI_AL  %white%
@@ -29,13 +32,6 @@ CALL :print
 # Print blank line
 LDI_AL '\n'
 CALL :putchar
-
-# Initialize heap
-LDI_C .heap_init_banner
-CALL :print
-CALL :heap_init
-LDI_C .ok
-CALL :print
 
 # Initialize malloc space 0x6000 .. 0xafff
 LDI_A 0x6000
@@ -110,7 +106,6 @@ RETI
 
 .ok "OK\n\0"
 .hello_banner "PKCPU OS v0.1\n\0"
-.heap_init_banner "Heap init \0"
 .malloc_init_banner "Dynamic memory range 0x%x%x-0x%x%x (%U bytes)\n\0"
 .kb_init_banner "Keyboard init \0"
 .uart_init_banner "UART init 9600,8n1 \0"
