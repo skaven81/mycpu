@@ -286,7 +286,7 @@ RET
 # When a mark goes negative (scrolls off top of screen) then its high
 # bit gets set, which invalidates it.
 :cursor_scroll_marks
-CALL :heap_push_all
+CALL :push_all
 LDI_D $crsr_marks                   # track address of mark in D
 LDI_BL 32                           # we will update 32 marks, but we decrement and check at the beginning of the loop
 .cscroll_loop
@@ -317,7 +317,7 @@ INCR_D                              # move D pointer to next mark
 INCR_D
 ALUOP_BL %B-1%+%BL%
 JNZ .cscroll_loop                   # we are done if BL==0 after decrementing
-CALL :heap_pop_all
+CALL :pop_all
 RET
 
 ######
@@ -358,7 +358,7 @@ RET
 #  BL - right mark (0..31)
 #  D - address of string
 :cursor_mark_getstring
-CALL :heap_push_all
+CALL :push_all
 
 ALUOP_CL %A%+%AL%                   # save left mark ID in CL
 
@@ -415,7 +415,7 @@ JMP .cmg_loop
 
 .cmg_finish
 ALUOP_ADDR_D %zero%                 # write terminating null at D
-CALL :heap_pop_all
+CALL :pop_all
 RET
 
 
@@ -565,7 +565,7 @@ RET
 # Inputs:
 #  AL - cursor movement amount, in absolute address steps
 .cursor_move_real
-CALL :heap_push_all
+CALL :push_all
 
 # AL is our movement amount, but it's an 8-bit value, so extend into
 # AH if it's negative
@@ -602,7 +602,7 @@ MOV_CL_AL                   # new cursor addr in A
 CALL :cursor_goto_addr      # sync the cursor to the new location
 
 .cmr_done
-CALL :heap_pop_all
+CALL :pop_all
 RET
 
 :cursor_goto_addr
