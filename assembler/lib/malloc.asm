@@ -304,7 +304,7 @@ RET
 # Output:
 #  A:  Memory address of allocated memory (will be zero if allocation failed)
 :malloc
-CALL :push_all
+CALL :heap_push_all
 LDI_BL 0x07
 ALUOP_FLAGS %A-B%+%AL%+%BL%                 # if AL-7 causes an overflow, then AL is <=6, use nybble allocator
 JO .malloc_blocks
@@ -377,7 +377,7 @@ ALUOP_BL %B<<1%+%BL%                        # BL = number of blocks
 CALL .mark_used
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%                         # Save return value to stack
-CALL :pop_all                               # Restore registers
+CALL :heap_pop_all                          # Restore registers
 POP_AH
 POP_AL                                      # Put return value back into A
 RET
@@ -592,7 +592,7 @@ POP_TD                                  # discard saved request size and
 RET                                     # return without doing anything if malloc returned zero
 
 .calloc_continue
-CALL :push_all
+CALL :heap_push_all
 
 # copy allocated memory address into C
 ALUOP_CH %A%+%AH%
@@ -612,11 +612,11 @@ ALUOP_AL %A>>1%+%AL%
 ALUOP_AL %A>>1%+%AL%
 ALUOP_AL %A>>1%+%AL%                    # divide AL by 8 to get the number of segments
 CALL :memfill_segments
-CALL :pop_all
+CALL :heap_pop_all
 RET
 
 .calloc_fill_blocks
 CALL :memfill_blocks                    # AL already contains the number of blocks
-CALL :pop_all
+CALL :heap_pop_all
 RET
 
