@@ -168,7 +168,7 @@ RET
 # Outputs:
 #  AH: number of tokens found
 :strsplit
-CALL :push_all
+CALL :heap_push_all
 
 # Handle the corner case of C pointing at any empty string
 LDA_C_BL
@@ -231,6 +231,6 @@ ALUOP_ADDR_D %zero%                     # write the terminating NULLs to the arr
 INCR_D
 ALUOP_ADDR_D %zero%
 ALUOP_PUSH %B%+%BH%                     # save BH (token counter) on stack
-CALL :pop_all
+CALL :heap_pop_all
 POP_AH                                  # and restore it into AH
 RET
