@@ -155,7 +155,7 @@ RET
 # characters are ignored.
 #
 # Upon return, the array referenced by D will contain pointers to the split
-# strings, with a null value marking the end of the list.  AH will contain
+# strings, with a pair of null values marking the end of the list.  AH will contain
 # the number of tokens that were found (and thus the number of pointers in
 # the target array).
 #
