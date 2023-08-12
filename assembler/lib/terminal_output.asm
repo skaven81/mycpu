@@ -27,7 +27,7 @@
 # Inputs:
 #  AL - character to print
 :putchar
-CALL :push_all
+CALL :heap_push_all
 
 LDI_BL 0x08                         # Backspace
 ALUOP_FLAGS %AxB%+%AL%+%BL%
@@ -85,7 +85,7 @@ JMP .putchar_done
 
 # Exit putchar
 .putchar_done
-CALL :pop_all
+CALL :heap_pop_all
 RET
 
 ######
@@ -99,7 +99,7 @@ RET
 #
 # Unlike strcpy, the final null is copied when complete.
 .term_strcpy
-CALL :push_all
+CALL :heap_push_all
 
 MOV_CH_AH                   # Copy CH to AH
 LDI_BL 0x10
@@ -128,7 +128,7 @@ CALL :incr16_a              # move to next source color
 CALL :incr16_b              # move to next dest color
 JMP .term_strcpy_loop       # keep looping until we hit a null character
 .term_strcpy_done
-CALL :pop_all
+CALL :heap_pop_all
 RET
 
 ######
