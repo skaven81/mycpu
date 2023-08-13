@@ -250,6 +250,42 @@ POP_AH
 RET
 
 ######
+# Push a register value onto the heap from DL
+#
+# Input:
+#   DL - byte to push onto the heap
+:heap_push_DL
+PUSH_CH
+PUSH_CL
+LD_CH  $heap_ptr
+LD_CL  $heap_ptr+1
+INCR_C
+STA_C_DL
+ST_CH  $heap_ptr
+ST_CL  $heap_ptr+1
+POP_CL
+POP_CH
+RET
+
+######
+# Push a register value onto the heap from DH
+#
+# Input:
+#   DH - byte to push onto the heap
+:heap_push_DH
+PUSH_CH
+PUSH_CL
+LD_CH  $heap_ptr
+LD_CL  $heap_ptr+1
+INCR_C
+STA_C_DH
+ST_CH  $heap_ptr
+ST_CL  $heap_ptr+1
+POP_CL
+POP_CH
+RET
+
+######
 # Push 16-bit word from D onto the heap
 :heap_push_D
 PUSH_CH
