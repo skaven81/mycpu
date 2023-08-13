@@ -565,7 +565,12 @@ RET
 # Inputs:
 #  AL - cursor movement amount, in absolute address steps
 .cursor_move_real
-CALL :heap_push_all
+PUSH_CH
+PUSH_CL
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
 
 # AL is our movement amount, but it's an 8-bit value, so extend into
 # AH if it's negative
@@ -602,7 +607,12 @@ MOV_CL_AL                   # new cursor addr in A
 CALL :cursor_goto_addr      # sync the cursor to the new location
 
 .cmr_done
-CALL :heap_pop_all
+POP_BH
+POP_BL
+POP_AH
+POP_AL
+POP_CL
+POP_CH
 RET
 
 :cursor_goto_addr
