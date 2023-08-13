@@ -773,6 +773,90 @@ EOF
 let "opcode = opcode + 1"
 done
 
+# Quickly (and atomically) copy data from an address
+# in C to an address in D.  Both C and D are incremented after
+# the operation.
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] MEMCPY_C_D
+x 0 IncrementPC AddrBusC WriteTD
+x 1 AddrBusD DataBusTD WriteRAM
+x 2 IncrementC
+x 3 IncrementD NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+# Same but copies four bytes at a time
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] MEMCPY4_C_D
+x 0 IncrementPC AddrBusC WriteTD
+x 1 AddrBusD DataBusTD WriteRAM
+x 2 IncrementC
+x 3 IncrementD
+x 4 AddrBusC WriteTD
+x 5 AddrBusD DataBusTD WriteRAM
+x 6 IncrementC
+x 7 IncrementD
+x 8 AddrBusC WriteTD
+x 9 AddrBusD DataBusTD WriteRAM
+x a IncrementC
+x b IncrementD
+x c AddrBusC WriteTD
+x d AddrBusD DataBusTD WriteRAM
+x e IncrementC
+x f IncrementD NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+# Quickly fill memory referenced at C, with a byte either
+# in DL or on top of the stack or provided as an argument.
+# C is incremented after the operation
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] MEMFILL4_C_DL
+x 0 IncrementPC DataBusDL WriteTD
+x 1 AddrBusC DataBusTD WriteRAM
+x 2 IncrementC
+x 3 AddrBusC DataBusTD WriteRAM
+x 4 IncrementC
+x 5 AddrBusC DataBusTD WriteRAM
+x 6 IncrementC
+x 7 AddrBusC DataBusTD WriteRAM
+x 8 IncrementC NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] MEMFILL4_C_PEEK
+x 0 IncrementPC AddrBusSP WriteTD
+x 1 AddrBusC DataBusTD WriteRAM
+x 2 IncrementC
+x 3 AddrBusC DataBusTD WriteRAM
+x 4 IncrementC
+x 5 AddrBusC DataBusTD WriteRAM
+x 6 IncrementC
+x 7 AddrBusC DataBusTD WriteRAM
+x 8 IncrementC NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] MEMFILL4_C_I \$byte
+x 0 IncrementPC AddrBusPC WriteTD
+x 1 IncrementPC AddrBusC DataBusTD WriteRAM
+x 2 IncrementC
+x 3 AddrBusC DataBusTD WriteRAM
+x 4 IncrementC
+x 5 AddrBusC DataBusTD WriteRAM
+x 6 IncrementC
+x 7 AddrBusC DataBusTD WriteRAM
+x 8 IncrementC NextInstruction
+EOF
+let "opcode = opcode + 1"
+
 
 # Halt: goes into infinite loop of loading the program
 # counter address into the opcode register, but never

@@ -41,14 +41,15 @@ RET
 #  AL - unchanged
 :memfill_blocks
 ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %B%+%BL%
-ALUOP_BL %A%+%AL%                       # copy number of blocks to BL
-LDI_AL 15                               # Number of bytes for each memfill call
+ALUOP_PUSH %A%+%AH%                     # fill byte is top of stack
 .memfill_blocks_loop
-CALL :memfill                           # write 16 bytes
-ALUOP_BL %B-1%+%BL%                     # decrement BL
+MEMFILL4_C_PEEK                         # write 4 bytes + incr C
+MEMFILL4_C_PEEK                         # write 4 bytes + incr C
+MEMFILL4_C_PEEK                         # write 4 bytes + incr C
+MEMFILL4_C_PEEK                         # write 4 bytes + incr C
+ALUOP_AL %A-1%+%AL%                     # decrement AL
 JNO .memfill_blocks_loop                # if no overflow, keep looping
-POP_BL
+POP_AH
 POP_AL
 RET
 
@@ -61,14 +62,43 @@ RET
 #  AL - number of 128-byte segments to fill, minus 1
 :memfill_segments
 ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %B%+%BL%
-ALUOP_BL %A%+%AL%                       # copy number of segments to BL
-LDI_AL 127                              # Number of bytes for each memfill call
+ALUOP_PUSH %A%+%AH%
 .memfill_segments_loop
-CALL :memfill                           # write 128 bytes
-ALUOP_BL %B-1%+%BL%                     # decrement BL
+MEMFILL4_C_PEEK                         # write 16 bytes + incr C
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # write 16 bytes + incr C
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # write 16 bytes + incr C
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # write 16 bytes + incr C
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # write 16 bytes + incr C
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # write 16 bytes + incr C
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # write 16 bytes + incr C
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # write 16 bytes + incr C
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+MEMFILL4_C_PEEK                         # |
+ALUOP_AL %A-1%+%AL%                     # decrement AL
 JNO .memfill_segments_loop              # if no overflow, keep looping
-POP_BL
+POP_AH
 POP_AL
 RET
 
