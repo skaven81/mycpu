@@ -16,11 +16,14 @@
 #  AL - unchanged
 :memfill
 ALUOP_PUSH %A%+%AL%
+PUSH_DL
+ALUOP_DL %A%+%AH%                       # copy fill byte to DL where it's faster to loop
 .memfill_loop
-ALUOP_ADDR_C %A%+%AH%                   # write byte to current C address
+STA_C_DL                                # write byte to current C address
 INCR_C                                  # move to next address
 ALUOP_AL %A-1%+%AL%                     # decrement A
 JNO .memfill_loop                       # if no overflow, continue looping
+POP_DL
 POP_AL
 RET
 
