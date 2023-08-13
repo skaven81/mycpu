@@ -103,6 +103,19 @@ POP_AH
 RET
 
 ######
+# Simple putchar that doesn't do anything special with control chars
+:putchar_direct
+PUSH_DH
+PUSH_DL
+LD_DH $crsr_addr_chars              # address to write in D
+LD_DL $crsr_addr_chars+1
+ALUOP_ADDR_D %A%+%AL%               # write the character
+CALL .cursor_right_scroll
+POP_DL
+POP_DH
+RET
+
+######
 # Terminal-aware strcpy.  Has the same semantics as strcpy, only the
 # C and D addresses are expected to be in the character display range.
 # Both the display *characters* and display *colors* are copied.
