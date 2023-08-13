@@ -280,41 +280,24 @@ CALL :heap_push_all
 # Scroll the characters first
 LDI_C %display_chars%+64    # beginning of second line
 LDI_D %display_chars%       # beginning of first line
-LDI_A 64*59                 # 59 lines to move up
-.char_loop
-LDA_C_BL                    # Load char from second line
-ALUOP_ADDR_D %B%+%BL%       # Put char into first line
-INCR_C
-INCR_D
-CALL :decr16_a
-ALUOP_FLAGS %A%+%AL%
-JNZ .char_loop
-ALUOP_FLAGS %A%+%AH%
-JNZ .char_loop
+LDI_AL 28                   # 29 128-byte segments -> 58 lines
+CALL :memcpy_segments
+LDI_AL 3                    # 4 16-byte blocks -> 1 line
+CALL :memcpy_blocks
 
 # Write 64 nulls to the last line
-LDI_AL 64
-LDI_BL 0x00
-.char_blank_loop
-ALUOP_ADDR_D %B%+%BL%
-INCR_D
-ALUOP_AL %A-1%+%AL%
-JNZ .char_blank_loop
+LDI_C %display_chars%+3776  # C to the beginning of the last line
+LDI_AH 0x00                 # byte to fill
+LDI_AL 3                    # 4 16-byte blocks -> 1 line
+CALL :memfill_blocks
 
 # Now scroll the colors
 LDI_C %display_color%+64    # beginning of second line
 LDI_D %display_color%       # beginning of first line
-LDI_A 64*59                 # 59 lines to move up
-.color_loop
-LDA_C_BL                    # Load color from second line
-ALUOP_ADDR_D %B%+%BL%       # Put color into first line
-INCR_C
-INCR_D
-CALL :decr16_a
-ALUOP_FLAGS %A%+%AL%
-JNZ .color_loop
-ALUOP_FLAGS %A%+%AH%
-JNZ .color_loop
+LDI_AL 28                   # 29 128-byte segments -> 58 lines
+CALL :memcpy_segments
+LDI_AL 3                    # 4 16-byte blocks -> 1 line
+CALL :memcpy_blocks
 
 # And finally scroll our marks
 CALL :cursor_scroll_marks
