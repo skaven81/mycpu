@@ -304,7 +304,7 @@ RET
 
 ######
 # Pop a word from the heap into D
-:heap_pop_C
+:heap_pop_D
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
 LD_AH   $heap_ptr
