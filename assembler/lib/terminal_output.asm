@@ -27,7 +27,14 @@
 # Inputs:
 #  AL - character to print
 :putchar
-CALL :heap_push_all
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
 
 LDI_BL 0x08                         # Backspace
 ALUOP_FLAGS %AxB%+%AL%+%BL%
@@ -85,7 +92,14 @@ JMP .putchar_done
 
 # Exit putchar
 .putchar_done
-CALL :heap_pop_all
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+POP_BL
+POP_BH
+POP_AL
+POP_AH
 RET
 
 ######
@@ -99,7 +113,14 @@ RET
 #
 # Unlike strcpy, the final null is copied when complete.
 .term_strcpy
-CALL :heap_push_all
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
 
 MOV_CH_AH                   # Copy CH to AH
 LDI_BL 0x10
@@ -128,7 +149,14 @@ CALL :incr16_a              # move to next source color
 CALL :incr16_b              # move to next dest color
 JMP .term_strcpy_loop       # keep looping until we hit a null character
 .term_strcpy_done
-CALL :heap_pop_all
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+POP_BL
+POP_BH
+POP_AL
+POP_AH
 RET
 
 ######
@@ -290,7 +318,6 @@ JNZ .color_loop
 
 # And finally scroll our marks
 CALL :cursor_scroll_marks
-
 CALL :heap_pop_all
 RET
 
