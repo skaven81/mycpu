@@ -53,7 +53,7 @@ LDI_D $user_input_tokens        # D now points at our token array
 LDI_AH ' '                      # split on spaces
 LDI_AL 1                        # allocate 2 blocks (32 bytes) for each token
 CALL :strsplit                  # AH=num tokens, D=null-terminated array of tokens
-CALL .print_deconstructed_command
+#DEBUG CALL .print_deconstructed_command
 
 
 LDI_B $user_input_tokens        # B now points at the first entry in the token array
@@ -135,43 +135,43 @@ RET
 ######
 # troubleshooting function that prints out the user's
 # input and memory addresses of the involved strings
-.print_deconstructed_command
-CALL :heap_push_all
-
-LDI_A $user_input_buf           # User input buffer (malloc'd) address into D
-LDA_A_DH                        # |
-CALL :incr16_a                  # |
-LDA_A_DL                        # |
-
-CALL :heap_push_D               # Print the input string
-CALL :heap_push_DL              # |
-CALL :heap_push_DH              # |
-LDI_C .deconstructed_1          # |
-CALL :printf                    # |
-
-LDI_D $user_input_tokens
-.print_decon_token_loop
-LDA_D_AH                        # token string ptr hi in AH
-INCR_D
-LDA_D_AL                        # token string ptr lo in AL
-INCR_D
-ALUOP_FLAGS %A%+%AH%
-JNZ .print_decon_continue
-ALUOP_FLAGS %A%+%AL%
-JNZ .print_decon_continue
-JMP .print_decon_done
-
-.print_decon_continue
-CALL :heap_push_A
-CALL :heap_push_AL
-CALL :heap_push_AH
-LDI_C .deconstructed_2
-CALL :printf
-JMP .print_decon_token_loop
-
-.print_decon_done
-CALL :heap_pop_all
-RET
-
-.deconstructed_1 "Input 0x%x%x: [%s]\n\0"
-.deconstructed_2 "Token 0x%x%x: [%s]\n\0"
+#.print_deconstructed_command
+#CALL :heap_push_all
+#
+#LDI_A $user_input_buf           # User input buffer (malloc'd) address into D
+#LDA_A_DH                        # |
+#CALL :incr16_a                  # |
+#LDA_A_DL                        # |
+#
+#CALL :heap_push_D               # Print the input string
+#CALL :heap_push_DL              # |
+#CALL :heap_push_DH              # |
+#LDI_C .deconstructed_1          # |
+#CALL :printf                    # |
+#
+#LDI_D $user_input_tokens
+#.print_decon_token_loop
+#LDA_D_AH                        # token string ptr hi in AH
+#INCR_D
+#LDA_D_AL                        # token string ptr lo in AL
+#INCR_D
+#ALUOP_FLAGS %A%+%AH%
+#JNZ .print_decon_continue
+#ALUOP_FLAGS %A%+%AL%
+#JNZ .print_decon_continue
+#JMP .print_decon_done
+#
+#.print_decon_continue
+#CALL :heap_push_A
+#CALL :heap_push_AL
+#CALL :heap_push_AH
+#LDI_C .deconstructed_2
+#CALL :printf
+#JMP .print_decon_token_loop
+#
+#.print_decon_done
+#CALL :heap_pop_all
+#RET
+#
+#.deconstructed_1 "Input 0x%x%x: [%s]\n\0"
+#.deconstructed_2 "Token 0x%x%x: [%s]\n\0"
