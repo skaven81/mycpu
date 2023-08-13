@@ -125,8 +125,7 @@ RET
 #  AL: result
 
 :strcmp
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %B%+%BH%
+CALL :heap_push_all
 ALUOP_AL %zero%
 
 .strcmp_loop
@@ -143,8 +142,9 @@ INCR_C
 INCR_D
 JMP .strcmp_loop
 .strcmp_done
-POP_BH
-POP_AH
+ALUOP_PUSH %A%+%AL%
+CALL :heap_pop_all
+POP_AL
 RET
 
 #######
