@@ -69,6 +69,12 @@ MASKINT
 LDI_C .ok
 CALL :print
 
+# Print the current CPU clock
+CALL :sys_clock_speed
+LDI_C .clockspeed_banner
+CALL :heap_push_A
+CALL :printf
+
 # Print the current date and time
 LDI_C .clock_banner
 LD_AL %tmr_clk_sec%
@@ -109,5 +115,6 @@ RETI
 .malloc_init_banner "Dynamic memory range 0x%x%x-0x%x%x (%U bytes)\n\0"
 .kb_init_banner "Keyboard init \0"
 .uart_init_banner "UART init 9600,8n1 \0"
+.clockspeed_banner "Current CPU frequency %UkHz\n\0"
 .clock_banner "Current clock %B%B-%B-%B %B:%B:%B\n\0" # YYYY-MM-DD HH:MM:SS
 
