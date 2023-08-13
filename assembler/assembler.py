@@ -303,6 +303,8 @@ for input_file, line_num, line in concat_source:
 
     # label: the next opcode/data/whatever will be associated with this label
     if 'label' in match:
+        if match['label'] in labels:
+            raise SyntaxError(f"In {input_file} line {line_num}: label {match['label']} is already defined")
         labels[match['label']] = len(assembly)
         label_addrs[len(assembly)] = match['label']
         logging.debug("{:16.16s} {:3d} Label {} => 0x{:04x}".format(input_file, line_num, match['label'], len(assembly)))
