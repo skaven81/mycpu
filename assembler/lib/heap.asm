@@ -80,6 +80,40 @@ POP_DH
 RET
 
 ######
+# Push 16-bit word from A onto the heap
+:heap_push_A
+PUSH_DH
+PUSH_DL
+LD_DH   $heap_ptr
+LD_DL   $heap_ptr+1
+INCR_D
+ALUOP_ADDR_D %A%+%AH%
+INCR_D
+ALUOP_ADDR_D %A%+%AL%
+ST_DH   $heap_ptr
+ST_DL   $heap_ptr+1
+POP_DL
+POP_DH
+RET
+
+######
+# Pop a word from the heap into A
+:heap_pop_A
+PUSH_DH
+PUSH_DL
+LD_DH   $heap_ptr
+LD_DL   $heap_ptr+1
+LDA_D_AL
+DECR_D
+LDA_D_AH
+DECR_D
+ST_DH   $heap_ptr
+ST_DL   $heap_ptr+1
+POP_DL
+POP_DH
+RET
+
+######
 # Push a register value onto the heap from BL
 #
 # Input:
@@ -147,40 +181,6 @@ POP_DH
 RET
 
 ######
-# Push 16-bit word from A onto the heap
-:heap_push_A
-PUSH_DH
-PUSH_DL
-LD_DH   $heap_ptr
-LD_DL   $heap_ptr+1
-INCR_D
-ALUOP_ADDR_D %A%+%AH%
-INCR_D
-ALUOP_ADDR_D %A%+%AL%
-ST_DH   $heap_ptr
-ST_DL   $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Pop a word from the heap into A
-:heap_pop_A
-PUSH_DH
-PUSH_DL
-LD_DH   $heap_ptr
-LD_DL   $heap_ptr+1
-LDA_D_AL
-DECR_D
-LDA_D_AH
-DECR_D
-ST_DH   $heap_ptr
-ST_DL   $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
 # Push 16-bit word from B onto the heap
 :heap_push_B
 PUSH_DH
@@ -213,6 +213,7 @@ ST_DL   $heap_ptr+1
 POP_DL
 POP_DH
 RET
+
 
 ######
 # Push 16-bit word from C onto the heap
