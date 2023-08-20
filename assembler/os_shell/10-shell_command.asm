@@ -80,24 +80,8 @@ JMP .next_command
 LDI_D .cmd_peek
 CALL :strcmp
 ALUOP_FLAGS %A%+%AL%
-JNZ .check_cmd_strtoi8
-CALL :cmd_peek
-JMP .next_command
-
-.check_cmd_strtoi8
-LDI_D .cmd_strtoi8
-CALL :strcmp
-ALUOP_FLAGS %A%+%AL%
-JNZ .check_cmd_strtoi
-CALL :cmd_strtoi8
-JMP .next_command
-
-.check_cmd_strtoi
-LDI_D .cmd_strtoi
-CALL :strcmp
-ALUOP_FLAGS %A%+%AL%
 JNZ .check_cmd_ascii
-CALL :cmd_strtoi
+CALL :cmd_peek
 JMP .next_command
 
 .check_cmd_ascii
@@ -161,8 +145,6 @@ RET
 
 .cmd_poke "poke\0"
 .cmd_peek "peek\0"
-.cmd_strtoi8 "strtoi8\0"
-.cmd_strtoi "strtoi\0"
 .cmd_ascii "ascii\0"
 .cmd_clear "clear\0"
 .cmd_clockspeed "clockspeed\0"
