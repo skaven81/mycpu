@@ -92,7 +92,8 @@ RET
 #  BL+BH - second operand
 ALUOP_AL %A+B%+%AL%+%BL%
 JNO .add16_to_a_high
-ALUOP_AH %A+1%+%AH%
+ALUOP_AH %A+B%+%AH%+%BH%+%Cin%
+RET
 .add16_to_a_high
 ALUOP_AH %A+B%+%AH%+%BH%
 RET
@@ -105,7 +106,8 @@ RET
 #  BL+BH - second operand
 ALUOP_BL %A+B%+%AL%+%BL%
 JNO .add16_to_b_high
-ALUOP_BH %B+1%+%BH%
+ALUOP_BH %A+B%+%AH%+%BH%+%Cin%
+RET
 .add16_to_b_high
 ALUOP_BH %A+B%+%AH%+%BH%
 RET
