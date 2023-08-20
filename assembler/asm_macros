@@ -120,9 +120,10 @@
 %tmr_clk_min%           0xc081
 %tmr_clk_hr%            0xc082
 %tmr_clk_day%           0xc083
+%tmr_clk_day_mask%      0x07
 %tmr_clk_date%          0xc084
 %tmr_clk_month%         0xc085
-%tmr_clk_month_mask%    0x0f
+%tmr_clk_month_mask%    0x1f
 %tmr_clk_year%          0xc086
 %tmr_clk_century%       0xc087
 
