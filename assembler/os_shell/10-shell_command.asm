@@ -68,6 +68,22 @@ CALL :incr16_b                  # B now points at the second entry in the token 
 # We now search for a command matching the string in C.
 CALL :heap_push_all             # save registers in case called command mangles them
 
+.check_cmd_poke
+LDI_D .cmd_poke
+CALL :strcmp
+ALUOP_FLAGS %A%+%AL%
+JNZ .check_cmd_peek
+CALL :cmd_poke
+JMP .next_command
+
+.check_cmd_peek
+LDI_D .cmd_peek
+CALL :strcmp
+ALUOP_FLAGS %A%+%AL%
+JNZ .check_cmd_strtoi8
+CALL :cmd_peek
+JMP .next_command
+
 .check_cmd_strtoi8
 LDI_D .cmd_strtoi8
 CALL :strcmp
@@ -143,6 +159,8 @@ CALL :free                      # |
 CALL :heap_pop_all
 RET
 
+.cmd_poke "poke\0"
+.cmd_peek "peek\0"
 .cmd_strtoi8 "strtoi8\0"
 .cmd_strtoi "strtoi\0"
 .cmd_ascii "ascii\0"
