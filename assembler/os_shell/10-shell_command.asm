@@ -181,12 +181,14 @@ CALL :putchar
 RET
 
 .cmd_list
-.cmd_001 "poke\0"           :cmd_poke
-.cmd_002 "peek\0"           :cmd_peek
-.cmd_003 "ascii\0"          :cmd_ascii
-.cmd_004 "clear\0"          :cmd_clear
-.cmd_005 "clockspeed\0"     :cmd_clockspeed
+.cmd_001 "ascii\0"          :cmd_ascii
+.cmd_002 "clear\0"          :cmd_clear
+.cmd_003 "clock\0"          :cmd_clock
+.cmd_004 "clockspeed\0"     :cmd_clockspeed
+.cmd_005 "date\0"           :cmd_clock
 .cmd_006 "help\0"           .print_help
+.cmd_007 "peek\0"           :cmd_peek
+.cmd_008 "poke\0"           :cmd_poke
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
