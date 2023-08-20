@@ -68,52 +68,60 @@ CALL :incr16_b                  # B now points at the second entry in the token 
 # We now search for a command matching the string in C.
 CALL :heap_push_all             # save registers in case called command mangles them
 
-.check_cmd_poke
-LDI_D .cmd_poke
-CALL :strcmp
-ALUOP_FLAGS %A%+%AL%
-JNZ .check_cmd_peek
-CALL :cmd_poke
-JMP .next_command
+# Loop through the list of commands and find
+# a matching one.  The function address is
+# located in the two bytes after the string.
+LDI_D .cmd_list
+.check_cmd_loop
+LDA_D_AL                        # load first char of command into AL
+ALUOP_FLAGS %A%+%AL%            # check if null
+JZ .cmd_unknown                 # if so, exit loop
 
-.check_cmd_peek
-LDI_D .cmd_peek
-CALL :strcmp
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+CALL :strcmp                    # AL will be zero if string in C (cmd)
+POP_DL                          # matches string in D (item in list)
+POP_DH
+POP_CL
+POP_CH
 ALUOP_FLAGS %A%+%AL%
-JNZ .check_cmd_ascii
-CALL :cmd_peek
-JMP .next_command
-
-.check_cmd_ascii
-LDI_D .cmd_ascii
-CALL :strcmp
+JZ .run_cmd
+                                # no match, so fast-forward D to next
+.check_cmd_ffd                  # command, or bail if we reach the end
+LDA_D_AL
+INCR_D
 ALUOP_FLAGS %A%+%AL%
-JNZ .check_cmd_clear
-CALL :cmd_ascii
-JMP .next_command
+JNZ .check_cmd_ffd
+                                # D points at the high byte of the label
+INCR_D                          # D now points at the low byte of the label
+INCR_D                          # D now points at the next command
+JMP .check_cmd_loop             # loop to next command
 
-.check_cmd_clear
-LDI_D .cmd_clear
-CALL :strcmp
-ALUOP_FLAGS %A%+%AL%
-JNZ .check_cmd_clockspeed
-CALL :cmd_clear
-JMP .next_command
-
-.check_cmd_clockspeed
-LDI_D .cmd_clockspeed
-CALL :strcmp
-ALUOP_FLAGS %A%+%AL%
-JNZ .unknown_command
-CALL :cmd_clockspeed
-JMP .next_command
-
-.unknown_command
+.cmd_unknown                    # Reached the end of the command list and no match
 CALL :heap_push_C
-LDI_C .cmd_unknown
+LDI_C .cmd_unknown_str
 CALL :printf
+JMP .cmd_return_label
 
-.next_command
+.run_cmd                        # It was a match, so fast-forward D to the label
+LDA_D_AL
+INCR_D
+ALUOP_FLAGS %A%+%AL%
+JNZ .run_cmd
+
+LDA_D_AH                        # D points at the high byte of the label
+INCR_D                          # Call that function; there is no
+LDA_D_AL                        # CALL that accepts a register address,
+ALUOP_DH %A%+%AH%               # so we have to mimic CALL's behavior
+ALUOP_DL %A%+%AL%               # with JMP_D
+LDI_A .cmd_return_label
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+JMP_D
+.cmd_return_label
+
 CALL :heap_pop_all              # restore registers after running command
 
 ####
@@ -143,12 +151,15 @@ CALL :free                      # |
 CALL :heap_pop_all
 RET
 
-.cmd_poke "poke\0"
-.cmd_peek "peek\0"
-.cmd_ascii "ascii\0"
-.cmd_clear "clear\0"
-.cmd_clockspeed "clockspeed\0"
-.cmd_unknown "Unrecognized command: [%s]\n\0"
+.cmd_list
+.cmd_001 "poke\0"           :cmd_poke
+.cmd_002 "peek\0"           :cmd_peek
+.cmd_003 "ascii\0"          :cmd_ascii
+.cmd_004 "clear\0"          :cmd_clear
+.cmd_005 "clockspeed\0"     :cmd_clockspeed
+.cmd_end 0x00
+
+.cmd_unknown_str "Unrecognized command: [%s]\n\0"
 
 ######
 # troubleshooting function that prints out the user's
