@@ -148,9 +148,10 @@ wordmathexpression = Combine(allwords + OneOrMore(wordmathtoken))
 wordmathexpression.setParseAction(lambda t: [eval(t[0])])
 word = wordmathexpression | label | allwords
 word.setName('word')
-# Data can be represented as a label followed by a double-quoted string, or a series of bytes or words
+# Data can be represented as a label followed by a combination of double-quoted strings, series of bytes, or labels.
 #  .label "Hello World\0"
-data = label + (QuotedString(quoteChar='"', unquoteResults=True) | byte[1, ...] | word[1, ...])
+#  .mapping "some_cmd" :cmd_label 0x00
+data = label + OneOrMore(QuotedString(quoteChar='"', unquoteResults=True) | byte | label)
 data.setName('data')
 # Opcodes are an opcode followed by some number of bytes and/or words
 #  OPCODE
@@ -314,11 +315,26 @@ for input_file, line_num, line in concat_source:
         labels[match['data'][0]] = len(assembly)
         label_addrs[len(assembly)] = match['data'][0]
         logging.debug("{:16.16s} {:3d}: Label {} => 0x{:04x} => {}".format(input_file, line_num, match['data'][0], len(assembly), match['data'][1]))
-        match['data'][1] = match['data'][1].replace('\\n', '\n')
-        match['data'][1] = match['data'][1].replace('\\r', '\t')
-        match['data'][1] = match['data'][1].replace('\\0', '\0')
-        for i in match['data'][1]:
-            assembly.append({"val": ord(i), "msg": "{} {}".format(match['data'][0], i if ord(i) >= 32 else "\\{:02x}".format(ord(i))) })
+        for idx, data_item in enumerate(match['data']):
+            if idx == 0:
+                continue
+            if type(data_item) is str:
+                if data_item[0] == '.' or data_item[0] == ':':
+                    assembly.append({"val": "hi>{}".format(data_item), "msg": "{} {} high".format(match['data'][0], data_item)})
+                    assembly.append({"val": "lo>{}".format(data_item), "msg": "{} {} low".format(match['data'][0], data_item)})
+                else:
+                    data_item = data_item.replace('\\.', '.') # allow corner case of a data string that looks like a label
+                    data_item = data_item.replace('\\:', ':') # allow corner case of a data string that looks like a label
+                    data_item = data_item.replace('\\n', '\n')
+                    data_item = data_item.replace('\\r', '\t')
+                    data_item = data_item.replace('\\0', '\0')
+                    for i in data_item:
+                        assembly.append({"val": ord(i), "msg": "{} {}".format(match['data'][0], i if ord(i) >= 32 else "\\{:02x}".format(ord(i))) })
+            elif type(data_item) is int:
+                assert 0x00 <= data_item <= 0xff
+                assembly.append({"val": data_item, "msg": "{} 0x{:02x}".format(match['data'][0], data_item) })
+            else:
+                raise SyntaxError("Unknown data type in data declaration")
 
     # variable declaration
     if 'var_declare' in match:
