@@ -2,6 +2,44 @@
 
 # Software math functions
 
+:signed_invert_a
+# The value in A is treated as a signed integer
+# and is inverted (negative->positive and vice-versa).
+#
+# Inputs:
+#  A - the value to invert
+#
+# Outputs:
+#  A - the inverted value
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_AL %~A%+%AL%
+ALUOP_AH %~A%+%AH%
+LDI_BH 0x00
+LDI_BL 0x01
+CALL :add16_to_a
+POP_BH
+POP_BL
+RET
+
+:signed_invert_b
+# The value in B is treated as a signed integer
+# and is inverted (negative->positive and vice-versa).
+#
+# Inputs:
+#  B - the value to invert
+#
+# Outputs:
+#  B - the inverted value
+ALUOP_PUSH %A%+%AL%
+ALUOP_AL %~B%+%BL%
+ALUOP_AH %~B%+%BH%
+LDI_AL 0x01
+CALL :add16_to_b
+POP_AL
+RET
+
+
 :incr16_a
 # Increments the 16-bit value in the A register
 #
