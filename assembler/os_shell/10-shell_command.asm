@@ -103,7 +103,7 @@ JMP .check_cmd_loop             # loop to next command
 CALL :heap_push_C
 LDI_C .cmd_unknown_str
 CALL :printf
-JMP .cmd_return_label
+JMP .cmd_return
 
 .run_cmd                        # It was a match, so fast-forward D to the label
 LDA_D_AL
@@ -111,17 +111,14 @@ INCR_D
 ALUOP_FLAGS %A%+%AL%
 JNZ .run_cmd
 
-LDA_D_AH                        # D points at the high byte of the label
-INCR_D                          # Call that function; there is no
-LDA_D_AL                        # CALL that accepts a register address,
-ALUOP_DH %A%+%AH%               # so we have to mimic CALL's behavior
-ALUOP_DL %A%+%AL%               # with JMP_D
-LDI_A .cmd_return_label
-ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %A%+%AH%
-JMP_D
-.cmd_return_label
+LDA_D_AH                        # Load the label address high byte into AH
+INCR_D
+LDA_D_AL                        # Load the label address low byte into AL
+ALUOP_DH %A%+%AH%               # copy A into D
+ALUOP_DL %A%+%AL%
+CALL_D                          # Call to that address
 
+.cmd_return
 CALL :heap_pop_all              # restore registers after running command
 
 ####

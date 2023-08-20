@@ -91,6 +91,7 @@ MEMFILL4_C_I    ** TD ** (C is incremented after write)
 NOP
 HLT
 CALL @addr  ** TAL TD **
+CALL_D - call to address in D register
 RET
 IRQ
 RETI

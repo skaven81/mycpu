@@ -857,6 +857,22 @@ x 8 IncrementC NextInstruction
 EOF
 let "opcode = opcode + 1"
 
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] CALL_D
+x 0 IncrementPC IncrementSP
+# PC now points to next instruction address;
+# Write low byte to stack
+x 1 AddrBusSP DataBusPCL WriteRAM IncrementSP
+# Write high byte to stack
+x 2 AddrBusSP DataBusPCH WriteRAM
+# Load next instruction address from D
+x 3 DataBusDH WritePCH
+x 4 DataBusDL WritePCL
+x 5 NextInstruction
+EOF
+let "opcode = opcode + 1"
+
 
 # Halt: goes into infinite loop of loading the program
 # counter address into the opcode register, but never
