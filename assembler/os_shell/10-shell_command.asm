@@ -151,15 +151,49 @@ CALL :free                      # |
 CALL :heap_pop_all
 RET
 
+#####
+# Help output, prints list of available commands
+.print_help
+LDI_C .cmd_help_header
+CALL :print
+
+LDI_C .cmd_list
+.print_help_loop
+LDA_C_AL                        # load first char of command into AL
+ALUOP_FLAGS %A%+%AL%            # check if null
+JZ .print_help_done             # if so, exit loop
+CALL :print
+LDI_AL ' '
+CALL :putchar
+CALL :putchar
+.print_help_ff                  # fast-forward C to the next command
+LDA_C_AL
+INCR_C
+ALUOP_FLAGS %A%+%AL%
+JZ .print_help_next_loop
+JMP .print_help_ff
+.print_help_next_loop
+INCR_C                          # C now at low byte of label
+INCR_C                          # C now at next command
+JMP .print_help_loop
+
+.print_help_done
+LDI_AL '\n'
+CALL :putchar
+CALL :putchar
+RET
+
 .cmd_list
 .cmd_001 "poke\0"           :cmd_poke
 .cmd_002 "peek\0"           :cmd_peek
 .cmd_003 "ascii\0"          :cmd_ascii
 .cmd_004 "clear\0"          :cmd_clear
 .cmd_005 "clockspeed\0"     :cmd_clockspeed
+.cmd_006 "help\0"           .print_help
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
+.cmd_help_header "The following commands are available:\n\0"
 
 ######
 # troubleshooting function that prints out the user's
