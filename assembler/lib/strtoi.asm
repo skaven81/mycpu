@@ -3,6 +3,72 @@
 # Functions for converting strings into numbers
 
 ######
+# strtoi8 - Same as `strtoi` but for 8-bit values
+#
+# Inputs:
+#  C - address of null-terminated string to convert
+#
+# Outputs:
+#  AL - converted number, or 0x00 if conversion failed
+#  BL - flags, same as `strtoi`
+:strtoi8
+ALUOP_PUSH %A%+%AH%
+CALL :strtoi                    # A and BL are now set
+ALUOP_FLAGS %B%+%BL%
+JZ .strtoi8_check_negative      # if BL is nonzero then A is zero and we can just exit
+POP_AH                          # Return 0x00 and an error condition
+RET
+
+# If the first character of the string at C is `-` then the result is a
+# negative decimal number and provided AH is 0xff we can truncate it
+# without an overflow.
+.strtoi8_check_negative
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %A%+%AH%
+LDA_C_BH                        # BH contains first char of string
+LDI_AH '-'
+ALUOP_FLAGS %A&B%+%AH%+%BH%
+POP_AH
+POP_BH
+JNE .strtoi8_hexordec
+
+# If we get here, it's a negative number, so check if AH is 0xff
+ALUOP_PUSH %B%+%BH%
+LDI_BH 0xff
+ALUOP_FLAGS %A&B%+%AH%+%BH%
+POP_BH
+JNE .strtoi8_ret_overflow
+
+# Even if AH was 0xff, we also need to see if the
+# high bit of AL is set, otherwise it's an overflow
+ALUOP_PUSH %B%+%BH%
+LDI_BH 0x80
+ALUOP_FLAGS %A&B%+%AL%+%BH%
+POP_BH
+JZ .strtoi8_ret_overflow
+JMP .strtoi8_ret_ok
+
+# A contains a non-negative number. We need to check if AH is > 0, if so,
+# we need to return an overflow
+.strtoi8_hexordec
+ALUOP_FLAGS %A%+%AH%
+JZ .strtoi8_ret_ok
+JMP .strtoi8_ret_overflow
+
+# The value in A is safe to return as-is with AH truncated
+.strtoi8_ret_ok
+POP_AH
+RET
+
+# THe value in A extends into AH and thus will not fit in
+# the 8-bit AL, so we return 0x00 with an overflow flag
+.strtoi8_ret_overflow
+POP_AH
+LDI_AL 0x00
+LDI_BL 0x01                     # overflow
+RET
+
+######
 # strtoi - takes a string and determines the numeric base
 # by looking at the first two chars:
 #   0x - hexadecimal
