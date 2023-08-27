@@ -67,31 +67,19 @@ CALL :add16_to_b                # B=B+A -> end address
 
 .process_range
 LDA_A_DL                        # Pull byte from addr@A
-ALUOP_PUSH %B%+%BL%
+CALL :heap_push_DL              # Push arguments into heap
+CALL :heap_push_AL              # |
+CALL :heap_push_AH              # |
+LDI_C .simple_peek_pfx          # Print the prefix
+CALL :printf                    # |
 ALUOP_PUSH %A%+%AL%
-MOV_DL_AL
-LDI_BL 0x20
-ALUOP_FLAGS %A-B%+%BL%+%AL%
+MOV_DL_AL                       # Put byte@A into AL
+CALL :putchar_direct            # Print it without doing anything with control chars
 POP_AL
-POP_BL
-JNO .process_range_normal
-PUSH_DL
-LDI_DL '.'                      # Substitute '.' for control chars
-CALL :heap_push_DL              
-POP_DL
-CALL :heap_push_DL
-JMP .process_range_cont
+LDI_C .simple_peek_end          # Print the suffix
+CALL :print                     # |
 
-.process_range_normal
-CALL :heap_push_DL              
-CALL :heap_push_DL              
-
-.process_range_cont
-CALL :heap_push_AL
-CALL :heap_push_AH
-LDI_C .simple_peek
-CALL :printf
-CALL :incr16_a
+CALL :incr16_a                  # Move to next address
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
 CALL :sub16_b_minus_a           # If B-A overflows, we are done
@@ -110,26 +98,18 @@ CALL :strtoi                    # Convert to number in A, BL has flags
 ALUOP_FLAGS %B%+%BL%
 JNZ .abort_bad_start_address
 LDA_A_BL                        # Grab peek byte into BL
-ALUOP_PUSH %A%+%AH%
-LDI_AH 0x20
-ALUOP_FLAGS %B-A%+%AH%+%BL%     # see if BL contains a control char
-POP_AH
-JNO .peek_sa_normal
-ALUOP_PUSH %B%+%BL%
-LDI_BL '.'                      # substitute '.' for control chars
-CALL :heap_push_BL
-POP_BL
-CALL :heap_push_BL
-JMP .peek_sa_cont
 
-.peek_sa_normal
-CALL :heap_push_BL
-CALL :heap_push_BL
-.peek_sa_cont
-CALL :heap_push_AL
-CALL :heap_push_AH
-LDI_C .simple_peek
-CALL :printf
+CALL :heap_push_BL              # Push arguments into heap
+CALL :heap_push_AL              # |
+CALL :heap_push_AH              # |
+LDI_C .simple_peek_pfx          # Print the prefix
+CALL :printf                    # |
+ALUOP_PUSH %A%+%AL%
+ALUOP_AL %B%+%BL%               # Put byte into AL
+CALL :putchar_direct            # Print it without doing anything with control chars
+POP_AL
+LDI_C .simple_peek_end          # Print suffix
+CALL :print                     # |
 RET
 
 .abort_bad_start_address
@@ -168,4 +148,5 @@ RET
 .bad_start_addr_str "Error: %s is not a valid start address. strtoi flags: 0x%x\n\0"
 .bad_end_addr_str "Error: %s is not a valid end address. strtoi flags: 0x%x\n\0"
 .bad_range_str "Error: %s is not a valid range specifier. strtoi flags: 0x%x\n\0"
-.simple_peek "0x%x%x: 0x%x (%c)\n\0"
+.simple_peek_pfx "0x%x%x: 0x%x (\0"
+.simple_peek_end ")\n\0"
