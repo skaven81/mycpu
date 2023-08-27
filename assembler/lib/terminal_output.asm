@@ -440,21 +440,23 @@ ST $term_render_color 0x00
 INCR_C
 JMP .print_loop_color
 
+# Print a regular character
 .print_it
-LD_BL $term_render_color        # Check if we have color to add
-ALUOP_FLAGS %B%+%BL%
-JZ .print_loop_color_putchar    # If not, just print it
-PUSH_CH                         # Get the color address into C
-PUSH_CL                         # |
-LD_CH $crsr_addr_color          # |
-LD_CL $crsr_addr_color+1        # |
-LD_BL $term_current_color       # Load current color into BL
-ALUOP_ADDR_C %B%+%BL%           # Write color
-POP_CL
-POP_CH
-.print_loop_color_putchar
 CALL :putchar                   # print the char in AL
 INCR_C                          # Move to next character
+LD_BL $term_render_color        # Check if we have color to add
+ALUOP_FLAGS %B%+%BL%
+JZ .print_loop_color            # If not, we are done.
+
+PUSH_CH                         # Save C
+PUSH_CL                         # |
+LD_CH $crsr_addr_color          # Get the color address into C
+LD_CL $crsr_addr_color+1        # |
+DECR_C                          # putchar moved this to the right, so this moves us back to the left
+LD_BL $term_current_color       # Load current color into BL
+ALUOP_ADDR_C %B%+%BL%           # Write color
+POP_CL                          # Restore C
+POP_CH                          # |
 JMP .print_loop_color
 
 # no-color print loop avoids a lot of unnecessary code
