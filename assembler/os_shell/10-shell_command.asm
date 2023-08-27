@@ -185,10 +185,11 @@ RET
 .cmd_002 "clear\0"          :cmd_clear
 .cmd_003 "clock\0"          :cmd_clock
 .cmd_004 "clockspeed\0"     :cmd_clockspeed
-.cmd_005 "date\0"           :cmd_clock
-.cmd_006 "help\0"           .print_help
-.cmd_007 "peek\0"           :cmd_peek
-.cmd_008 "poke\0"           :cmd_poke
+.cmd_005 "colors\0"         :cmd_colors
+.cmd_006 "date\0"           :cmd_clock
+.cmd_007 "help\0"           .print_help
+.cmd_008 "peek\0"           :cmd_peek
+.cmd_009 "poke\0"           :cmd_poke
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"

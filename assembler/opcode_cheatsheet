@@ -116,6 +116,27 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 0x40 cursor x1 xx xx xx
 0x80 blink  1x xx xx xx
 
+# :print color codes
+@[shade:0-3][color:0-7] = 0=black 1=blue 2=green 3=cyan 4=red 5=magenta 6=yellow 7=white
+@x[hex] = color byte
+@b/@B = blink off/on
+@c/@C = cursor off/on
+@r = reset
+
+# :printf codes
+%% - a literal percent sign
+%c - a byte formatted as ASCII (the raw byte is just inserted into the target string)
+%2 - a byte formatted as binary 1s and 0s
+%b - a BCD byte formatted as decimal, one digit per byte (first four bits are ignored)
+%B - a BCD byte formatted as decimal, two digits per byte
+%x - a byte formatted as hex
+%X - a byte formatted as hex, with capital letters
+%u - a byte formatted as unsigned decimal (0-255)
+%U - a word formatted as unsigned decimal (0-65535)
+%d - a byte formatted as a signed decimal (-128-127)
+%D - a word formatted as a signed decimal (-32768-32767)
+%s - a word used as a pointer to a null-terminated string, which is copied into the formatted string
+
 # Memory ranges
 0x0000 - 0x3eff program data (ROM)
 0x4000 - 0x4eff framebuffer chars

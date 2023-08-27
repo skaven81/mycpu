@@ -16,6 +16,16 @@ ST16    %IRQ7addr%  .noirq
 # Initialize the heap - this is needed for most commands to work (including :print)
 CALL :heap_init
 
+# Initialize color system, we start without processing color data
+ST $term_color_enabled 0x00
+ST $term_render_color 0x00      # once $term_color_enabled comes on, start out in reset mode
+ST $term_current_color %white%  # ensure color byte has a sane starting value
+ST $term_hexbyte_buf 0x00       # fill the hexbyte buf with NULLs
+ST $term_hexbyte_buf+1 0x00
+ST $term_hexbyte_buf+2 0x00
+ST $term_hexbyte_buf+3 0x00
+ST $term_hexbyte_buf+4 0x00
+
 # Clear the screen
 LDI_AH  0x00
 LDI_AL  %white%

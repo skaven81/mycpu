@@ -238,24 +238,236 @@ RET
 # scroll the display. Any newlines will be processed as expected.  The terminating
 # null is not printed.
 #
+# The $color_enabled var determines if color processing is done.  If $color_enabled
+# is zero, the color codes are just printed out without processing.  If $color_enabled
+# is non-zero, then the color codes are processed.
+#
+# The color code is translated to a hexadecimal number that is written to the
+# color half of the frame buffer. Once encountered, a color remains active until
+# a reset code is encountered, at which point characters are printed without
+# updating the color buffer.
+#
+# Color codes are:
+#   @@ - a literal `@`
+#   @[shade][color] - shade is 0-3 (0 will be black), color is 0-7
+#      0: black
+#      1: blue
+#      2: green
+#      3: cyan
+#      4: red
+#      5: magenta
+#      6: yellow
+#      7: white
+#   @x[hex] - use literal hex value (00-ff) in the color byte
+#   @b/@B - blink off/on, only toggles the bit in $term_current_color, does not set $term_render_color
+#   @c/@C - cursor off/on, only toggles the bit in $term_current_color, does not set $term_render_color
+#   @r - reset: stop updating colors
+#
+# The color byte is arranged like so:
+#   0x03 blue   xx xx xx 11
+#   0x0c green  xx xx 11 xx
+#   0x30 red    xx 11 xx xx
+#   0x40 cursor x1 xx xx xx
+#   0x80 blink  1x xx xx xx
+#
+# So in the [shade][color] model, the [color] is octal. For example, magenta
+# is 5 or 0b101, or red=1, green=0, blue=1.  The [shade] then acts as a
+# multiplier, so for shade 1 you get 0b010001, for shade 2 it's 0b100010, and
+# for shade 3 you get 0b110011.
+#
 # Inputs:
 #  C - address of string to print
-#
-# TODO - add something similar to ANSI escape code sequence support.  If a known
-# escape string, say `#xx` where xx is hex, then instead of printing those
-# characters, instead the "current color" is updated and written to color space
-# as characters are printed.  A special code, say #!, would cause "painting" to stop,
-# keeping whatever existing color data is there unchanged.
+VAR global byte $term_color_enabled  # 0=ignore @-codes
+VAR global byte $term_render_color   # 0=don't write $term_current_color to color memory
+VAR global byte $term_current_color  # color code to write if $term_render_color is non-zero
+VAR global 5 $term_hexbyte_buf
 :print
 ALUOP_PUSH %A%+%AL%
-.print_loop
+ALUOP_PUSH %B%+%BL%
+LD_AL $term_color_enabled
+ALUOP_FLAGS %A%+%AL%
+JZ .print_loop_nocolor              # if color is not enabled, use standard print method since it's faster
+
+# color print loop
+.print_loop_color
+LDA_C_AL                        # load next char into AL
+ALUOP_FLAGS %A%+%AL%
+JZ .print_done                  # Done if null
+
+LDI_BL '@'
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # is char a '@'?
+JNE .print_it
+INCR_C                          # We have a '@' so move to next char
+LDA_C_AL                        # Get the next char into AL
+ALUOP_FLAGS %A%+%AL%
+JZ .print_done                  # If null, we are done
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # If AL is '@', EQ bit is set
+JEQ .print_it                   # If '@', print an '@' and move on
+LDI_BL 'r'                      # Check for color reset code
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .print_reset_color
+LDI_BL 'x'                      # Check for hex color code
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .print_set_hex_color
+LDI_BL 'b'                      # Check for clear blink
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .print_clear_blink
+LDI_BL 'B'                      # Check for set blink
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .print_set_blink
+LDI_BL 'c'                      # Check for clear cursor
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .print_clear_cursor
+LDI_BL 'C'                      # Check for set cursor
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .print_set_cursor
+
+# @[shade][color]
+LDI_BL '0'
+ALUOP_FLAGS %A-B%+%AL%+%BL%     # if AL is char <'0' this will overflow
+JO .print_it                    # in which case just print it and move on
+LDI_BL '3'
+ALUOP_FLAGS %B-A%+%AL%+%BL%     # if AL is char >'3' this will overflow
+JO .print_it                    # in which case just print it and move on
+LDI_BL '0'
+ALUOP_PUSH %A-B%+%AL%+%BL%      # get numeric value for shade and put it onto the stack
+INCR_C                          # move to color number
+LDA_C_AL                        # put color number into AL
+LDI_BL '0'
+ALUOP_FLAGS %A-B%+%AL%+%BL%     # if AL is char <'0' this will overflow
+JO .print_it                    # in which case just print it and move on
+LDI_BL '7'
+ALUOP_FLAGS %B-A%+%AL%+%BL%     # if AL is char >'7' this will overflow
+JO .print_it                    # in which case just print it and move on
+LDI_BL '0'
+ALUOP_AL %A-B%+%AL%+%BL%        # get numeric value for color into AL
+POP_BL                          # shade value into BL
+INCR_C                          # move to next printable char
+
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BL%
+LD_AH $term_current_color       # clear current color (except for blink and cursor bits)
+LDI_BL 0xc0                     # |
+ALUOP_AH %A&B%+%AH%+%BL%        # AH contains the new color byte, AL is the 3-bit color code
+POP_BL
+
+.shade_set_loop                 # start adding bits to AH
+ALUOP_FLAGS %B%+%BL%            # If shade value (counter) is zero we are done
+JZ .write_shade
+ALUOP_PUSH %B%+%BL%             # remember current shade value on stack
+LDI_BL 0x01
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # Check if blue bit is set
+JZ .shade_check_green           # If not, move to check green
+LDI_BL 0x01
+ALUOP_AH %A+B%+%AH%+%BL%        # Increment blue field
+.shade_check_green
+LDI_BL 0x02
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # Check if green bit is set
+JZ .shade_check_red
+LDI_BL 0x04
+ALUOP_AH %A+B%+%AH%+%BL%        # Increment green field
+.shade_check_red
+LDI_BL 0x04
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # Check if red bit is set
+JZ .shade_loop_next
+LDI_BL 0x10
+ALUOP_AH %A+B%+%AH%+%BL%        # Increment red field
+.shade_loop_next
+POP_BL                          # Get shade value back into BL
+ALUOP_BL %B-1%+%BL%             # decrement it
+JMP .shade_set_loop
+
+.write_shade
+ALUOP_ADDR %A%+%AH% $term_current_color
+POP_AH
+ST $term_render_color 0x01
+JMP .print_loop_color
+
+# @C Handle set cursor
+.print_set_cursor
+INCR_C                          # move to next char
+LD_AL $term_current_color       # Get current color byte
+ALUOP_ADDR %A_setcursor% $term_current_color
+JMP .print_loop_color
+
+# @c Handle clear cursor
+.print_clear_cursor
+INCR_C                          # move to next char
+LD_AL $term_current_color       # Get current color byte
+ALUOP_ADDR %A_clrcursor% $term_current_color
+JMP .print_loop_color
+
+# @B Handle set blink
+.print_set_blink
+INCR_C                          # move to next char
+LD_AL $term_current_color       # Get current color byte
+ALUOP_ADDR %A_setblink% $term_current_color
+JMP .print_loop_color
+
+# @b Handle clear blink
+.print_clear_blink
+INCR_C                          # move to next char
+LD_AL $term_current_color       # Get current color byte
+ALUOP_ADDR %A_clrblink% $term_current_color
+JMP .print_loop_color
+
+# @x Handle hex color byte
+.print_set_hex_color
+ST $term_render_color 0x01      # Enable color rendering
+ST $term_hexbyte_buf '0'        # Add 0x prefix to hexbyte buf
+ST $term_hexbyte_buf+1 'x'
+INCR_C                          # Move to first char after the x
+LDA_C_AL                        # get the first char
+ALUOP_ADDR %A%+%AL% $term_hexbyte_buf+2
+INCR_C
+LDA_C_AL                        # get the second char
+ALUOP_ADDR %A%+%AL% $term_hexbyte_buf+3
+ALUOP_AL %zero%                 # write the trailing null
+ALUOP_ADDR %A%+%AL% $term_hexbyte_buf+4
+INCR_C                          # move to char after the color code
+PUSH_CH                         # Convert hex to 8-bit num in AL, flags in BL
+PUSH_CL                         # |
+LDI_C $term_hexbyte_buf         # |
+CALL :strtoi8                   # |
+POP_CL                          # |
+POP_CH                          # |
+ALUOP_ADDR %A%+%AL% $term_current_color # write the converted byte. We don't care if conversion failed, as that just ends up as zero (black)
+JMP .print_loop_color
+
+# @r Handle color reset
+.print_reset_color
+ST $term_render_color 0x00
+INCR_C
+JMP .print_loop_color
+
+.print_it
+LD_BL $term_render_color        # Check if we have color to add
+ALUOP_FLAGS %B%+%BL%
+JZ .print_loop_color_putchar    # If not, just print it
+PUSH_CH                         # Get the color address into C
+PUSH_CL                         # |
+LD_CH $crsr_addr_color          # |
+LD_CL $crsr_addr_color+1        # |
+LD_BL $term_current_color       # Load current color into BL
+ALUOP_ADDR_C %B%+%BL%           # Write color
+POP_CL
+POP_CH
+.print_loop_color_putchar
+CALL :putchar                   # print the char in AL
+INCR_C                          # Move to next character
+JMP .print_loop_color
+
+# no-color print loop avoids a lot of unnecessary code
+.print_loop_nocolor
 LDA_C_AL                        # load next char into AL
 ALUOP_FLAGS %A%+%AL%
 JZ .print_done                  # Done if null
 CALL :putchar                   # print it
 INCR_C                          # Move to next character
-JMP .print_loop
+JMP .print_loop_nocolor
+
 .print_done
+POP_BL
 POP_AL
 RET
 
