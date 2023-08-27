@@ -524,6 +524,12 @@ CALL :memcpy_segments
 LDI_AL 3                    # 4 16-byte blocks -> 1 line
 CALL :memcpy_blocks
 
+# Write 64 "white, no blink, no cursor" bytes to the last line
+LDI_C %display_color%+3776
+LDI_AH %white%              # byte to fill
+LDI_AL 3                    # 4 16-byte blocks -> 1 line
+CALL :memfill_blocks
+
 # And finally scroll our marks
 CALL :cursor_scroll_marks
 CALL :heap_pop_all
