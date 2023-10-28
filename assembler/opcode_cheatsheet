@@ -180,12 +180,14 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
     0xc08f ctrl_b
     0xc090 sram addr
     0xc093 sram data
-0xc100 - 0xc0ff UART
+0xc100 - 0xc1ff UART
     0xc100 - transmitter buffer register (write) / receiver buffer register (read)
     0xc101 - UART control register (write) / UART status register (read)
     0xc102 - Modem control register (write/read)
     0xc103 - Bit rate select register (write) / modem status register (read)
-
+0xc200 - 0xc2ff extended RAM control
+    0xc200 - Segment for 0xdxxx window
+    0xc201 - Segment for 0xexxx window
 
 # Interrupt handling
 When CPU comes out of reset, IRQMASK will be set.  In order to take advantage
