@@ -186,8 +186,8 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
     0xc102 - Modem control register (write/read)
     0xc103 - Bit rate select register (write) / modem status register (read)
 0xc200 - 0xc2ff extended RAM control
-    0xc200 - Segment for 0xdxxx window
-    0xc201 - Segment for 0xexxx window
+    0xc2x0 (any even 0xc2) - Page address for 0xdxxx
+    0xc2x1 (any odd 0xc2)  - Page address for 0xexxx
 
 # Interrupt handling
 When CPU comes out of reset, IRQMASK will be set.  In order to take advantage
