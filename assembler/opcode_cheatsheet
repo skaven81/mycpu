@@ -81,11 +81,11 @@ ALUOP_ADDR_{A,B,C,D} $op
 ALUOP_{AH,AL,BH,BL,CH,CL,DH,DL,TAL,TD} $op
 
 # SIMD and atomic copy instructions
-MEMCPY_C_D      ** TD ** (C and D are incremented after copy)
-MEMCPY4_C_D     ** TD ** (C and D are incremented after copy)
-MEMFILL4_C_DL   ** TD ** (C is incremented after write)
-MEMFILL4_C_PEEK ** TD ** (C is incremented after write)
-MEMFILL4_C_I    ** TD ** (C is incremented after write)
+MEMCPY_C_D          ** TD ** (C and D are incremented after copy)
+MEMCPY4_C_D         ** TD ** (C and D are incremented after copy)
+MEMFILL4_C_DL       ** TD ** (C is incremented after write)
+MEMFILL4_C_PEEK     ** TD ** (C is incremented after write)
+MEMFILL4_C_I $byte  ** TD ** (C is incremented after write)
 
 # General purpose
 NOP
