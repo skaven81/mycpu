@@ -225,4 +225,7 @@
 %uart_msr_CTS%          0x01    #   clear to send
 %uart_msr_DSR%          0x02    #   data set ready
 
+# Extended memory
+%d_page%                0xc200
+%e_page%                0xc201
 

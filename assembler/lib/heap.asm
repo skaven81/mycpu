@@ -320,6 +320,35 @@ POP_AH
 RET
 
 ######
+# Pop a byte from the heap and discard it
+:heap_pop_byte
+PUSH_DH
+PUSH_DL
+LD_DH  $heap_ptr
+LD_DL  $heap_ptr+1
+DECR_D
+ST_DH  $heap_ptr
+ST_DL  $heap_ptr+1
+POP_DL
+POP_DH
+RET
+
+######
+# Pop a word from the heap and discard it
+:heap_pop_word
+PUSH_DH
+PUSH_DL
+LD_DH  $heap_ptr
+LD_DL  $heap_ptr+1
+DECR_D
+DECR_D
+ST_DH  $heap_ptr
+ST_DL  $heap_ptr+1
+POP_DL
+POP_DH
+RET
+
+######
 # Push all registers onto the heap
 :heap_push_all
 PUSH_DH

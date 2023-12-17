@@ -188,8 +188,9 @@ RET
 .cmd_005 "colors\0"         :cmd_colors
 .cmd_006 "date\0"           :cmd_clock
 .cmd_007 "help\0"           .print_help
-.cmd_008 "peek\0"           :cmd_peek
-.cmd_009 "poke\0"           :cmd_poke
+.cmd_008 "memtest\0"        :cmd_memtest
+.cmd_009 "peek\0"           :cmd_peek
+.cmd_010 "poke\0"           :cmd_poke
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
