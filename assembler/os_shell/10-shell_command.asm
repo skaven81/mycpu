@@ -186,12 +186,13 @@ RET
 .cmd_003 "clock\0"          :cmd_clock
 .cmd_004 "clockspeed\0"     :cmd_clockspeed
 .cmd_005 "colors\0"         :cmd_colors
-.cmd_006 "date\0"           :cmd_clock
-.cmd_007 "help\0"           .print_help
-.cmd_008 "memtest\0"        :cmd_memtest
-.cmd_009 "peek\0"           :cmd_peek
-.cmd_010 "poke\0"           :cmd_poke
-.cmd_011 "setserial\0"      :cmd_setserial
+.cmd_006 "console\0"        :cmd_console
+.cmd_007 "date\0"           :cmd_clock
+.cmd_008 "help\0"           .print_help
+.cmd_009 "memtest\0"        :cmd_memtest
+.cmd_010 "peek\0"           :cmd_peek
+.cmd_011 "poke\0"           :cmd_poke
+.cmd_012 "setserial\0"      :cmd_setserial
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
