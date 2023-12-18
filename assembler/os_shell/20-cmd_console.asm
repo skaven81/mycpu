@@ -2,11 +2,18 @@
 
 # Attaches to the serial device and behaves like a serial terminal.  Keyboard
 # events are sent over serial and bytes from serial are printed to the screen.
+#
+# To start a serial getty, edit /lib/systemd/system/serial-getty@.service and
+# set the baud rate.  Then:
+#  * sudo systemctl daemon-reload
+#  * sudo systemctl {start|stop} serial-getty@ttyUSB[01]
 
 # TODO 2023-12-17
 #  * cursor_goto_rowcol doesn't work, needs to be fixed (see clearscreen)
 #  * send control chars properly so ctrl+c, backspace, etc. are sent properly
 #  * load parameters and handle colors
+#  * why does `ls` output not print in its entirety?
+#  * still have a lot of random lockups, maybe related.
 
 :cmd_console
 
