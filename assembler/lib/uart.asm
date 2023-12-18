@@ -152,3 +152,17 @@ POP_BL
 POP_BH
 RET
 
+#####
+# Write a character from AL.  Blocks until the UART
+# confirms the byte has been sent.
+:uart_sendchar
+ALUOP_PUSH %B%+%BL%
+LDI_BL %uart_usr_TC%            # TC flag gets set when transfer is complete
+ALUOP_ADDR %A%+%AL% %uart_tbr%  # put the char into the uart xmit buffer
+.uart_xmit_loop
+LD_AL %uart_usr%
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # See if transmission complete flag is set
+JZ .uart_xmit_loop              # loop until byte has been sent
+POP_BL
+RET
+
