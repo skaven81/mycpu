@@ -1,7 +1,7 @@
 # vim: ts=4 sts=4 sw=4 noexpandtab
 
 SOURCES := serial_test.asm 
-LIBS := ../lib/uart.asm ../lib/keyboard.asm ../lib/timer.asm ../lib/clearscreen.asm ../lib/string.asm ../lib/heap.asm ../lib/cursor.asm ../lib/terminal_output.asm ../lib/math.asm ../lib/sprintf.asm
+LIBS := ../lib/uart.asm ../lib/keyboard.asm ../lib/timer.asm ../lib/clearscreen.asm ../lib/string.asm ../lib/heap.asm ../lib/cursor.asm ../lib/terminal_output.asm ../lib/math.asm ../lib/sprintf.asm ../lib/memfill.asm ../lib/malloc.asm ../lib/strtoi.asm ../lib/memcpy.asm
 OPCODES := ../gen_opcodes.sh
 MACROS := ../asm_macros
 
