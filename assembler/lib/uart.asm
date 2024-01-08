@@ -159,10 +159,20 @@ RET
 ALUOP_PUSH %B%+%BL%
 LDI_BL %uart_usr_TC%            # TC flag gets set when transfer is complete
 ALUOP_ADDR %A%+%AL% %uart_tbr%  # put the char into the uart xmit buffer
+LD_BL %display_chars%+63        # load the char at the top-right corner of the display
+ALUOP_PUSH %B%+%BL%             # and save it
+LD_BL %display_color%+63        # load the color dat at the top-right corner of the display
+ALUOP_PUSH %B%+%BL%             # and save it
+ST %display_color%+63 %white%   # set color
+ST %display_chars%+63 0x1e      # up triangle
 .uart_xmit_loop
 LD_AL %uart_usr%
 ALUOP_FLAGS %A&B%+%AL%+%BL%     # See if transmission complete flag is set
 JZ .uart_xmit_loop              # loop until byte has been sent
-POP_BL
+POP_BL                          # former color back in BL
+ALUOP_ADDR %B%+%BL% %display_color%+63
+POP_BL                          # former char back in BL
+ALUOP_ADDR %B%+%BL% %display_chars%+63
+POP_BL                          # restore BL from call
 RET
 
