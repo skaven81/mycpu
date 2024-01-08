@@ -214,3 +214,33 @@ The interrupt handler calls RETI when it is done, instead of the usual RET.
 The interrupt handler is responsible for leaving the CPU in the same state
 as when it was called.
 
+# Keyboard flags
+BREAK       0x01 (as in, make/break the keystroke)
+CTRL        0x02
+ALT         0x04
+FUNC        0x08
+SHIFT       0x10
+NUMLOCK     0x20
+CAPSLOCK    0x40
+SCROLLLOCK  0x80
+
+# Notable keyboard mappings
+HOME        0x02
+LeftGui     0x03
+RightGui    0x03
+Menu        0x04
+BS          0x08
+TAB         0x09
+PgUp        0x0b
+PgDn        0x0c
+ENTER       0x0d
+INS         0x0f
+Pause       0x10
+DownArrow   0x11
+UpArrow     0x12
+LeftArrow   0x13
+RightArrow  0x14
+PrtScrn     0x17
+ESC         0x1b
+END         0x1e
+DEL         0x7f

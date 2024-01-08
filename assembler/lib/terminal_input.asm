@@ -165,7 +165,7 @@ JMP .input_loop
 ###
 # If not backspace, left arrow?
 .input_not_backspace
-LDI_BL 0x1b
+LDI_BL 0x13
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .input_not_leftarrow
 LDI_AL 0
@@ -188,7 +188,7 @@ JMP .input_loop
 ###
 # If not left arrow, right arrow?
 .input_not_leftarrow
-LDI_BL 0x1a
+LDI_BL 0x14
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .input_not_rightarrow
 LDI_AL 1
