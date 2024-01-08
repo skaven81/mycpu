@@ -18,3 +18,5 @@ os.hex: $(SOURCES) $(LIBS) opcodes.out $(MACROS)
 program: os.hex
 	/raid/msp430/projects/serial-eeprom-programmer/programmer write os.hex
 
+program1: os.hex
+	/raid/msp430/projects/serial-eeprom-programmer/programmer --port /dev/ttyUSB1 write os.hex
