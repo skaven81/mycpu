@@ -2,6 +2,65 @@
 
 # Software math functions
 
+:div8
+# An 8-bit unsigned divisor is popped from the heap. Then
+# an 8-bit unsigned dividend is popped from the heap.
+# calculation is complete, the remainder is pushed to the
+# heap, then the quotient.
+#
+# To use:
+#  Push the dividend onto the heap
+#  Push the divisor onto the heap
+#  Call :div8
+#  Pop the quotient from the heap
+#  Pop the remainder from the heap
+#
+# If the divisor is zero, both the quotient
+# and remainder will be returned as 0xff
+ALUOP_PUSH %B%+%BH%     # dividend
+ALUOP_PUSH %B%+%BL%     # quotient
+ALUOP_PUSH %A%+%AH%     # divisor
+ALUOP_PUSH %A%+%AL%     # remainder
+
+# Pop our arguments from the heap
+CALL :heap_pop_AH       # divisor
+CALL :heap_pop_BH       # dividend
+
+# Check for divide-by-zero
+ALUOP_FLAGS %A%+%AH%
+JZ .div8_by_zero
+
+# Initialize quotient and remainder
+LDI_AL 0x00
+LDI_BL 0x00
+
+# Begin subtracting divisor from dividend until
+# there is an overflow, counting each iteration
+.div8_loop
+ALUOP_BH %B-A%+%BH%+%AH%    # subtract divisor from dividend
+JO .div8_found_quotient     # if overflow, we have our quotient
+ALUOP_BL %B+1%+%BL%         # increment quotient
+JMP .div8_loop
+
+.div8_found_quotient        # the last subtraction operation resulted in an overflow
+ALUOP_AL %A+B%+%BH%+%AH%    # Add the divisor back to the overflowed dividend, to get the remainder into AL
+CALL :heap_push_AL          # remainder
+CALL :heap_push_BL          # quotient
+
+.div8_done
+POP_AL
+POP_AH
+POP_BL
+POP_BH
+RET
+
+.div8_by_zero
+LDI_AL 0xff
+CALL :heap_push_AL
+CALL :heap_push_AL
+JMP .div8_done
+
+
 :signed_invert_a
 # The value in A is treated as a signed integer
 # and is inverted (negative->positive and vice-versa).
