@@ -2,6 +2,55 @@
 
 # Software math functions
 
+:rand8
+# Returns a pseudo-random 8-bit number on the heap. Uses the algorithm
+# described here: https://codebase64.org/doku.php?id=base:small_fast_8-bit_prng
+#
+# seed         new seed
+# ----------------------
+# 0b0000 0000  xor
+# 0b1000 0000  zero
+# 0b0xxx xxxx  shift+xor
+# 0b1xxx xxxx  shift
+
+VAR global byte $rand_seed
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+
+# load seed into AL
+LDI_C $rand_seed
+LDA_C_AL
+
+ALUOP_FLAGS %A%+%AL%
+JZ .rand8_do_xor            # If seed is 0x00 go straight to the xor
+LDI_BL 0x80
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .rand8_shift_no_xor     # If seed is 0x80 then shift but don't do the xor
+
+ALUOP_AL %A<<1%+%AL%        # shift seed left
+JO .rand8_ret               # 0b1xxxxxxx case: shift but don't xor
+
+.rand8_do_xor               # 0b0xxxxxxx or 0x00 case: shift and xor
+LDI_BL 0x1d                 # see link above for other valid values
+ALUOP_AL %AxB%+%AL%+%BL%    # AL xor BL -> AL
+JMP .rand8_ret
+
+.rand8_shift_no_xor
+ALUOP_AL %A<<1%+%AL%        # shift seed left
+
+.rand8_ret
+ALUOP_ADDR_C %A%+%AL%       # store updated seed in $rand_seed
+CALL :heap_push_AL          # push the new seed to the heap, then return
+
+POP_CL
+POP_CH
+POP_BL
+POP_AL
+RET
+
+
 :div8
 # An 8-bit unsigned divisor is popped from the heap. Then
 # an 8-bit unsigned dividend is popped from the heap.
