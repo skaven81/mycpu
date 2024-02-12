@@ -192,7 +192,8 @@ RET
 .cmd_009 "memtest\0"        :cmd_memtest
 .cmd_010 "peek\0"           :cmd_peek
 .cmd_011 "poke\0"           :cmd_poke
-.cmd_012 "setserial\0"      :cmd_setserial
+.cmd_012 "rand\0"           :cmd_rand
+.cmd_013 "setserial\0"      :cmd_setserial
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
