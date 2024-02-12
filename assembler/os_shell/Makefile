@@ -16,7 +16,7 @@ os.hex: $(SOURCES) $(LIBS) opcodes.out $(MACROS)
 	../assembler.py -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(SOURCES) $(LIBS) --output $@ 2>&1 | tee assembler.log
 
 program: os.hex
-	/raid/msp430/projects/serial-eeprom-programmer/programmer write os.hex
+	~/serial-eeprom-programmer/programmer write os.hex
 
 program1: os.hex
-	/raid/msp430/projects/serial-eeprom-programmer/programmer --port /dev/ttyUSB1 write os.hex
+	~/serial-eeprom-programmer/programmer --port /dev/ttyUSB1 write os.hex
