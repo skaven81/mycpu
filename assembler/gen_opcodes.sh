@@ -168,7 +168,8 @@ EOF
 # (5) ST @addr+1 @data+1
 # (2) POP_DH
 # (2) POP_DL
-# So doing this in normal instructions would take 21 clocks, but we do it here in 11.
+# So doing this in normal instructions would take 21 clocks, but we do it here in 11,
+# and also cannot be interrupted during the operation.
 cat <<EOF
 
 [0x0e] ST16 @addr @data
