@@ -666,7 +666,7 @@ let "opcode = opcode + 1"
 done
 
 # store ALU result in a general purpose register
-for to_reg in ${WRITABLE_REGS[@]} ${VOLATILE_REGS[@]}; do
+for to_reg in ${WRITABLE_REGS[@]}; do
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] ALUOP_${to_reg} \$op
@@ -679,6 +679,64 @@ x 3 NextInstruction
 EOF
 let "opcode = opcode + 1"
 
+done
+
+####
+# Slow load/store operations, for interfacing with devices that
+# require the address/data lines to be stable before and/or after
+# the read or write operation occurs. All of these instructions
+# assume that the read or write operation occurs on sequence 0x5.
+####
+opcode=$(hex_to_dec a0)
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] ST_SLOW @addr \$data
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to data byte
+x 3 AddrBusPC WriteTD IncrementPC
+x 4 AddrBusTA DataBusTD
+x 5 AddrBusTA DataBusTD WriteRAM
+x 6 AddrBusTA DataBusTD
+x 7 NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+cat <<EOF
+
+[0x92] ALUOP_ADDR_SLOW \$op @addr
+x 0 IncrementPC
+# PC now points to \$op
+x 1 AddrBusPC WriteALUop IncrementPC
+# PC now points to high byte of target address
+x 2 AddrBusPC WriteTAH IncrementPC
+x 3 AddrBusPC WriteTAL IncrementPC
+# PC now points to next instruction
+x 4 DataBusALU AddrBusTA WriteStatus
+x 5 DataBusALU AddrBusTA WriteRAM
+x 6 DataBusALU AddrBusTA
+x 7 NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+for to_reg in ${WRITABLE_REGS[@]}; do
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] LD_SLOW_${to_reg} @addr
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to next instruction
+x 3 AddrBusTA
+x 4 AddrBusTA
+x 5 AddrBusTA Write${to_reg}
+x 6 AddrBusTA
+x 7 NextInstruction
+EOF
+let "opcode = opcode + 1"
 done
 
 ####
