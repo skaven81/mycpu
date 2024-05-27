@@ -75,9 +75,9 @@ JMP .check_kb_buf               # done, go back to check buffers again
 .noirq
 
 .send_serial_char
-ALUOP_ADDR %A%+%AL% %uart_tbr%  # put the char into the uart xmit buffer
+ALUOP_ADDR_SLOW %A%+%AL% %uart_tbr%  # put the char into the uart xmit buffer
 .uart_xmit_loop
-LD_AL %uart_usr%
+LD_SLOW_AL %uart_usr%
 ALUOP_FLAGS %A&B%+%AL%+%BL%     # See if transmission complete flag is set
 JZ .uart_xmit_loop              # loop until byte has been sent
 RET

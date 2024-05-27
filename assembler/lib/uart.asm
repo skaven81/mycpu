@@ -7,43 +7,43 @@
 ######
 # Initializes the UART to a particular speed setting
 :uart_init_1200_8n1
-ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_1200%+%uart_brsr_cobaud%
+ST_SLOW %uart_ucr% %uart_ucr_8n1%
+ST_SLOW %uart_brsr% %uart_brsr_1200%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_2400_8n1
-ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_2400%+%uart_brsr_cobaud%
+ST_SLOW %uart_ucr% %uart_ucr_8n1%
+ST_SLOW %uart_brsr% %uart_brsr_2400%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_4800_8n1
-ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_4800%+%uart_brsr_cobaud%
+ST_SLOW %uart_ucr% %uart_ucr_8n1%
+ST_SLOW %uart_brsr% %uart_brsr_4800%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_9600_8n1
-ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_9600%+%uart_brsr_cobaud%
+ST_SLOW %uart_ucr% %uart_ucr_8n1%
+ST_SLOW %uart_brsr% %uart_brsr_9600%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_19200_8n1
-ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_19200%+%uart_brsr_cobaud%
+ST_SLOW %uart_ucr% %uart_ucr_8n1%
+ST_SLOW %uart_brsr% %uart_brsr_19200%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_38400_8n1
-ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_38400%+%uart_brsr_cobaud%
+ST_SLOW %uart_ucr% %uart_ucr_8n1%
+ST_SLOW %uart_brsr% %uart_brsr_38400%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_57600_8n1
-ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_57600%+%uart_brsr_cobaud%
+ST_SLOW %uart_ucr% %uart_ucr_8n1%
+ST_SLOW %uart_brsr% %uart_brsr_57600%+%uart_brsr_cobaud%
 JMP .uart_init
 
 :uart_init_115200_8n1
-ST %uart_ucr% %uart_ucr_8n1%
-ST %uart_brsr% %uart_brsr_115200%+%uart_brsr_cobaud%
+ST_SLOW %uart_ucr% %uart_ucr_8n1%
+ST_SLOW %uart_brsr% %uart_brsr_115200%+%uart_brsr_cobaud%
 JMP .uart_init
 
 ######
@@ -61,14 +61,16 @@ JMP .uart_init
 # mode=0, normal
 # REN receiver enabled
 # MIEN unset - do not trigger interrupts on DSR/CTS line changes
-ST %uart_mcr% %uart_mcr_REN%
+ST_SLOW %uart_mcr% %uart_mcr_REN%
 
 # read MSR to clear status bits and interrupts
-LD_TD %uart_msr%
+PUSH_CL
+LD_SLOW_CL %uart_msr%
 # read USR to clear status bits and interrupts
-LD_TD %uart_usr%
+LD_SLOW_CL %uart_usr%
 # read RBR to clear received data and interrupts
-LD_TD %uart_rbr%
+LD_SLOW_CL %uart_rbr%
+POP_CL
 
 # initialize uart buffer pointer
 ST16 $uart_buf_ptr_write 0xbd00
@@ -80,15 +82,19 @@ RET
 # IRQ4 (INTR) target that does nothing except read from the
 # USR and MSR registers to clear the interrupt.
 :uart_clear_usr_msr
-LD_TD %uart_msr%
-LD_TD %uart_usr%
+PUSH_CL
+LD_SLOW_CL %uart_msr%
+LD_SLOW_CL %uart_usr%
+POP_CL
 RETI
 
 ######
 # IRQ5 (DR/data ready) target that does nothing but clear
 # the interrupt
 :uart_clear_dr
-LD_TD %uart_rbr%
+PUSH_CL
+LD_SLOW_CL %uart_rbr%
+POP_CL
 RETI
 
 ######
@@ -106,7 +112,7 @@ ALUOP_PUSH %B%+%BH%
 
 LD_AH   $uart_buf_ptr_write
 LD_AL   $uart_buf_ptr_write+1
-LD_BH   %uart_rbr%
+LD_SLOW_BH %uart_rbr%
 ALUOP_ADDR_A %B%+%BH%                           # write character to buffer
 ALUOP_ADDR %A+1%+%AL% $uart_buf_ptr_write+1     # increment write pointer, wraps back to 00
 
@@ -158,7 +164,7 @@ RET
 :uart_sendchar
 ALUOP_PUSH %B%+%BL%
 LDI_BL %uart_usr_TC%            # TC flag gets set when transfer is complete
-ALUOP_ADDR %A%+%AL% %uart_tbr%  # put the char into the uart xmit buffer
+ALUOP_ADDR_SLOW %A%+%AL% %uart_tbr%  # put the char into the uart xmit buffer
 LD_BL %display_chars%+63        # load the char at the top-right corner of the display
 ALUOP_PUSH %B%+%BL%             # and save it
 LD_BL %display_color%+63        # load the color dat at the top-right corner of the display
@@ -166,7 +172,7 @@ ALUOP_PUSH %B%+%BL%             # and save it
 ST %display_color%+63 %white%   # set color
 ST %display_chars%+63 0x1e      # up triangle
 .uart_xmit_loop
-LD_AL %uart_usr%
+LD_SLOW_AL %uart_usr%
 ALUOP_FLAGS %A&B%+%AL%+%BL%     # See if transmission complete flag is set
 JZ .uart_xmit_loop              # loop until byte has been sent
 POP_BL                          # former color back in BL
