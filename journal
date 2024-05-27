@@ -1,0 +1,49 @@
+2024-05-27: UART read/write timing fix
+
+The problem boils down to the need for the data/address to be stable when
+/RD or /WR go low, and must _stay_ stable when /RD or /WR go high. To accomplish
+this, some "slow" LD (read) and ST/ALUOP_ADDR (write) opcodes will be created,
+which include an extra setup step in sequence 0x4, then perform the desired
+operation in sequence 0x5, and then continue holding the addr/data into
+sequence 0x6 before moving to the next instruction.
+
+This allows the /RD and /WR signals to be controlled by the sequence counter,
+not the clock. The sequence counter's transition from 0b0100 to 0b0101 should
+not cause any glitches due to just one bit having to transition, so the initial
+/RD / /WR assertion will be well coordinated and take place very shortly after
+the rising clock edge.  The transition from 0b0101 to 0b0110 could glitch, but
+the only glitch state would be 0b0111, which still results in the desired
+behavior of the signal being de-asserted.  Thus /RD or /WR would not be
+re-asserted in a glitch at the end of sequence 0x5.
+
+The logisim/uart_glue_logic.circ schematic shows how the 4-input NOR gate in
+group C G-J can be used to generate the SEQ5 signal.  Two inverters will be
+needed to generate the inputs for the 4-in NOR gate.  There is sufficient board
+space in group D C-D for a hex inverter.
+
+The existing quad NAND gate in group F E-F can be reused as it is already
+generating the /RD and /WR signals.
+
+F26-F27 gate needs F27 changed to the SEQ5 signal
+F29-F30 gate can stay the same
+E25-E26 gate can stay the same
+E28-E29 gate can stay the same
+
+The wiring was completed and the control ROMs updated.  New _SLOW opcodes
+have been created in the 0xaN opcode range. The UART library has been
+updated to use these opcodes.
+
+However, when running the console command, it's not working, and the
+system hangs when sending a character.  It's likely locked in a loop
+waiting for the acknowledgement that the character was sent.
+
+Need to do a few things next:
+  1. Create `peek-slow` and `poke-slow` shell commands
+  2. Update logic analyzer with new _SLOW opcodes in symbol table
+  3. Probe the /RD and /WR signals on the UART to verify timings
+  4. Check for lingering places where non-SLOW opcodes are used
+     to talk to the UART - regular reads/writes won't work at all
+     because /RD and /WR are now gated on the SEQ5 signal, not
+     the clock.
+
+
