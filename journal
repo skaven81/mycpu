@@ -1,4 +1,36 @@
+2024-06-01: UART read/write timing fix (part 2)
+===============================================
+
+The circuitry updated on May 27 was tested, and unfortunately does not work.
+This is because the ADDR_C1 (and thus, /CS0) signal is not stable across
+SEQ increments, and neither is /WRAM, and neither are ADDR0/ADDR1.
+The /WRAM signal can also flap (but not nearly as bad).  The DATA lines
+can flap too, between seqences. So to create the proper "slow" signaling,
+it's going to require adding some D flip-flops to gate the /CS0, /RD, /WR,
+ADDR0, and ADDR1 signals.
+
+The patchwork that ended up finally working was to bodge in a 74HC377 where
+six of its eight flip flops could be accessed.  Five of these flip flops are
+used to store ADDR0, ADDR1, ADDR_C1, /RDGEN, and /WRGEN. /RDGEN and /WRGEN
+depend on the latched output of the ADDR_C1 flip-flop, and thus will always
+be one clock behind (as expected).
+
+There is still one more flip-flop available, which can be used to latch
+ADDR2 if needed for some other slow device.  And there are still two more
+flip-flops available, but they'd require soldering some wires to wrap pins.
+
+All said, this succeeds at getting the serial console working again, with
+the faster asymmetric clock.  And it eliminates the race condition between
+the UART timing and the system clock.
+
+However, much to my disappointment, processing long streams of text in
+the console program still triggers crashes.  This is still the case even
+with the CPU clocked as low as 1MHz. So it must be a coding bug (perhaps
+something in the scrolling routines?)
+
+
 2024-05-27: UART read/write timing fix
+======================================
 
 The problem boils down to the need for the data/address to be stable when
 /RD or /WR go low, and must _stay_ stable when /RD or /WR go high. To accomplish
