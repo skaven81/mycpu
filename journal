@@ -1,3 +1,57 @@
+2024-06-02: Heavy interrupt handling crash debugging
+====================================================
+
+Now that the UART is working again, it's back to trying to find out why receiving
+long streams of text over serial causes a crash.
+
+Observations:
+  * The crash appears to happen when a `RET` or `RETI` call returns to the wrong address
+  * It can crash on boot as well, so both :uart_clear_dr and :uart_irq_dr_buf are affected
+
+I captured a few cases of this occurring and saw a common pattern -- just
+before an interrupt instruction would occur, there would be an undefined opcode
+like 0xFE, then the 0xEE opcode would take over.
+
+Looking at this event in timing mode I can see that this occurs when the IRQOP
+signal is asserted too close to a rising clock edge -- this does not give enough
+time for the data bus to settle and an invalid opcode gets loaded into the OPCODE
+register.
+
+To resolve this, the IRQOP signal needs to be latched. A transparent latch would
+be ideal, and allow locking out a transition during the low clock period. But
+given we actually have a spare D flip flop from the work fixing the UART, I can
+just reroute the current IRQOP signal into that spare flip flop, and send the output
+of it back to the original destination.
+
+I did this, and it works!  The system is now completely stable running at 2.2MHz
+over a serial connection.  No more random crashes, at least not while interacting
+with the serial port. There are probably still some gremlins elsewhere in the
+memory bus due to the high propagation time of control signals and the slow rise
+and fall times for the data and address buses.
+
+The next issue I am sorting out is the fact that only 9600 baud (and a few
+slower ones) actually work.  After some research it looks like this is because
+around 1.3% error in the baud rate is acceptable, and all but 9600 baud is
+at 1.7% error rate, so the bits just aren't making it across.  I need a different
+crystal to achieve <1% error rates.  The 82C52 has a maximum clock speed of
+16MHz. After some poking around I found that a 14.7456MHz crystal will do the
+trick:
+
+{14745.6: {300: [(4, '768', 0.0)],
+           600: [(3, '512', 0.0)],
+           1200: [(1, '768', 0.0), (3, '256', 0.0), (4, '192', 0.0)],
+           2400: [(3, '128', 0.0)],
+           4800: [(1, '192', 0.0), (3, '64', 0.0)],
+           9600: [(3, '32', 0.0)],
+           19200: [(3, '16', 0.0)],
+           38400: [(3, '8', 0.0)],
+           57600: [(1, '16', 0.0), (3, '16/3', 0.0)],
+           115200: [(1, '8', 0.0), (4, '2', 0.0)]}}
+
+So I'll order one of these and swap it out to get get the rest of the baud
+rates working.
+
+
 2024-06-01: UART read/write timing fix (part 2)
 ===============================================
 
