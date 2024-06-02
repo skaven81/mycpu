@@ -684,8 +684,26 @@ done
 ####
 # Slow load/store operations, for interfacing with devices that
 # require the address/data lines to be stable before and/or after
-# the read or write operation occurs. All of these instructions
-# assume that the read or write operation occurs on sequence 0x5.
+# the read or write operation occurs. These instructions spread
+# out the read and write operations over multiple clock ticks
+# to allow slow devices to work.  Note that the device is responsible
+# for latching in the address and control signals, as they will
+# still flap across sequence boundaries.
+#
+# There is a SEQ45 signal at (C)H22 that goes high during SEQ4
+# and SEQ5 (with no glitch in between) which can be used to trigger
+# device latching/writing behavior.
+#
+# Writing to the device
+#  * SEQ4 - Latch the address and data
+#  * SEQ5 - /WRAM is asserted
+#  * SEQ6 - address and data remain asserted
+#
+# Reading from the device
+#  * SEQ3 - Address bus is valid
+#  * SEQ4 - Address bus is valid
+#  * SEQ5 - Address bus is valid - data bus is written to register at end of clock cycle
+#  * SEQ6 - Address bus is valid
 ####
 opcode=$(hex_to_dec a0)
 cat <<EOF
@@ -706,7 +724,7 @@ let "opcode = opcode + 1"
 
 cat <<EOF
 
-[0x92] ALUOP_ADDR_SLOW \$op @addr
+[0x$(printf "%02x" $opcode)] ALUOP_ADDR_SLOW \$op @addr
 x 0 IncrementPC
 # PC now points to \$op
 x 1 AddrBusPC WriteALUop IncrementPC
