@@ -211,14 +211,15 @@
 %uart_mcr_MIEN%         0x40    #   modem interrupt enable
 
 %uart_brsr%             0xc103  # bit rate select register (write)
-%uart_brsr_1200%        0x3c    #   prescaler 1x 0x00 divisor 512  0x3c   (1.73% error)
-%uart_brsr_2400%        0x26    #   prescaler 4x 0x02 divisor 64   0x24   (1.73% error)
-%uart_brsr_4800%        0x22    #   prescaler 4x 0x02 divisor 32   0x20   (1.73% error)
-%uart_brsr_9600%        0x1d    #   prescaler 3x 0x01 divisor 22   0x1c   (1.36% error)
-%uart_brsr_19200%       0x0e    #   prescaler 4x 0x02 divisor 8    0x0c   (1.73% error)
-%uart_brsr_38400%       0x14    #   prescaler 1x 0x00 divisor 16   0x14   (1.73% error)
-%uart_brsr_57600%       0x10    #   prescaler 1x 0x00 divisor 32/3 0x10   (1.73% error)
-%uart_brsr_115200%      0x08    #   prescaler 1x 0x00 divisor 16/3 0x08   (1.73% error)
+                                # 14.7456MHz input frequency
+%uart_brsr_1200%        0x40    #   prescaler 1x 0x00 divisor 768 0x40
+%uart_brsr_2400%        0x29    #   prescaler 3x 0x01 divisor 128 0x28
+%uart_brsr_4800%        0x2c    #   prescaler 1x 0x00 divisor 192 0x2c
+%uart_brsr_9600%        0x21    #   prescaler 3x 0x01 divisor 32  0x20
+%uart_brsr_19200%       0x15    #   prescaler 3x 0x01 divisor 16  0x14
+%uart_brsr_38400%       0x0d    #   prescaler 3x 0x01 divisor 8   0x0c
+%uart_brsr_57600%       0x14    #   prescaler 1x 0x00 divisor 16  0x14
+%uart_brsr_115200%      0x0c    #   prescaler 1x 0x00 divisor 8   0x0c
 %uart_brsr_cobaud%      0x80    #   switch CO to baud clock (1) or input clock (0)
 
 %uart_msr%              0xc103  # modem status register (read)
