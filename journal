@@ -1,3 +1,74 @@
+2024-06-08: UART flow control research
+======================================
+
+I replaced the crystal in the UART with a 14.7546MHz model and fixed up the
+serial settings, and confirmed that all the baud rates from 1200 to 115200 now
+work.  However, anything faster than 9600 results in lost characters when using
+the console utility.  Slow input/output (like typing at the command line) works
+fine, but as soon as a steady stream of text is being sent by the computer,
+the Odyssey skips over characters and the output gets garbled.
+
+I believe this to be because the UART receive buffer is overflowing, since there
+is nothing in the code to prevent the write buffer pointer from overtaking the
+read buffer pointer. Once that happens, 256 bytes of data just get ignored and
+lost.
+
+What I need, then, is some kind of flow control to tell the computer to stop
+sending data when the buffer gets full.  I spent all afternoon trying to get
+RTS/CTS flow control to work with gtkterm, and so far I have failed.
+
+I did, however, confirm that toggling the /RTS bit in the modem control register
+(MCR) correctly causes the computer side to see its CTS signal toggling, meaning
+that a hardware flow control mechanism does appear to be wired up correctly.
+The UART circuitry is wired up assuming the possibility of a "five wire" serial
+interface, which uses the RTS/CTS hardware flow control mechanism.
+
+But every time I configure gtkterm to enable RTS/CTS flow control, it de-asserts
+its own /RTS signal, which causes the Odyssey to see a de-asserted /CTS signal,
+and so the UART (correctly) refuses to send any data. Further, I can't get the
+computer to send data to the Odyssey either, despite the Odyssey setting its
+own /RTS bit.
+
+The RS232 wiki page describes RTS/CTS (really RTR/CTS, as the "RTS" signal was
+coopted by this scheme, which is why it seems weird for the UART to set "ready
+to send" in order to tell the remote side to "start sending data").
+
+  In this scheme, commonly called "RTS/CTS flow control" or "RTS/CTS
+  handshaking" (though the technically correct name would be "RTR/CTS"), the
+  DTE asserts RTS whenever it is ready to receive data from the DCE, and the
+  DCE asserts CTS whenever it is ready to receive data from the DTE. Unlike the
+  original use of RTS and CTS with half-duplex modems, these two signals
+  operate independently from one another. This is an example of hardware flow
+  control. However, "hardware flow control" in the description of the options
+  available on an RS-232-equipped device does not always mean RTS/CTS
+  handshaking.
+
+I need to read through this more carefully (and perhaps try to find an example
+of an actual transmit/receive example) to see where I'm implementing it
+incorrectly.
+
+The other problem might be near the end of that paragraph, where it talks
+about the "original use" of CTS/RTS for half-duplex operations. It might be
+that the 80C52 is sufficiently old that it can _only be used for half duplex
+operation_ using RTS/CTS signals. Which is probably fine, but it means I
+need to again figure out what that protocol looks like. Unfortunately it's
+likely not the same as the RTS/CTS flow control used by gtkterm.
+
+The other option might be to use software flow control (Xon/Xoff).  But this
+has a distinct disadvantage in that there are then two ASCII codes that cannot
+be transmitted over the wire, because they are interpreted as Xon or Xoff.
+So I would really prefer to have RTS/CTS flow control operating.
+
+I don't think it's going to be safe to just ignore it and not depend on some
+kind of flow control, because regardless of the baud rate used, there's always
+going to be the possibility of a race condition where more data is received
+than the buffer can hold.  And once the receive buffer overflows, the only
+options are to either make the sender stop sending data, or to stop writing
+to the buffer, or to let the buffer overflow.  And the only option in that
+list that doesn't cause data corruption or lost data is flow control of some
+kind.
+
+
 2024-06-02: Heavy interrupt handling crash debugging
 ====================================================
 
