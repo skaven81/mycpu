@@ -194,6 +194,7 @@ RET
 .cmd_011 "poke\0"           :cmd_poke
 .cmd_012 "rand\0"           :cmd_rand
 .cmd_013 "setserial\0"      :cmd_setserial
+.cmd_013 "serialmon\0"      :cmd_serialmon
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
