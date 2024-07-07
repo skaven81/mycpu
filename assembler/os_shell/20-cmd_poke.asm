@@ -47,8 +47,10 @@ ALUOP_DL %A%+%AL%               # Put byte to write into DL
 POP_AL
 POP_AH                          # Address popped back into A
 
-LDA_A_DH                        # get current byte into DH
-STA_A_DL                        # replace with DL
+LDA_A_SLOW_PUSH
+POP_DH                          # get current byte into DH
+PUSH_DL
+STA_A_SLOW_POP                  # replace with DL
 CALL :heap_push_DL
 CALL :heap_push_DH
 CALL :heap_push_AL

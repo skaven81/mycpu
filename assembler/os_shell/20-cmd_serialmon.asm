@@ -3,7 +3,8 @@
 # Monitor the serial interface in a tight loop
 
 :cmd_serialmon
-LD_SLOW_AL %uart_mcr%
+LD_SLOW_PUSH %uart_mcr%
+POP_AL
 LDI_BL %uart_mcr_DTR%
 ALUOP_FLAGS %A&B%+%AL%+%BL%
 JZ .no_dtr
@@ -14,7 +15,8 @@ LDI_AL '0'
 .dtr_done
 CALL :heap_push_AL # put DTR value on heap
 
-LD_SLOW_AL %uart_msr%
+LD_SLOW_PUSH %uart_msr%
+POP_AL
 LDI_BL %uart_msr_DSR%
 ALUOP_FLAGS %A&B%+%AL%+%BL%
 JZ .no_dsr
@@ -25,7 +27,8 @@ LDI_AL '0'
 .dsr_done
 CALL :heap_push_AL # put DSR value on heap
 
-LD_SLOW_AL %uart_mcr%
+LD_SLOW_PUSH %uart_mcr%
+POP_AL
 LDI_BL %uart_mcr_RTS%
 ALUOP_FLAGS %A&B%+%AL%+%BL%
 JZ .no_rts
@@ -36,7 +39,8 @@ LDI_AL '0'
 .rts_done
 CALL :heap_push_AL # put RTS value on heap
 
-LD_SLOW_AL %uart_msr%
+LD_SLOW_PUSH %uart_msr%
+POP_AL
 LDI_BL %uart_msr_CTS%
 ALUOP_FLAGS %A&B%+%AL%+%BL%
 JZ .no_cts

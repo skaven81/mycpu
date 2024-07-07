@@ -66,7 +66,8 @@ POP_AH                          # Pop start address into A
 CALL :add16_to_b                # B=B+A -> end address
 
 .process_range
-LDA_A_DL                        # Pull byte from addr@A
+LDA_A_SLOW_PUSH
+POP_DL                          # Pull byte from addr@A
 CALL :heap_push_DL              # Push arguments into heap
 CALL :heap_push_AL              # |
 CALL :heap_push_AH              # |
@@ -97,7 +98,8 @@ LDA_A_CL                        # |
 CALL :strtoi                    # Convert to number in A, BL has flags
 ALUOP_FLAGS %B%+%BL%
 JNZ .abort_bad_start_address
-LDA_A_BL                        # Grab peek byte into BL
+LDA_A_SLOW_PUSH
+POP_BL                          # Grab peek byte into BL
 
 CALL :heap_push_BL              # Push arguments into heap
 CALL :heap_push_AL              # |

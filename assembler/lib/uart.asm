@@ -64,13 +64,14 @@ JMP .uart_init
 ST_SLOW %uart_mcr% %uart_mcr_REN%
 
 # read MSR to clear status bits and interrupts
-PUSH_CL
-LD_SLOW_CL %uart_msr%
+LD_SLOW_PUSH %uart_msr%
+POP_TD
 # read USR to clear status bits and interrupts
-LD_SLOW_CL %uart_usr%
+LD_SLOW_PUSH %uart_usr%
+POP_TD
 # read RBR to clear received data and interrupts
-LD_SLOW_CL %uart_rbr%
-POP_CL
+LD_SLOW_PUSH %uart_rbr%
+POP_TD
 
 # initialize uart buffer pointer
 ST16 $uart_buf_ptr_write 0xbd00
@@ -82,19 +83,18 @@ RET
 # IRQ4 (INTR) target that does nothing except read from the
 # USR and MSR registers to clear the interrupt.
 :uart_clear_usr_msr
-PUSH_CL
-LD_SLOW_CL %uart_msr%
-LD_SLOW_CL %uart_usr%
-POP_CL
+LD_SLOW_PUSH %uart_msr%
+POP_TD
+LD_SLOW_PUSH %uart_usr%
+POP_TD
 RETI
 
 ######
 # IRQ5 (DR/data ready) target that does nothing but clear
 # the interrupt
 :uart_clear_dr
-PUSH_CL
-LD_SLOW_CL %uart_rbr%
-POP_CL
+LD_SLOW_PUSH %uart_rbr%
+POP_TD
 RETI
 
 ######
@@ -112,7 +112,8 @@ ALUOP_PUSH %B%+%BH%
 
 LD_AH   $uart_buf_ptr_write
 LD_AL   $uart_buf_ptr_write+1
-LD_SLOW_BH %uart_rbr%
+LD_SLOW_PUSH %uart_rbr%
+POP_BH
 ALUOP_ADDR_A %B%+%BH%                           # write character to buffer
 ALUOP_ADDR %A+1%+%AL% $uart_buf_ptr_write+1     # increment write pointer, wraps back to 00
 
@@ -172,7 +173,8 @@ ALUOP_PUSH %B%+%BL%             # and save it
 ST %display_color%+63 %white%   # set color
 ST %display_chars%+63 0x1e      # up triangle
 .uart_xmit_loop
-LD_SLOW_AL %uart_usr%
+LD_SLOW_PUSH %uart_usr%
+POP_AL
 ALUOP_FLAGS %A&B%+%AL%+%BL%     # See if transmission complete flag is set
 JZ .uart_xmit_loop              # loop until byte has been sent
 POP_BL                          # former color back in BL

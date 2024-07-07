@@ -739,10 +739,25 @@ x 7 NextInstruction
 EOF
 let "opcode = opcode + 1"
 
-for to_reg in ${WRITABLE_REGS[@]}; do
 cat <<EOF
 
-[0x$(printf "%02x" $opcode)] LD_SLOW_${to_reg} @addr
+[0x$(printf "%02x" $opcode)] ALUOP_PUSH_SLOW \$op
+x 0 IncrementPC
+# PC now points to \$op
+x 1 AddrBusPC WriteALUop IncrementPC
+# PC now points to next instruction
+x 2 IncrementSP
+x 3 DataBusALU AddrBusSP
+x 4 DataBusALU AddrBusSP WriteStatus
+x 5 DataBusALU AddrBusSP WriteRAM
+x 6 DataBusALU AddrBusSP
+x 7 NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] LD_SLOW_PUSH @addr
 x 0 IncrementPC
 # PC now points to high byte of target address
 x 1 AddrBusPC WriteTAH IncrementPC
@@ -750,12 +765,60 @@ x 2 AddrBusPC WriteTAL IncrementPC
 # PC now points to next instruction
 x 3 AddrBusTA
 x 4 AddrBusTA
-x 5 AddrBusTA Write${to_reg}
-x 6 AddrBusTA
+x 5 AddrBusTA WriteTD
+x 6 AddrBusTA IncrementSP
+x 7 AddrBusSP DataBusTD WriteRAM
+x 8 NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] ST_SLOW_POP @addr
+x 0 IncrementPC
+# PC now points to high byte of target address
+x 1 AddrBusPC WriteTAH IncrementPC
+x 2 AddrBusPC WriteTAL IncrementPC
+# PC now points to next instruction
+x 3 AddrBusSP WriteTD
+x 4 AddrBusTA DataBusTD DecrementSP
+x 5 AddrBusTA DataBusTD WriteRAM
+x 6 AddrBusTA DataBusTD
+x 7 NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+for addr_reg in ${ADDR_REGS[@]}; do
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] LDA_${addr_reg}_SLOW_PUSH
+x 0 IncrementPC
+x 1 AddrBus${addr_reg}
+x 2 AddrBus${addr_reg}
+x 3 AddrBus${addr_reg}
+x 4 AddrBus${addr_reg}
+x 5 AddrBus${addr_reg} WriteTD
+x 6 AddrBus${addr_reg} IncrementSP
+x 7 AddrBusSP DataBusTD WriteRAM
+x 8 NextInstruction
+EOF
+let "opcode = opcode + 1"
+
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] STA_${addr_reg}_SLOW_POP
+x 0 IncrementPC
+x 1 AddrBusSP
+x 2 AddrBusSP
+x 3 AddrBusSP WriteTD
+x 4 AddrBus${addr_reg} DataBusTD DecrementSP
+x 5 AddrBus${addr_reg} DataBusTD WriteRAM
+x 6 AddrBus${addr_reg} DataBusTD
 x 7 NextInstruction
 EOF
 let "opcode = opcode + 1"
 done
+
 
 ####
 # Transfer operations
