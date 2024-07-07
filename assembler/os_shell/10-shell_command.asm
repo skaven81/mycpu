@@ -189,12 +189,13 @@ RET
 .cmd_006 "console\0"        :cmd_console
 .cmd_007 "date\0"           :cmd_clock
 .cmd_008 "help\0"           .print_help
-.cmd_009 "memtest\0"        :cmd_memtest
-.cmd_010 "peek\0"           :cmd_peek
-.cmd_011 "poke\0"           :cmd_poke
-.cmd_012 "rand\0"           :cmd_rand
-.cmd_013 "setserial\0"      :cmd_setserial
-.cmd_013 "serialmon\0"      :cmd_serialmon
+.cmd_009 "hexdump\0"        :cmd_hexdump
+.cmd_010 "memtest\0"        :cmd_memtest
+.cmd_011 "peek\0"           :cmd_peek
+.cmd_012 "poke\0"           :cmd_poke
+.cmd_013 "rand\0"           :cmd_rand
+.cmd_014 "setserial\0"      :cmd_setserial
+.cmd_015 "serialmon\0"      :cmd_serialmon
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
