@@ -21,6 +21,9 @@ PUSH_{CH,CL,DH,DL}
 
 # Store $data at @addr
 ST @addr $data  ** TAH TAL TD **
+ST_SLOW @addr $data ** TAH TAL TD **
+# Store the top byte on the stack at @addr
+ST_SLOW_POP @addr ** TAH TAL TD **
 
 # Store 16-bit @data at @addr (overwrites D reg)
 ST16 @addr @data ** TD **
@@ -33,9 +36,12 @@ STA_A_{CH,CL,DH,DL,TAL,TD}  ** TAH TAL **
 STA_B_{CH,CL,DH,DL,TAL,TD}
 STA_C_{DH,DL,TD}
 STA_D_{CH,CL,TD}
+# Store into RAM@{addr_reg} from top of stack
+STA_{A,B,C,D}_SLOW_POP
 
 # Load RAM@addr into {reg}
 LD_{AH,AL,BH,BL,CH,CL,DH,DL,TD} @addr   ** TAH TAL **
+LD_SLOW_PUSH @addr ** TAH TAL TD **
 
 # Load 16-bit word at @addr into A or B. Use separate
 # LD_* instructions for C and D.  LD16 takes 10 clocks;
@@ -52,6 +58,8 @@ LDA_A_{BH,BL,CH,CL,DH,DL,TAL,TD}
 LDA_B_{AH,AL,CH,CL,DH,DL,TAL,TD}
 LDA_C_{AH,AL,BH,BL,TAL,TD}
 LDA_D_{AH,AL,BH,BL,TAL,TD}
+# Load RAM@{addr_reg} onto the stack
+LDA_{A,B,C,D}_SLOW_PUSH
 
 # Jumps to fixed address
 JMP @addr   ** TD **
@@ -74,7 +82,9 @@ JNO_D
 # ALU operations
 ALUOP_FLAGS $op
 ALUOP_PUSH $op
+ALUOP_PUSH_SLOW $op
 ALUOP_ADDR $op @addr    ** TAH TAL **
+ALUOP_ADDR_SLOW $op @addr ** TAH TAL **
 # Store ALU result into RAM@{addr_reg}
 ALUOP_ADDR_{A,B,C,D} $op
 # Store ALU result into {reg}
