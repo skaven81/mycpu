@@ -1,3 +1,55 @@
+2027-07-07: Hexdump command
+===========================
+
+Hexdump command is implemented.  It's not quite where I want it, but it's
+good enough to peek at larger memory ranges without getting a headache.
+
+
+2024-07-06: Musings on _SLOW opcodes
+====================================
+
+I've already bumped into a case where I need a _SLOW instruction that doesn't
+exist, and I'm running out of address space to implement it.  So I'm thinking
+that since the instructions are already implied to be "slow", why not just
+make all the instructions read and write to the stack? That way I don't need
+duplicate opcodes just for different register source/destination.  Using a
+_SLOW instruction would imply having to first put the value to be written
+onto the stack (or, the value being read is deposited onto the stack). This
+further slows things down my making each operation two instructions, but
+it saves a ton of opcode space and since the _SLOW instructions are only used
+in a few select locations, the extra PUSH or POP instruction should not be
+problematic.
+
+I've made the necessary changes to the opcodes and the current os_shell
+assembly, so that the UART instructions use the new push/pop based slow
+instructions. I've also updated the peek and poke commands to use _SLOW
+instructions.
+
+I need to write a "hexdump" command. Last time I tried this I was unable to fit
+everything on screen at once, but I think I can make it work if I leverage
+the color display so that alternating bytes are different colors.
+
+1                                                              64
++--------------------------------------------------------------+
+ADDR HEX VALUES                          ASCII
+    | 0 1 2 3  4 5 6 7  8 9 a b  c d e f|0123 4567 89ab cdef|
+d000|xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx|.... .... .... ....|
+
+Each row can display 16 bytes. The command line will accept a 16-bit
+starting address and a 16-bit ending address.  Or the second
+argument can be in the form of +<integer> which is how many bytes
+to display from the starting address.
+
+This is one of those cases where having a 64-color palette is going
+to be handy, because I can use slightly different shades of colors on
+alternating rows, as well as alternating the colors in the hex values
+to differentiate them.
+
+Address odd row: R3/G1/B0 even row: R3/G2/B0
+Hex value odd row, even byte: R0/G2/B0 odd byte: R0/G2/B3
+Hex value even row, even byte: R2/G2/B2 odd byte: R0/G3/B3
+
+
 2024-06-08: UART flow control research
 ======================================
 
