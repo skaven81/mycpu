@@ -19,6 +19,7 @@ CALL :heap_init
 # Initialize color system, we start without processing color data
 ST $term_color_enabled 0x00
 ST $term_render_color 0x00      # once $term_color_enabled comes on, start out in reset mode
+ST $term_print_raw 0x00         # interpret control chars as cursor movement
 ST $term_current_color %white%  # ensure color byte has a sane starting value
 ST $term_hexbyte_buf 0x00       # fill the hexbyte buf with NULLs
 ST $term_hexbyte_buf+1 0x00
