@@ -238,8 +238,12 @@ RET
 # scroll the display. Any newlines will be processed as expected.  The terminating
 # null is not printed.
 #
-# The $color_enabled var determines if color processing is done.  If $color_enabled
-# is zero, the color codes are just printed out without processing.  If $color_enabled
+# If $term_print_raw is zero, then the :putchar routine is used to print characters,
+# which makes control characters like \n work as expected. If $term_print_raw is non-zero,
+# then characters are printed using :putchar_direct, which ignores control characters.
+#
+# The $term_color_enabled var determines if color processing is done.  If $term_color_enabled
+# is zero, the color codes are just printed out without processing.  If $term_color_enabled
 # is non-zero, then the color codes are processed.
 #
 # The color code is translated to a hexadecimal number that is written to the
@@ -280,6 +284,7 @@ RET
 VAR global byte $term_color_enabled  # 0=ignore @-codes
 VAR global byte $term_render_color   # 0=don't write $term_current_color to color memory
 VAR global byte $term_current_color  # color code to write if $term_render_color is non-zero
+VAR global byte $term_print_raw      # 0=interpret control chars
 VAR global 5 $term_hexbyte_buf
 :print
 ALUOP_PUSH %A%+%AL%
@@ -442,7 +447,16 @@ JMP .print_loop_color
 
 # Print a regular character
 .print_it
+ALUOP_PUSH %A%+%AL%
+LD_AL $term_print_raw
+ALUOP_FLAGS %A%+%AL%
+POP_AL
+JZ .print_it_putchar
+CALL :putchar_direct            # print the char in AL in direct mode
+JMP .print_it_putchar_done
+.print_it_putchar
 CALL :putchar                   # print the char in AL
+.print_it_putchar_done
 INCR_C                          # Move to next character
 LD_BL $term_render_color        # Check if we have color to add
 ALUOP_FLAGS %B%+%BL%
@@ -464,7 +478,16 @@ JMP .print_loop_color
 LDA_C_AL                        # load next char into AL
 ALUOP_FLAGS %A%+%AL%
 JZ .print_done                  # Done if null
+
+ALUOP_PUSH %A%+%AL%
+LD_AL $term_print_raw
+ALUOP_FLAGS %A%+%AL%
+POP_AL
+JZ .nocolor_print_putchar
+CALL :putchar_direct            # print it in direct mode
+.nocolor_print_putchar
 CALL :putchar                   # print it
+.nocolor_print_putchar_done
 INCR_C                          # Move to next character
 JMP .print_loop_nocolor
 
