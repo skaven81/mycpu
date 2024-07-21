@@ -1,4 +1,23 @@
-2027-07-07: Hexdump command
+2024-07-21: ATA hardware complete
+=================================
+
+After a couple weeks of wiring up the ATA port, I was able to test it out
+today and it looks like the signal timings are working as expected.  The
+high register is working too.
+
+Next step is to write some utility functions for performing ATA reads and
+writes. Probably stacked, so a set of read/write functions for reading
+or writing a single word (or a byte, for the control registers), and then
+wrap those functions with commands for reading and writing an entire 512-byte
+sector.  With that, I should be able to write an ATA identify utility.
+I'd like to be able to support both the master and slave drive, so I'll
+make sure the utilities can do that as well.
+
+If all goes well, then I should be able to add ATA identification info
+in the boot sequence, and can then start working on a FAT implementation.
+
+
+2024-07-07: Hexdump command
 ===========================
 
 Hexdump command is implemented.  It's not quite where I want it, but it's
