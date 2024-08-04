@@ -1,3 +1,41 @@
+2024-08-04: ATA first driver testing
+====================================
+
+The first test looks very good!  The CF-to-IDE adapter responds on the
+ATA bus correctly, and the drive ID is read in and looks sane.
+
+Some outstanding items for ATA:
+ * The .ata_wait_data_request_ready function needs a timeout so that
+   a drive that is not connected does not cause a hard lock and instead
+   just returns an error.
+ * I found this reference describing what the device ID data contains:
+   https://github.com/ps2dev/ps2sdk/blob/master/common/include/atahw.h#L267
+   I need to write a decoder that returns this data in a suitable format.
+ * The ATA spec:
+   https://people.freebsd.org/~imp/asiabsdcon2015/works/d2161r5-ATAATAPI_Command_Set_-_3.pdf
+   is very clear about the byte ordering of the drive ID command's serial
+   number, firmware, and description fields. I updated .ata_read_sector
+   so that these fields appear correctly garbled, which I believe should
+   mean that "real" data, e.g. FAT filesystem data, is in the right order.
+ * After getting device ID out of the way, I need to create generic functions
+   for reading and writing arbitrary LBA sectors, which should let me at least
+   start probing a CF card's FAT filesystem to see if it looks like what I
+   expect it to contain.
+
+Before I was able to get the ATA port tested, I found problems with the
+RST signal...the RST signal seems to get latched low and won't let go
+sometimes. This is probably due to replacing the schmitt trigger inverter
+used for debouncing the RST signal, as well as the fact that the CLK
+signal coming out of the NAND gate way over in section F of the board,
+is noisy as hell. Replacing the NAND gate with an AC part seems to have
+helped clean up the signal a bit and is at least getting the board running
+again. But at some point I need to go back and do something about clock
+generation and distribution to clean it up. What is really weird is that
+the two input signals to the NAND gate are pretty clean, but the output
+is noisy. Maybe there's just too much fanout and I need to use a device
+with higher drive current.
+
+
 2024-07-21: ATA hardware complete
 =================================
 

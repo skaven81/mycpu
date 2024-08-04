@@ -230,3 +230,41 @@
 %d_page%                0xc200
 %e_page%                0xc201
 
+# ATA port
+%ata_hireg%             0xc310
+%ata_data%              0xc300
+%ata_err%               0xc301
+%ata_numsec%            0xc302
+%ata_lba0%              0xc303
+%ata_lba1%              0xc304
+%ata_lba2%              0xc305
+%ata_lba3%              0xc306
+%ata_cmd_stat%          0xc307
+
+# high nybble masks for the lba3 register to select master or slave drive
+%ata_lba3_master%       0b11100000
+%ata_lba3_slave%        0b11110000
+
+# extended error conditions when %ata_err% is read
+%ata_err_dam_not_found%     0x01
+%ata_err_track0_not_found%  0x02
+%ata_err_cmd_aborted%       0x04
+%ata_err_id_not_found%      0x10
+%ata_err_ecc_error%         0x40
+%ata_err_bad_block%         0x80
+
+# ATA commands written to %ata_cmd_stat%
+%ata_cmd_read_retry%    0x20
+%ata_cmd_write_retry%   0x30
+%ata_cmd_identify%      0xec
+
+# ATA status bits from %ata_cmd_stat%
+%ata_stat_err%          0x01 # extended error status in %ata_err%
+%ata_stat_idx%          0x02 # not important
+%ata_stat_corr%         0x04 # not important
+%ata_stat_drq%          0x08 # data request ready
+%ata_stat_dsc%          0x10 # not important
+%ata_stat_df%           0x20 # write fault
+%ata_stat_rdy%          0x40 # ready for command
+%ata_stat_busy%         0x80 # controller is busy executing command
+

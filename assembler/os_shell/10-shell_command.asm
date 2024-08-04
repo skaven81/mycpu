@@ -182,20 +182,21 @@ RET
 
 .cmd_list
 .cmd_001 "ascii\0"          :cmd_ascii
-.cmd_002 "clear\0"          :cmd_clear
-.cmd_003 "clock\0"          :cmd_clock
-.cmd_004 "clockspeed\0"     :cmd_clockspeed
-.cmd_005 "colors\0"         :cmd_colors
-.cmd_006 "console\0"        :cmd_console
-.cmd_007 "date\0"           :cmd_clock
-.cmd_008 "help\0"           .print_help
-.cmd_009 "hexdump\0"        :cmd_hexdump
-.cmd_010 "memtest\0"        :cmd_memtest
-.cmd_011 "peek\0"           :cmd_peek
-.cmd_012 "poke\0"           :cmd_poke
-.cmd_013 "rand\0"           :cmd_rand
-.cmd_014 "setserial\0"      :cmd_setserial
-.cmd_015 "serialmon\0"      :cmd_serialmon
+.cmd_002 "ata-id\0"         :cmd_ata_id
+.cmd_003 "clear\0"          :cmd_clear
+.cmd_004 "clock\0"          :cmd_clock
+.cmd_005 "clockspeed\0"     :cmd_clockspeed
+.cmd_006 "colors\0"         :cmd_colors
+.cmd_007 "console\0"        :cmd_console
+.cmd_008 "date\0"           :cmd_clock
+.cmd_009 "help\0"           .print_help
+.cmd_010 "hexdump\0"        :cmd_hexdump
+.cmd_011 "memtest\0"        :cmd_memtest
+.cmd_012 "peek\0"           :cmd_peek
+.cmd_013 "poke\0"           :cmd_poke
+.cmd_014 "rand\0"           :cmd_rand
+.cmd_015 "setserial\0"      :cmd_setserial
+.cmd_016 "serialmon\0"      :cmd_serialmon
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
