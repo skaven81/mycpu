@@ -33,9 +33,6 @@ CALL :heap_push_BH              # high address byte
 LDI_C .master_read_out
 CALL :printf
 
-### DEBUG
-RET
-
 LDI_A 512
 CALL :add16_to_b                # Increment start address by 512
 
