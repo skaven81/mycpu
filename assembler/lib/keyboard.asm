@@ -35,8 +35,8 @@ CALL :sleep
 # Restore IRQ1 address
 POP_DL
 POP_DH
-ST_DH   %IRQ3addr%
-ST_DL   %IRQ3addr%+1
+ST_DH   %IRQ1addr%
+ST_DL   %IRQ1addr%+1
 
 POP_AL
 POP_DL
