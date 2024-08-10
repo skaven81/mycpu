@@ -78,3 +78,12 @@ RETI
 LD_TD %tmr_ctrl_a%
 RETI
 
+
+######
+# timer target that increments the BH register
+# and clears the timer IRQ
+:timer_incr_bh
+LD_TD %tmr_ctrl_a%              # clear timer IRQ
+ALUOP_BH %B+1%+%BH%
+RETI
+
