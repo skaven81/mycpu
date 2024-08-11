@@ -1,3 +1,33 @@
+2024-08-11: ATA detection on boot
+=================================
+
+I finished writing the ATA detection code in lib/ata.asm, and so now when
+the Odyssey boots up, it displays the connected ATA devices.  The master
+and slave devices both work!  And I was able to successfully test both
+the CF card adapter and the SD card adapter, simultaneously. The timeout
+is working so that if no device is present, it times out after 500ms and
+reports the error.
+
+The next step is to write data read and write routines that take an LBA
+address as input. These should be pretty quick as I already have the sector_read
+function used for the identify commands.
+
+However, the big glaring problem is with the RST and CLK signals. The
+Odyssey can barely start from a cold boot, and pressing the RST key does
+not reliably come out of reset.  I need to scrap the whole stack of circuitry
+in the A-B columns and try again.  I don't think there is enough room for
+all the chips I need, but maybe I can get clever and cram it all in.
+
+I can take the original output from the VCO, and feed that into one D-FF
+to cut the cycle time in half.  Then take the original VCO signal NAND
+the half-time signal, to get the CLK output.  Feed that into a NAND inverter
+to get /CLK.  RST can use the other side of the D-FF to latch its output.
+And I can replace the hex inverter with a schmitt trigger variety again
+so the RST signal is properly debounced.  If I tear out everything I've
+got done now and start from scratch, I think I can fit that in.  Especially
+if I move the reset button elsewhere to free up a few more pins.
+
+
 2024-08-04: ATA first driver testing
 ====================================
 
