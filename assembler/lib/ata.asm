@@ -37,7 +37,7 @@ ALUOP_DH %A%+%AH%
 ALUOP_DL %A%+%AL%                   # Copy destination address into D
 CALL :heap_push_D                   # Put our return string on the heap
 
-LDI_AL 0x19                         # size 19, 512 bytes
+LDI_AL 0x19                         # size 0x19 (32 16-byte segments = 512 bytes)
 CALL :malloc                        # address in A, sector read buffer
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%                   # Copy sector buffer address into C
@@ -142,7 +142,7 @@ POP_CH
 # Clean up sector buffer
 MOV_CH_AH                           # Put sector buffer addr into A
 MOV_CL_AL
-LDI_BL 0x19                         # size 19
+LDI_BL 0x19                         # size 0x19 (32 16-byte segments = 512 bytes)
 CALL :free                          # free the sector buffer
 
 # done
