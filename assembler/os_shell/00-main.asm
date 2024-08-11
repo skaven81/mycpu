@@ -95,13 +95,39 @@ JNO .extram_loop
 LDI_AL '\n'
 CALL :putchar
 CALL :cursor_on
-JMP .kb_init
+JMP .ata_init
 
 .extram_error
 CALL :cursor_on
 LDI_C .memtest_error_str
 CALL :print
 HLT
+
+# ATA init
+.ata_init
+LDI_BL 0                                # primary master
+CALL :heap_push_BL
+CALL :ata_identify_string               # ID string is on top of heap
+CALL :heap_pop_A                        # save string address so we can free it
+CALL :heap_push_A
+LDI_BL 0                                # primary master
+CALL :heap_push_BL
+LDI_C .ata_banner
+CALL :printf
+LDI_BL 3                                # free 64 bytes, A still contains addr
+CALL :free
+
+LDI_BL 1                                # primary slave
+CALL :heap_push_BL
+CALL :ata_identify_string               # ID string is on top of heap
+CALL :heap_pop_A                        # save string address so we can free it
+CALL :heap_push_A
+LDI_BL 1                                # primary master
+CALL :heap_push_BL
+LDI_C .ata_banner
+CALL :printf
+LDI_BL 3                                # free 64 bytes, A still contains addr
+CALL :free
 
 # Initialize keyboard
 .kb_init
@@ -175,4 +201,5 @@ RETI
 .uart_init_banner "UART init 9600,8n1 \0"
 .clockspeed_banner "Current CPU frequency %UkHz\n\0"
 .clock_banner "Current clock %B%B-%B-%B %B:%B:%B\n\0" # YYYY-MM-DD HH:MM:SS
+.ata_banner "ATA %u: %s\n\0"
 
