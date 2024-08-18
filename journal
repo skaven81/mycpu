@@ -1,3 +1,24 @@
+2024-08-17: Clock/Reset repair and SD-adapter mounting
+======================================================
+
+Fixed up the CLK circuitry so that it buffers the output of the AND gate
+that defines the 75% duty cycle through a D-FF.  Works like a champ, but
+the clock signal doesn't look too much different.  There's still a weird
+jitter at the midpoint of the rising and falling edges of the clock.
+This work, plus replacing the inverter in column A with a proper schmitt
+trigger inverter, fixed up the reset signaling too.
+
+I then tackled the issue of unstable startup and random hangs.  I was
+able to configure the logic analyzer to trigger on a HLT instruction
+and observed that the ROM's /OE signal was flapping just before the HLT
+instruction was triggered.  I traced this back to a burned out AND gate
+on the video card board.  I replaced it with a 74AC08 and everything
+looks to be super stable now.
+
+And finally, I mounted the CF-card adapter to the acrylic backpanel, so
+I'm set up now for doing the FAT16 implementation.
+
+
 2024-08-11: ATA detection on boot
 =================================
 
