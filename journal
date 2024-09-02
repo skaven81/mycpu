@@ -1,3 +1,54 @@
+2024-09-02: ATA read/write sectors
+==================================
+
+Finished up the ata.asm code for reading and writing arbitrary sectors.
+Confirmed operation by writing some known content onto an SD card, and
+showing that I could read it and the contents looked sane.  Then I used
+`poke` to change the data, write it back, and then confirmed I could
+read the updated data on my laptop.
+
+Next step is to get the FAT16 mount operation working, which will involve
+a series of global variables that store the various LBA offsets for
+things like the FAT, root directory, etc. Finally a "dir" command that
+can list the contents of a directory, and a "cd" command that can change
+directories. And a "pwd" command to print the current directory, along
+with updating the shell to display the current directory.
+
+Once it is possible to navigate the filesystem, I need to update the
+assembler so it can generate a symbol table, and use a symbol table
+provided as input during assembly. I can then build the "BIOS" and flash
+it to the ROM, then take the resulting symbol table to assemble other
+binaries that will be writen to the SD card and executed from RAM.
+To do this, I'll need to create an executable file format and a loader
+that the shell/BIOS can call. The executable format will be something
+like the following:
+
+Offset Size Description
+------ ---- -----------
+0x0000  4   'ODEX' indicator that this is an Odyssey executable
+0x0004  2   Size of binary, ignoring the first six bytes
+...
+last        last byte of binary
+last+1  2   number of addresses to be updated
+last+3  2   offset of address
+last+5  2   offset of address
+last+7  2   offset of address
+...
+
+So the loader will inspect the first sector of the executable and
+ensure that it is an Odyssey executable.  If so, it is able to pull
+the size of the binary and thus allocate sufficient RAM to load it.
+It can then load the binary into RAM.  However, all the memory
+addresses that refer to things inside the program, need to be updated
+to use the new base address of the program.  So after the program
+is a list of offsets that need to be updated.  The loader goes
+to each of those offsets and adds the program's base address to
+the value present at that address, thus making the address valid.
+
+Once all that is done, the loader saves the CPU state and CALLs 
+the executable in RAM.
+
+
 2024-08-17: Clock/Reset repair and SD-adapter mounting
 ======================================================
 
