@@ -256,42 +256,13 @@ RET
 #     requested drive did not respond at all and may not be attached.
 :ata_read_lba
 ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %B%+%BL%
-ALUOP_PUSH %B%+%BH%
 PUSH_CL
 PUSH_CH
-PUSH_DL
-PUSH_DH
 
-# Pop the master/slave byte from the heap into AL and swap
-# it for the appropriate lba3 register mask
-CALL :heap_pop_AL                   # master/slave in AL
-ALUOP_FLAGS %A%+%AL%
-JZ .ata_read_master
-LDI_AL %ata_lba3_slave%
-JMP .ata_read_1
-.ata_read_master
-LDI_AL %ata_lba3_master%
-.ata_read_1
-
-# Put the low word of the LBA address into C, then load it into the ATA bus
-CALL :heap_pop_C
-PUSH_CL
-ST_SLOW_POP %ata_lba0%
-PUSH_CH
-ST_SLOW_POP %ata_lba1%
-# Put the high word of the LBA address into C, then load it into the ATA bus
-# Note that the top 4 bits of the LBA address must be:
-# bit 4 - master(0) / slave(1)
-# bit 5 - always 1
-# bit 6 - 1 for LBA access
-# bit 7 - always 1
-CALL :heap_pop_C
-PUSH_CL
-ST_SLOW_POP %ata_lba2%
-MOV_CH_BL
-ALUOP_ADDR_SLOW %A|B%+%AL%+%BL% %ata_lba3%
+# Pops the master/slave byte and the two LBA address words
+# from the heap and sets them on the ATA bus
+CALL .ata_set_lba_address
 
 # Wait for the newly selected drive to become ready - returns
 # status via the ALU zero flag
@@ -336,14 +307,10 @@ CALL :heap_push_AL
 JMP .ata_read_done
 
 .ata_read_done
-POP_DH
-POP_DL
 POP_CH
 POP_CL
-POP_BH
 POP_BL
-POP_AH
-POP_BL
+POP_AL
 RET
 
 ########
@@ -360,42 +327,13 @@ RET
 #     requested drive did not respond at all and may not be attached.
 :ata_write_lba
 ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %B%+%BL%
-ALUOP_PUSH %B%+%BH%
 PUSH_CL
 PUSH_CH
-PUSH_DL
-PUSH_DH
 
-# Pop the master/slave byte from the heap into AL and swap
-# it for the appropriate lba3 register mask
-CALL :heap_pop_AL                   # master/slave in AL
-ALUOP_FLAGS %A%+%AL%
-JZ .ata_write_master
-LDI_AL %ata_lba3_slave%
-JMP .ata_write_1
-.ata_write_master
-LDI_AL %ata_lba3_master%
-.ata_write_1
-
-# Put the low word of the LBA address into C, then load it into the ATA bus
-CALL :heap_pop_C
-PUSH_CL
-ST_SLOW_POP %ata_lba0%
-PUSH_CH
-ST_SLOW_POP %ata_lba1%
-# Put the high word of the LBA address into C, then load it into the ATA bus
-# Note that the top 4 bits of the LBA address must be:
-# bit 4 - master(0) / slave(1)
-# bit 5 - always 1
-# bit 6 - 1 for LBA access
-# bit 7 - always 1
-CALL :heap_pop_C
-PUSH_CL
-ST_SLOW_POP %ata_lba2%
-MOV_CH_BL
-ALUOP_ADDR_SLOW %A|B%+%AL%+%BL% %ata_lba3%
+# Pops the master/slave byte and the two LBA address words
+# from the heap and sets them on the ATA bus
+CALL .ata_set_lba_address
 
 # Wait for the newly selected drive to become ready - returns
 # status via the ALU zero flag
@@ -450,14 +388,10 @@ CALL :heap_push_AL
 JMP .ata_write_done
 
 .ata_write_done
-POP_DH
-POP_DL
 POP_CH
 POP_CL
-POP_BH
 POP_BL
-POP_AH
-POP_BL
+POP_AL
 RET
 
 
@@ -534,6 +468,50 @@ POP_AL
 RET
 
 ########
+# .ata_set_lba_address
+# Pop the master/slave byte from the heap into AL and swap
+# it for the appropriate lba3 register mask, then pop the
+# low LBA word from the heap and set that, then pop the
+# high LBA word from the heap and set that.
+.ata_set_lba_address
+ALUOP_PUSH %A%+%AL%
+PUSH_CH
+PUSH_CL
+
+CALL :heap_pop_AL                   # master/slave in AL
+ALUOP_FLAGS %A%+%AL%
+JZ .ata_lba_master
+LDI_AL %ata_lba3_slave%
+JMP .ata_lba_1
+.ata_lba_master
+LDI_AL %ata_lba3_master%
+.ata_lba_1
+
+# Put the low word of the LBA address into C, then load it into the ATA bus
+CALL :heap_pop_C
+PUSH_CL
+ST_SLOW_POP %ata_lba0%
+PUSH_CH
+ST_SLOW_POP %ata_lba1%
+# Put the high word of the LBA address into C, then load it into the ATA bus
+# Note that the top 4 bits of the LBA address must be:
+# bit 4 - master(0) / slave(1)
+# bit 5 - always 1
+# bit 6 - 1 for LBA access
+# bit 7 - always 1
+CALL :heap_pop_C
+PUSH_CL
+ST_SLOW_POP %ata_lba2%
+MOV_CH_BL
+ALUOP_ADDR_SLOW %A|B%+%AL%+%BL% %ata_lba3%
+
+POP_CL
+POP_CH
+POP_AL
+RET
+
+
+########
 # .ata_wait_data_request_ready
 # Wait for the drive to complete the requested operation.
 .ata_wait_data_request_ready
@@ -551,7 +529,6 @@ JZ .ata_drq_wait_loop           # continue waiting if drq flag is not set
 POP_BL
 POP_AL
 RET
-
 
 ########
 # .ata_read_sector
