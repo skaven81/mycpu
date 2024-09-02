@@ -200,12 +200,10 @@ ST_SLOW %ata_lba3% %ata_lba3_master%
 # Pop the address we'll be writing to, into C
 CALL :heap_pop_C
 
-# Wait for drive to become ready - returns
+# Wait for the newly selected drive to become ready - returns
 # status via the ALU zero flag
 CALL .ata_wait_ready
-
-# If timeout, abort
-JNZ .ata_id_timeout
+JNZ .ata_id_timeout                 # If timeout, abort
 
 # Send the drive ID command
 ST_SLOW %ata_cmd_stat% %ata_cmd_identify%
@@ -241,6 +239,126 @@ POP_CL
 POP_CH
 POP_BL
 POP_AL
+RET
+
+########
+# :ata_read_lba - given a 28-bit LBA address, load the sector
+# at that address and read a 512-byte data frame into a target
+# address.  To use this function:
+#  1. push the address (word) of a 512-byte memory segment onto the heap
+#  2. push the high word of the LBA address (bits 27-16) onto the heap
+#  3. push the low word of the LBA address (bits 15-0) onto the heap
+#  4. push a byte onto the heap to indicate which drive (0=master, 1=slave)
+#  5. call the function
+#  6. pop status byte from heap. This is just a copy of the %ata_err%
+#     ATA register. If zero, the command was successful.  If non-zero,
+#     the bits will correspond to the %ata_err% flags. If 0xff, the
+#     requested drive did not respond at all and may not be attached.
+:ata_read_lba
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
+PUSH_CL
+PUSH_CH
+PUSH_DL
+PUSH_DH
+
+# Pop the master/slave byte from the heap into AL and swap
+# it for the appropriate lba3 register mask
+CALL :heap_pop_AL                   # master/slave in AL
+ALUOP_FLAGS %A%+%AL%
+JZ .ata_read_master
+LDI_AL %ata_lba3_slave%
+JMP .ata_read_1
+.ata_read_master
+LDI_AL %ata_lba3_master%
+.ata_read_1
+
+# Put the low word of the LBA address into C, then load it into the ATA bus
+CALL :heap_pop_C
+PUSH_CL
+ST_SLOW_POP %ata_lba0%
+PUSH_CH
+ST_SLOW_POP %ata_lba1%
+# Put the high word of the LBA address into C, then load it into the ATA bus
+# Note that the top 4 bits of the LBA address must be:
+# bit 4 - master(0) / slave(1)
+# bit 5 - always 1
+# bit 6 - 1 for LBA access
+# bit 7 - always 1
+CALL :heap_pop_C
+PUSH_CL
+ST_SLOW_POP %ata_lba2%
+MOV_CH_BL
+ALUOP_ADDR_SLOW %A|B%+%AL%+%BL% %ata_lba3%
+
+# Wait for the newly selected drive to become ready - returns
+# status via the ALU zero flag
+CALL .ata_wait_ready
+JNZ .ata_read_timeout               # If timeout, abort
+
+# Put the destination address into C
+CALL :heap_pop_C
+
+# Set the number of sectors to read (1, 512 bytes)
+ST_SLOW %ata_numsec% 0x01
+
+# Send the command to the drive
+ST_SLOW %ata_cmd_stat% %ata_cmd_read_retry%
+
+# Wait for data request to be ready
+CALL .ata_wait_data_request_ready
+
+# Check for errors
+LD_SLOW_PUSH %ata_cmd_stat%
+POP_AL
+LDI_BL %ata_stat_err%
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JZ .ata_read_begin                  # if no errors, begin reading bytes
+LD_SLOW_PUSH %ata_err%              # else load errors
+POP_AL
+CALL :heap_push_AL
+JMP .ata_read_done
+
+# Read 256 words into address at C
+.ata_read_begin
+CALL .ata_read_sector
+LDI_AL 0x00 # no errors
+CALL :heap_push_AL
+JMP .ata_read_done
+
+# timeout vector
+.ata_read_timeout
+CALL :heap_pop_A                    # pop the destination address
+LDI_AL 0xff
+CALL :heap_push_AL
+JMP .ata_read_done
+
+.ata_read_done
+POP_DH
+POP_DL
+POP_CH
+POP_CL
+POP_BH
+POP_BL
+POP_AH
+POP_BL
+RET
+
+########
+# :ata_write_lba - given a 28-bit LBA address, write the sector
+# at that address from a 512-byte memory address.  To use this function:
+#  1. push the address (word) of the 512-byte memory segment onto the heap
+#  2. push the high word of the LBA address (bits 27-16) onto the heap
+#  3. push the low word of the LBA address (bits 15-0) onto the heap
+#  4. push a byte onto the heap to indicate which drive (0=master, 1=slave)
+#  5. call the function
+#  6. pop status byte from heap. This is just a copy of the %ata_err%
+#     ATA register. If zero, the command was successful.  If non-zero,
+#     the bits will correspond to the %ata_err% flags. If 0xff, the
+#     requested drive did not respond at all and may not be attached.
+:ata_write_lba
 RET
 
 
@@ -297,7 +415,7 @@ ALUOP_AL %zero%                 # success, so ensure zero flag will be set
 JMP .ata_wait_done
 
 .ata_wait_timeout
-ALUOP_AL %one%                  # timeout, so ensure zero flag will be set
+ALUOP_AL %one%                  # timeout, so ensure zero flag will not be set
 
 .ata_wait_done
 MASKINT
@@ -316,7 +434,9 @@ POP_BL
 POP_AL
 RET
 
-# Wait for data request ready
+########
+# .ata_wait_data_request_ready
+# Wait for the drive to complete the requested operation.
 .ata_wait_data_request_ready
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %B%+%BL%
@@ -333,6 +453,9 @@ POP_BL
 POP_AL
 RET
 
+
+########
+# .ata_read_sector
 # Read a 512-byte sector into the address at C
 .ata_read_sector
 ALUOP_PUSH %A%+%AL%
