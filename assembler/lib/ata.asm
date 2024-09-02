@@ -359,6 +359,105 @@ RET
 #     the bits will correspond to the %ata_err% flags. If 0xff, the
 #     requested drive did not respond at all and may not be attached.
 :ata_write_lba
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
+PUSH_CL
+PUSH_CH
+PUSH_DL
+PUSH_DH
+
+# Pop the master/slave byte from the heap into AL and swap
+# it for the appropriate lba3 register mask
+CALL :heap_pop_AL                   # master/slave in AL
+ALUOP_FLAGS %A%+%AL%
+JZ .ata_write_master
+LDI_AL %ata_lba3_slave%
+JMP .ata_write_1
+.ata_write_master
+LDI_AL %ata_lba3_master%
+.ata_write_1
+
+# Put the low word of the LBA address into C, then load it into the ATA bus
+CALL :heap_pop_C
+PUSH_CL
+ST_SLOW_POP %ata_lba0%
+PUSH_CH
+ST_SLOW_POP %ata_lba1%
+# Put the high word of the LBA address into C, then load it into the ATA bus
+# Note that the top 4 bits of the LBA address must be:
+# bit 4 - master(0) / slave(1)
+# bit 5 - always 1
+# bit 6 - 1 for LBA access
+# bit 7 - always 1
+CALL :heap_pop_C
+PUSH_CL
+ST_SLOW_POP %ata_lba2%
+MOV_CH_BL
+ALUOP_ADDR_SLOW %A|B%+%AL%+%BL% %ata_lba3%
+
+# Wait for the newly selected drive to become ready - returns
+# status via the ALU zero flag
+CALL .ata_wait_ready
+JNZ .ata_write_timeout              # If timeout, abort
+
+# Put the source address into C
+CALL :heap_pop_C
+
+# Set the number of sectors to write (1, 512 bytes)
+ST_SLOW %ata_numsec% 0x01
+
+# Send the command to the drive
+ST_SLOW %ata_cmd_stat% %ata_cmd_write_retry%
+
+# Wait for data request to be ready
+CALL .ata_wait_data_request_ready
+
+# Write 256 words from address at C
+CALL .ata_write_sector
+
+# Wait for drive to become ready again
+CALL .ata_wait_ready
+JNZ .ata_write_timeout              # If timeout, abort
+
+LDI_AL 0x00 # no errors
+CALL :heap_push_AL
+JMP .ata_write_done
+
+# Check for errors
+LD_SLOW_PUSH %ata_cmd_stat%
+POP_AL
+LDI_BL %ata_stat_err%
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JZ .ata_write_done_noerrors         # if no errors, load zero into AL to return
+
+LD_SLOW_PUSH %ata_err%              # else load errors into AL to return
+POP_AL
+CALL :heap_push_AL
+JMP .ata_write_done
+
+.ata_write_done_noerrors
+LDI_AL 0x00
+CALL :heap_push_AL
+JMP .ata_write_done
+
+# timeout vector
+.ata_write_timeout
+CALL :heap_pop_A                    # pop the destination address
+LDI_AL 0xff
+CALL :heap_push_AL
+JMP .ata_write_done
+
+.ata_write_done
+POP_DH
+POP_DL
+POP_CH
+POP_CL
+POP_BH
+POP_BL
+POP_AH
+POP_BL
 RET
 
 
@@ -472,6 +571,32 @@ ALUOP_ADDR_C %A%+%AL%           # write high byte to C
 INCR_C
 ALUOP_BL %B-1%+%BL%             # decrement BL
 JNO .ata_read_loop              # keep looping until we overflow back to 0xff
+
+POP_BL
+POP_AL
+RET
+
+########
+# .ata_write_sector
+# Write a 512-byte sector from the address at C
+.ata_write_sector
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+
+LDI_BL 0xff                     # 256 words to write
+.ata_write_loop
+INCR_C
+LDA_C_AL                        # low byte in AL
+ALUOP_ADDR %A%+%AL% %ata_hireg% # low byte into hireg
+DECR_C
+LDA_C_AL                        # high byte in AL
+ALUOP_PUSH %A%+%AL%
+ST_SLOW_POP %ata_data%          # write high+low byte to ATA
+INCR_C
+INCR_C
+
+ALUOP_BL %B-1%+%BL%             # decrement BL
+JNO .ata_write_loop             # keep looping until we overflow back to 0xff
 
 POP_BL
 POP_AL
