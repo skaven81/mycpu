@@ -562,12 +562,12 @@ ALUOP_PUSH %B%+%BL%
 
 LDI_BL 0xff                     # 256 words to read
 .ata_read_loop
-LD_SLOW_PUSH %ata_data%         # low byte on stack
+LD_SLOW_PUSH %ata_data%         # high byte on stack
 POP_AL
-ALUOP_ADDR_C %A%+%AL%           # write low byte to C
-INCR_C
-LD_AL %ata_hireg%               # high byte in AL
 ALUOP_ADDR_C %A%+%AL%           # write high byte to C
+INCR_C
+LD_AL %ata_lowreg%              # low byte in AL
+ALUOP_ADDR_C %A%+%AL%           # write low byte to C
 INCR_C
 ALUOP_BL %B-1%+%BL%             # decrement BL
 JNO .ata_read_loop              # keep looping until we overflow back to 0xff
@@ -587,7 +587,7 @@ LDI_BL 0xff                     # 256 words to write
 .ata_write_loop
 INCR_C
 LDA_C_AL                        # low byte in AL
-ALUOP_ADDR %A%+%AL% %ata_hireg% # low byte into hireg
+ALUOP_ADDR %A%+%AL% %ata_lowreg% # low byte into lowreg
 DECR_C
 LDA_C_AL                        # high byte in AL
 ALUOP_PUSH %A%+%AL%

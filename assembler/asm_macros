@@ -231,7 +231,7 @@
 %e_page%                0xc201
 
 # ATA port
-%ata_hireg%             0xc310
+%ata_lowreg%            0xc310
 %ata_data%              0xc300
 %ata_err%               0xc301
 %ata_numsec%            0xc302
