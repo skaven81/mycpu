@@ -59,6 +59,9 @@ CALL :heap_push_AL
 CALL :heap_push_AH
 CALL :printf
 
+# Initialize extended memory allocation
+CALL :extmalloc_init
+
 # Test extended RAM
 CALL :cursor_off
 LDI_BH 0x00                             # BH = page number
