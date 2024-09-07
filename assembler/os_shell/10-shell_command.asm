@@ -191,14 +191,16 @@ RET
 .cmd_008 "colors\0"         :cmd_colors
 .cmd_009 "console\0"        :cmd_console
 .cmd_010 "date\0"           :cmd_clock
-.cmd_011 "help\0"           .print_help
-.cmd_012 "hexdump\0"        :cmd_hexdump
-.cmd_013 "memtest\0"        :cmd_memtest
-.cmd_014 "peek\0"           :cmd_peek
-.cmd_015 "poke\0"           :cmd_poke
-.cmd_016 "rand\0"           :cmd_rand
-.cmd_017 "setserial\0"      :cmd_setserial
-.cmd_018 "serialmon\0"      :cmd_serialmon
+.cmd_011 "extmalloc\0"      :cmd_extmalloc
+.cmd_012 "extfree\0"        :cmd_extfree
+.cmd_013 "help\0"           .print_help
+.cmd_014 "hexdump\0"        :cmd_hexdump
+.cmd_015 "memtest\0"        :cmd_memtest
+.cmd_016 "peek\0"           :cmd_peek
+.cmd_017 "poke\0"           :cmd_poke
+.cmd_018 "rand\0"           :cmd_rand
+.cmd_019 "setserial\0"      :cmd_setserial
+.cmd_020 "serialmon\0"      :cmd_serialmon
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
