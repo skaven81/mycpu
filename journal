@@ -1,3 +1,24 @@
+2024-09-08: FAT16 mount stub
+============================
+
+I got the initial code done for mounting a FAT16 filesystem.  The
+filesystem is "mounted" by reading the boot sector and transcribing
+the filesytem data into a 128-byte data structure, which will then
+be passed around to the various other FAT16 functions to perform
+filesystem operations.  The data structure also contains the current
+state of the filesytem, such as the current working directory.
+
+Next I need to write the conversion utilities, at least cluster2sector
+and sector2cluster. Then I can start working on the "dir" utility.
+
+One challenge is that I'm almost out of ROM space.  I may have to
+take a diversion and start stripping down the os_shell stuff
+to get closer to the endgame of a basic BIOS that only has the code
+to boot from the SD card, which means removing most of the shell
+code and maybe even some library code that is only used by
+certain applications.
+
+
 2024-09-02: ATA read/write sectors
 ==================================
 
