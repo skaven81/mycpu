@@ -590,3 +590,111 @@ CALL :heap_pop_B        # high word of second operand
 CALL :add16_to_b
 RET
 
+###
+# Multiply two 16-bit numbers using the shfit-and-add algorithm
+#
+# 1. Push multiplicand
+# 2. Push multiplier
+# 3. Call the function
+# 4. Pop low word of result
+# 5. Pop high word of result
+:mul16
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
+PUSH_CL
+PUSH_CH
+PUSH_DL
+PUSH_DH
+
+# Load multiplier into B
+CALL :heap_pop_B
+
+# Load multiplicand into C+D and push to stack as 32-bit value
+LDI_C 0x0000
+CALL :heap_pop_D
+PUSH_CH # msb
+PUSH_CL
+PUSH_DH
+PUSH_DL # lsb
+
+# Initialize C (high) and D (low) to store our result
+LDI_C 0x0000
+LDI_D 0x0000
+
+.mul16_loop
+ALUOP_FLAGS %B%+%BH%
+JNZ .mul16_continue
+ALUOP_FLAGS %B%+%BL%
+JZ .mul16_done              # stop looping if multiplier is zero
+.mul16_continue
+
+LDI_AL 0x01
+ALUOP_FLAGS %A&B%+%AL%+%BL% # Check if LSB of multiplier is 1
+JZ .mul16_noadd
+
+# Add multiplcand to result
+CALL :heap_push_B           # save multiplier
+POP_BL                      # restore multiplicand from stack
+POP_BH
+POP_AL
+POP_AH
+CALL :heap_push_A           # high word of multiplicand
+CALL :heap_push_C           # high word of result
+CALL :heap_push_B           # low word of multiplicand
+CALL :heap_push_D           # low word of result
+CALL :add32
+CALL :heap_pop_D            # write low word of result
+CALL :heap_pop_C            # write high word of result
+ALUOP_PUSH %A%+%AH%         # Put multiplicand back onto stack
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+CALL :heap_pop_B            # restore multiplier
+
+.mul16_noadd
+# Shift multiplier right
+CALL :shift16_b_right
+
+# Shift multiplicand left
+CALL :heap_push_B           # save multiplier
+POP_BL                      # restore multiplicand from stack
+POP_BH
+POP_AL
+POP_AH
+CALL :shift16_b_left
+JO .mul16_multilpicand_cin
+CALL :shift16_a_left
+JMP .mul16_multilpicand_done
+.mul16_multilpicand_cin
+CALL :shift16_a_left
+ALUOP_AL %A+1%+%AL%
+.mul16_multilpicand_done
+ALUOP_PUSH %A%+%AH%         # Put multiplicand back onto stack
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+CALL :heap_pop_B            # restore multiplier
+
+JMP .mul16_loop
+
+.mul16_done                 # Result is in C+D
+CALL :heap_push_C           # high word of result
+CALL :heap_push_D           # low word of result
+
+POP_TD                      # clear multiplicand from stack
+POP_TD
+POP_TD
+POP_TD
+
+POP_DH
+POP_DL
+POP_CH
+POP_CL
+POP_BH
+POP_BL
+POP_AH
+POP_AL
+RET
+
