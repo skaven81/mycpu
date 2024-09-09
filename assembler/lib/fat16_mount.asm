@@ -36,7 +36,7 @@
 #   0x53    4     lba   DataRegion start
 #   0x57    2     int   FATRegion size, in sectors
 #   0x59    2     int   RootDirectoryRegion size, in sectors
-#   0x5b    4     int   DataRegion size, in sectors
+#   0x5b    4     int   DataRegion size, in sectors (not implemented)
 #   0x5f    1     int   ATA device ID (0=master/1=slave)
 #   0x60    9     str   OEM ID
 #   0x69    12    str   Volume Label
@@ -191,12 +191,14 @@ STA_B_CL
 .total_sectors_continue
 
 # 0x44: 1B  Media descriptor (This is the same value which must be in the low byte in the first entry of the FAT)
+.media_descriptor
 LDI_B 0x0044
 CALL :add16_to_b
 LD_CL 0xd015
 STA_B_CL
 
 # 0x45: 2B  Sectors per FAT
+.sectors_per_fat
 LDI_B 0x0045
 CALL :add16_to_b
 LD_CL 0xd017
@@ -206,6 +208,7 @@ LD_CL 0xd016
 STA_B_CL
 
 # 0x60: 9B  OEM ID
+.oem_id
 LDI_B 0x0060
 CALL :add16_to_b
 ALUOP_DH %B%+%BH%
@@ -217,6 +220,7 @@ CALL :memcpy # C->D
 POP_AL
 
 # 0x69: 12B Volume Label
+.volume_label
 LDI_B 0x0069
 CALL :add16_to_b
 ALUOP_DH %B%+%BH%
@@ -228,12 +232,14 @@ CALL :memcpy # C->D
 POP_AL
 
 # 0x5f: 1B  ATA device ID (0=master/1=slave)
+.device_id
 LDI_B 0x005f
 CALL :add16_to_b
 POP_CL                  # from push CL earlier
 STA_B_CL
 
 # 0x47: 4B  ReservedRegion start (LBA) = VolumeStart
+.reserved_region_start
 LDI_B 0x0047
 CALL :add16_to_b
 POP_CL                  # from push AH earlier
@@ -249,7 +255,7 @@ POP_CL                  # from push BL earlier
 STA_B_CL
 
 # 0x4b: 4B  FATRegion start (LBA) = ReservedRegion + ReservedSectors
-### TODO: add32 ReservedRegion + ReservedSectors
+.fat_region_start
 LDI_B 0x0047            # ReservedRegion start
 CALL :add16_to_b
 LDA_B_CH
@@ -291,27 +297,117 @@ CALL :incr16_b
 STA_B_CL
 
 # 0x4f: 4B  RootDirectoryRegion start (LBA) = FATRegion + (NumberOfFATs * SectorsPerFAT)
-### TODO: mul 8x16
-### TODO: add32
+.rootdir_region_start
+LDI_B 0x0045            # Sectors per FAT
+CALL :add16_to_b
+LDA_B_CH
+CALL :incr16_b
+LDA_B_CL
+CALL :heap_push_C       # multiplicand (Sectors per FAT)
+
+LDI_B 0x003d            # Num FATs
+CALL :add16_to_b
+LDA_B_CL
+LDI_CH 0x00
+CALL :heap_push_C       # multiplier (Num FATs)
+
+CALL :mul16
+CALL :heap_pop_D        # low word of result (FATregion size); keep high word of result on heap
+
+# store FAT region size
+LDI_B 0x0057
+CALL :add16_to_b
+STA_B_DH
+CALL :incr16_b
+STA_B_DL
+
+# Add FAT region size to FAT region start
+LDI_B 0x004b
+CALL :add16_to_b
+LDA_B_CH
+CALL :incr16_b
+LDA_B_CL
+CALL :incr16_b
+CALL :heap_push_C       # high word of FAT Region start
+
+CALL :heap_push_D       # low word of multiplication result
+
+LDA_B_CH
+CALL :incr16_b
+LDA_B_CL
+CALL :heap_push_C       # low word of FAT Region start
+
+CALL :add32
+CALL :heap_pop_D
+CALL :heap_pop_C        # RootDirRegion start in C+D
+
+LDI_B 0x004f
+CALL :add16_to_b
+STA_B_CH
+CALL :incr16_b
+STA_B_CL
+CALL :incr16_b
+STA_B_DH
+CALL :incr16_b
+STA_B_DL
 
 # 0x53: 4B  DataRegion start (LBA) = RootDirectoryRegion + ((RootEntriesCount * 32) / BytesPerSector)
-### TODO: shift16 RootEntriesCount << 5
-### TODO: div16 / 0x200 (can be done with shifting)
-### TODO: add32
+.data_region_start
+LDI_B 0x003e
+CALL :add16_to_b
+LDA_B_CH
+CALL :incr16_b
+LDA_B_CL                # num root entries in C
+MOV_CH_BH
+MOV_CL_BL
+CALL :shift16_b_right   # we assume 512 byte sectors to avoid having to do division.
+CALL :shift16_b_right   # root entries * 32 -> shift left five
+CALL :shift16_b_right   # result / 512 -> shift right nine
+CALL :shift16_b_right   # net is shift right four
+ALUOP_DH %B%+%BH%
+ALUOP_DL %B%+%BL%
+# store root directory region size from D
+LDI_B 0x0059
+CALL :add16_to_b
+STA_B_DH
+CALL :incr16_b
+STA_B_DL
+# fetch RootDir Region start
+LDI_B 0x004f
+CALL :add16_to_b
+LDA_B_CH
+CALL :incr16_b
+LDA_B_CL
+CALL :incr16_b
 
-# 0x57: 2B  FATRegion size (in sectors) = NumberOfFATs * SectorsPerFAT
-### TODO: mul 8x16
+CALL :heap_push_C       # high word of rootdir region start
+LDI_C 0x0000
+CALL :heap_push_C       # high word of rootdir region size
 
-# 0x59: 2B  RootDirectoryRegion size (in sectors) = (RootEntiesCount * 32) / BytesPerSector (Remember to round up, if there is a remainder)
-### TODO: If RootEntriesCount == BytesPerSector, then == 32 sectors, don't need division
-### TODO: shift16 RootEntriesCount << 5
-### TODO: div16 / BytesPerSector, round up
+LDA_B_CH
+CALL :incr16_b
+LDA_B_CL
+CALL :heap_push_C       # low word of rootdir region start
+CALL :heap_push_D       # low word of rootdir region size
 
-# 0x5b: 4B  DataRegion size (in sectors) = TotalNumberOfSectors - (ReservedRegion_Size + FATRegion_Size + RootDirectoryRegion_Size)
-### TODO: sub32
-### TODO: add32
+CALL :add32
+
+CALL :heap_pop_D        # low word of result
+CALL :heap_pop_C        # high word of result
+
+# store data region start
+LDI_B 0x0053
+CALL :add16_to_b
+STA_B_CH
+CALL :incr16_b
+STA_B_CL
+CALL :incr16_b
+STA_B_DH
+CALL :incr16_b
+STA_B_DL
 
 # 0x36: 2B  cluster number of current directory (== RootDirectoryRegion start, as cluster number)
+.current_dir_cluster
 ### TODO: lba2cluster
 
 # Done, prepare to return
@@ -540,20 +636,6 @@ LDI_C .str_8
 CALL :printf
 
 # Line 9
-LDI_B 0x005e                # Data space size (LSB)
-CALL :add16_to_b
-LDA_B_CL
-CALL :heap_push_CL          # LSB byte
-CALL :decr16_b
-LDA_B_CL
-CALL :heap_push_CL          # byte 1
-CALL :decr16_b
-LDA_B_CL
-CALL :heap_push_CL          # byte 2
-CALL :decr16_b
-LDA_B_CL
-CALL :heap_push_CL          # MSB byte
-
 LDI_B 0x0056                # Data space start (LSB)
 CALL :add16_to_b
 LDA_B_CL
@@ -587,4 +669,4 @@ RET
 .str_6 "Reserved sectors at start: %U\n\0"
 .str_7 "FAT region start: 0x%x%x%x%x +%U sectors\n\0"
 .str_8 "Root dir start:   0x%x%x%x%x +%U sectors\n\0"
-.str_9 "Data space start: 0x%x%x%x%x +0x%x%x%x%x\n\0"
+.str_9 "Data space start: 0x%x%x%x%x\n\0"
