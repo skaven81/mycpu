@@ -13,45 +13,116 @@ ST16 $heap_ptr 0xba00
 RET
 
 ######
-# Push a register value onto the heap from AL
-#
-# Input:
-#   AL - byte to push onto the heap
-:heap_push_AL
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-INCR_D
-ALUOP_ADDR_D %A%+%AL%
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Push a register value onto the heap from AH
-#
-# Input:
-#   AH - byte to push onto the heap
+# Push a byte onto the heap
 :heap_push_AH
+ALUOP_PUSH %A%+%AH%
+JMP .do_heap_push_byte
+:heap_push_AL
+ALUOP_PUSH %A%+%AL%
+JMP .do_heap_push_byte
+:heap_push_BH
+ALUOP_PUSH %B%+%BH%
+JMP .do_heap_push_byte
+:heap_push_BL
+ALUOP_PUSH %B%+%BL%
+JMP .do_heap_push_byte
+:heap_push_CH
+PUSH_CH
+JMP .do_heap_push_byte
+:heap_push_CL
+PUSH_CL
+JMP .do_heap_push_byte
+:heap_push_DH
+PUSH_DH
+JMP .do_heap_push_byte
+:heap_push_DL
+PUSH_DL
+JMP .do_heap_push_byte
+
+.do_heap_push_byte
+MASKINT                 # Since we'll be using temp registers, we can't afford an IRQ
+POP_TD
 PUSH_DH
 PUSH_DL
 LD_DH  $heap_ptr
 LD_DL  $heap_ptr+1
 INCR_D
-ALUOP_ADDR_D %A%+%AH%
+STA_D_TD
 ST_DH  $heap_ptr
 ST_DL  $heap_ptr+1
 POP_DL
 POP_DH
+UMASKINT
 RET
 
+######
+# Push a word onto the heap
+:heap_push_A
+CALL :heap_push_AH
+CALL :heap_push_AL
+RET
+:heap_push_B
+CALL :heap_push_BH
+CALL :heap_push_BL
+RET
+:heap_push_C
+CALL :heap_push_CH
+CALL :heap_push_CL
+RET
+:heap_push_D
+CALL :heap_push_DH
+CALL :heap_push_DL
+RET
 
 ######
-# Pop a value from the heap into AL
+# Pop a byte from the heap
 :heap_pop_AL
+CALL .do_heap_pop_al
+RET
+:heap_pop_AH
+ALUOP_PUSH %A%+%AL%
+CALL .do_heap_pop_al
+ALUOP_AH %A%+%AL%
+POP_AL
+RET
+:heap_pop_BL
+ALUOP_PUSH %A%+%AL%
+CALL .do_heap_pop_al
+ALUOP_BL %A%+%AL%
+POP_AL
+RET
+:heap_pop_BH
+ALUOP_PUSH %A%+%AL%
+CALL .do_heap_pop_al
+ALUOP_BH %A%+%AL%
+POP_AL
+RET
+:heap_pop_CL
+ALUOP_PUSH %A%+%AL%
+CALL .do_heap_pop_al
+ALUOP_CL %A%+%AL%
+POP_AL
+RET
+:heap_pop_CH
+ALUOP_PUSH %A%+%AL%
+CALL .do_heap_pop_al
+ALUOP_CH %A%+%AL%
+POP_AL
+RET
+:heap_pop_DL
+ALUOP_PUSH %A%+%AL%
+CALL .do_heap_pop_al
+ALUOP_DL %A%+%AL%
+POP_AL
+RET
+:heap_pop_DH
+ALUOP_PUSH %A%+%AL%
+CALL .do_heap_pop_al
+ALUOP_DH %A%+%AL%
+POP_AL
+RET
+
+.do_heap_pop_al
 PUSH_DH
 PUSH_DL
 LD_DH  $heap_ptr
@@ -60,38 +131,6 @@ LDA_D_AL
 DECR_D
 ST_DH  $heap_ptr
 ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Pop a value from the heap into AH
-:heap_pop_AH
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-LDA_D_AH
-DECR_D
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Push 16-bit word from A onto the heap
-:heap_push_A
-PUSH_DH
-PUSH_DL
-LD_DH   $heap_ptr
-LD_DL   $heap_ptr+1
-INCR_D
-ALUOP_ADDR_D %A%+%AH%
-INCR_D
-ALUOP_ADDR_D %A%+%AL%
-ST_DH   $heap_ptr
-ST_DL   $heap_ptr+1
 POP_DL
 POP_DH
 RET
@@ -99,395 +138,54 @@ RET
 ######
 # Pop a word from the heap into A
 :heap_pop_A
-PUSH_DH
-PUSH_DL
-LD_DH   $heap_ptr
-LD_DL   $heap_ptr+1
-LDA_D_AL
-DECR_D
-LDA_D_AH
-DECR_D
-ST_DH   $heap_ptr
-ST_DL   $heap_ptr+1
-POP_DL
-POP_DH
+CALL :heap_pop_AL
+CALL :heap_pop_AH
 RET
-
-######
-# Push a register value onto the heap from BL
-#
-# Input:
-#   BL - byte to push onto the heap
-:heap_push_BL
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-INCR_D
-ALUOP_ADDR_D %B%+%BL%
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Push a register value onto the heap from BH
-#
-# Input:
-#   BH - byte to push onto the heap
-:heap_push_BH
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-INCR_D
-ALUOP_ADDR_D %B%+%BH%
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-
-######
-# Pop a value from the heap into BL
-:heap_pop_BL
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-LDA_D_BL
-DECR_D
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Pop a value from the heap into BH
-:heap_pop_BH
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-LDA_D_BH
-DECR_D
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Push 16-bit word from B onto the heap
-:heap_push_B
-PUSH_DH
-PUSH_DL
-LD_DH   $heap_ptr
-LD_DL   $heap_ptr+1
-INCR_D
-ALUOP_ADDR_D %B%+%BH%
-INCR_D
-ALUOP_ADDR_D %B%+%BL%
-ST_DH   $heap_ptr
-ST_DL   $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Pop a word from the heap into B
 :heap_pop_B
-PUSH_DH
-PUSH_DL
-LD_DH   $heap_ptr
-LD_DL   $heap_ptr+1
-LDA_D_BL
-DECR_D
-LDA_D_BH
-DECR_D
-ST_DH   $heap_ptr
-ST_DL   $heap_ptr+1
-POP_DL
-POP_DH
+CALL :heap_pop_BL
+CALL :heap_pop_BH
 RET
-
-######
-# Push a register value onto the heap from CL
-#
-# Input:
-#   CL - byte to push onto the heap
-:heap_push_CL
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-INCR_D
-STA_D_CL
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Push a register value onto the heap from CH
-#
-# Input:
-#   CH - byte to push onto the heap
-:heap_push_CH
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-INCR_D
-STA_D_CH
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Push 16-bit word from C onto the heap
-:heap_push_C
-PUSH_DH
-PUSH_DL
-LD_DH   $heap_ptr
-LD_DL   $heap_ptr+1
-INCR_D
-STA_D_CH
-INCR_D
-STA_D_CL
-ST_DH   $heap_ptr
-ST_DL   $heap_ptr+1
-POP_DL
-POP_DH
-RET
-
-######
-# Pop a word from the heap into C
 :heap_pop_C
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-LD_AH   $heap_ptr
-LD_AL   $heap_ptr+1
-LDA_A_CL
-CALL :decr16_a
-LDA_A_CH
-CALL :decr16_a
-ALUOP_ADDR %A%+%AH% $heap_ptr
-ALUOP_ADDR %A%+%AL% $heap_ptr+1
-POP_AL
-POP_AH
+CALL :heap_pop_CL
+CALL :heap_pop_CH
 RET
-
-######
-# Pop a value from the heap into CL
-:heap_pop_CL
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-LD_AH  $heap_ptr
-LD_AL  $heap_ptr+1
-LDA_A_CL
-CALL :decr16_a
-ALUOP_ADDR %A%+%AH% $heap_ptr
-ALUOP_ADDR %A%+%AL% $heap_ptr+1
-POP_AL
-POP_AH
-RET
-
-######
-# Pop a value from the heap into CH
-:heap_pop_CH
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-LD_AH  $heap_ptr
-LD_AL  $heap_ptr+1
-LDA_A_CH
-CALL :decr16_a
-ALUOP_ADDR %A%+%AH% $heap_ptr
-ALUOP_ADDR %A%+%AL% $heap_ptr+1
-POP_AL
-POP_AH
-RET
-
-######
-# Push a register value onto the heap from DL
-#
-# Input:
-#   DL - byte to push onto the heap
-:heap_push_DL
-PUSH_CH
-PUSH_CL
-LD_CH  $heap_ptr
-LD_CL  $heap_ptr+1
-INCR_C
-STA_C_DL
-ST_CH  $heap_ptr
-ST_CL  $heap_ptr+1
-POP_CL
-POP_CH
-RET
-
-######
-# Push a register value onto the heap from DH
-#
-# Input:
-#   DH - byte to push onto the heap
-:heap_push_DH
-PUSH_CH
-PUSH_CL
-LD_CH  $heap_ptr
-LD_CL  $heap_ptr+1
-INCR_C
-STA_C_DH
-ST_CH  $heap_ptr
-ST_CL  $heap_ptr+1
-POP_CL
-POP_CH
-RET
-
-######
-# Push 16-bit word from D onto the heap
-:heap_push_D
-PUSH_CH
-PUSH_CL
-LD_CH   $heap_ptr
-LD_CL   $heap_ptr+1
-INCR_C
-STA_C_DH
-INCR_C
-STA_C_DL
-ST_CH   $heap_ptr
-ST_CL   $heap_ptr+1
-POP_CL
-POP_CH
-RET
-
-######
-# Pop a word from the heap into D
 :heap_pop_D
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-LD_AH   $heap_ptr
-LD_AL   $heap_ptr+1
-LDA_A_DL
-CALL :decr16_a
-LDA_A_DH
-CALL :decr16_a
-ALUOP_ADDR %A%+%AH% $heap_ptr
-ALUOP_ADDR %A%+%AL% $heap_ptr+1
-POP_AL
-POP_AH
+CALL :heap_pop_DL
+CALL :heap_pop_DH
 RET
 
 ######
 # Pop a byte from the heap and discard it
 :heap_pop_byte
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-DECR_D
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
+PUSH_CL
+CALL :heap_pop_CL
+POP_CL
 RET
 
 ######
 # Pop a word from the heap and discard it
 :heap_pop_word
-PUSH_DH
-PUSH_DL
-LD_DH  $heap_ptr
-LD_DL  $heap_ptr+1
-DECR_D
-DECR_D
-ST_DH  $heap_ptr
-ST_DL  $heap_ptr+1
-POP_DL
-POP_DH
+PUSH_CL
+CALL :heap_pop_CL
+CALL :heap_pop_CL
+POP_CL
 RET
 
 ######
 # Push all registers onto the heap
 :heap_push_all
-PUSH_DH
-PUSH_DL
-LD_DH   $heap_ptr
-LD_DL   $heap_ptr+1
-# push A, B, C onto heap using D register
-# for incrementing address.
-INCR_D
-ALUOP_ADDR_D    %A%+%AH%
-INCR_D
-ALUOP_ADDR_D    %A%+%AL%
-INCR_D
-ALUOP_ADDR_D    %B%+%BH%
-INCR_D
-ALUOP_ADDR_D    %B%+%BL%
-INCR_D
-STA_D_CH
-INCR_D
-STA_D_CL
-# To push D onto heap we need to save
-# the heap pointer and reload it into C
-ST_DH   $heap_ptr
-ST_DL   $heap_ptr+1
-POP_DL
-POP_DH
-PUSH_CH
-PUSH_CL
-LD_CH   $heap_ptr
-LD_CL   $heap_ptr+1
-INCR_C
-STA_C_DH
-INCR_C
-STA_C_DL
-ST_CH   $heap_ptr
-ST_CL   $heap_ptr+1
-POP_CL
-POP_CH
+CALL :heap_push_A
+CALL :heap_push_B
+CALL :heap_push_C
+CALL :heap_push_D
 RET
 
 ######
 # Pop all registers from the heap
 :heap_pop_all
-LD_DH   $heap_ptr
-LD_DL   $heap_ptr+1
-# Pop DL, DH, CL, CH first, putting them in the stack
-LDA_D_AL
-ALUOP_PUSH %A%+%AL% # push heap DL onto stack
-DECR_D
-LDA_D_AL
-ALUOP_PUSH %A%+%AL% # push heap DH onto stack
-DECR_D
-LDA_D_AL
-ALUOP_PUSH %A%+%AL% # push heap CL onto stack
-DECR_D
-LDA_D_AL
-ALUOP_PUSH %A%+%AL% # push heap CH onto stack
-DECR_D
-# The rest can pop directly into their destinations
-LDA_D_BL
-DECR_D
-LDA_D_BH
-DECR_D
-LDA_D_AL
-DECR_D
-LDA_D_AH
-DECR_D
-# Save the new heap pointer
-ST_DH   $heap_ptr
-ST_DL   $heap_ptr+1
-# Now pop C and D off the stack
-POP_CH
-POP_CL
-POP_DH
-POP_DL
+CALL :heap_pop_D
+CALL :heap_pop_C
+CALL :heap_pop_B
+CALL :heap_pop_A
 RET
 
