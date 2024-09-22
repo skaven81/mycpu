@@ -3,7 +3,8 @@
 # FAT16 filesystem functions: calculation routines
 
 ####
-# Convert a FAT16 cluster number to its LBA address
+# Convert a FAT16 cluster number to its LBA address. If a cluster number
+# of zero is given, will return the LBA address of the root directory.
 # To use:
 #  1. Push the address word of a FAT16 filesystem handle
 #  2. Push the cluster number word to be converted
@@ -26,6 +27,15 @@ PUSH_DL
 # N is a 16-bit value
 
 CALL :heap_pop_C                # Pop the cluster number
+
+# If the cluster number is zero, then we're actually asking for the root dir address
+MOV_CH_BH
+MOV_CL_BL
+ALUOP_FLAGS %B%+%BH%
+JNZ .regular_cluster
+ALUOP_FLAGS %B%+%BL%
+JZ .return_root_dir_sector
+.regular_cluster
 DECR_C                          # Subtract 2
 DECR_C
 
@@ -63,9 +73,27 @@ CALL :heap_push_D               # low word of multiplication result
 CALL :heap_push_B               # low word of $DataRegionStart
 
 CALL :add32
+JMP .cluster_to_lba_done        # Return (result is already on the heap in correct order)
 
-# Return (result is already on the heap in correct order
+# If the cluster given was zero, just return the sector number of the root directory.
+.return_root_dir_sector
+CALL :heap_pop_B                # Pop the filesystem handle address into B
+LDI_A 0x004f                    # Offset of $RootDirectoryRegionStart
+CALL :add16_to_a                # A has address of $RootDirectoryRegionStart
+LDA_A_CH
+CALL :incr16_a
+LDA_A_CL                        # C has high word of $RootDirectoryRegionStart
+CALL :incr16_a
+LDA_A_DH
+CALL :incr16_a
+LDA_A_DL                        # D has low word of $RootDirectoryRegionStart
+CALL :incr16_a
 
+CALL :heap_push_C               # high word
+CALL :heap_push_D               # low word
+
+# Return
+.cluster_to_lba_done
 POP_DL
 POP_DH
 POP_CL
@@ -79,7 +107,8 @@ RET
 
 ####
 # Convert a LBA address to a FAT16 cluster number. Note that
-# a cluster can cover multiple LBA addresses.
+# a cluster can cover multiple LBA addresses. Also note that
+# LBA addresses before $DataRegionStart will return invalid data.
 # To use:
 #  1. Push the address word of a FAT16 filesystem handle
 #  2. Push the high word of the LBA address

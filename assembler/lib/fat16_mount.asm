@@ -21,7 +21,7 @@
 #   Offset  Size  Type  Data
 #   ---------------------------------------------
 #   0x00    53    str   path of current directory, using / separators, up to four directories deep
-#   0x36    2     cls   cluster number of current directory
+#   0x36    2     cls   cluster number of current directory, will be zero if the root directory
 #   0x38    2     int   Bytes per Sector
 #   0x3a    1     int   Sectors per Cluster
 #   0x3b    2     int   Reserved Sectors from start of volume
@@ -106,11 +106,11 @@ JNZ .mount_abort_3
 LDI_AL 0x07                     # size 7 = 128 bytes
 CALL :calloc                    # address in A
 
-# 0x00: Path of current directory: set to '/'
+#### 0x00: Path of current directory: set to '/'
 LDI_CL '/'
 STA_A_CL                        # memory is zeroed so this is already null terminated
 
-# 0x38: 2B  Bytes per Sector
+#### 0x38: 2B  Bytes per Sector
 LDI_B 0x0038
 CALL :add16_to_b
 LD_CL 0xd00c
@@ -119,13 +119,13 @@ CALL :incr16_b
 LD_CL 0xd00b
 STA_B_CL
 
-# 0x3a: 1B  Sectors per Cluster
+#### 0x3a: 1B  Sectors per Cluster
 LDI_B 0x003a
 CALL :add16_to_b
 LD_CL 0xd00d
 STA_B_CL
 
-# 0x3b: 2B  Reserved Sectors from start of volume
+#### 0x3b: 2B  Reserved Sectors from start of volume
 LDI_B 0x003b
 CALL :add16_to_b
 LD_CL 0xd00f
@@ -134,13 +134,13 @@ CALL :incr16_b
 LD_CL 0xd00e
 STA_B_CL
 
-# 0x3d: 1B  Number of FAT copies
+#### 0x3d: 1B  Number of FAT copies
 LDI_B 0x003d
 CALL :add16_to_b
 LD_CL 0xd010
 STA_B_CL
 
-# 0x3e: 2B  Number of possible root directory entries
+#### 0x3e: 2B  Number of possible root directory entries
 LDI_B 0x003e
 CALL :add16_to_b
 LD_CL 0xd012
@@ -149,7 +149,7 @@ CALL :incr16_b
 LD_CL 0xd011
 STA_B_CL
 
-# 0x40: 4B  Total number of sectors in filesystem
+#### 0x40: 4B  Total number of sectors in filesystem
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
 LD_AH 0xd014            # small number of sectors
@@ -190,14 +190,14 @@ STA_B_CL
 
 .total_sectors_continue
 
-# 0x44: 1B  Media descriptor (This is the same value which must be in the low byte in the first entry of the FAT)
+#### 0x44: 1B  Media descriptor (This is the same value which must be in the low byte in the first entry of the FAT)
 .media_descriptor
 LDI_B 0x0044
 CALL :add16_to_b
 LD_CL 0xd015
 STA_B_CL
 
-# 0x45: 2B  Sectors per FAT
+#### 0x45: 2B  Sectors per FAT
 .sectors_per_fat
 LDI_B 0x0045
 CALL :add16_to_b
@@ -207,7 +207,7 @@ CALL :incr16_b
 LD_CL 0xd016
 STA_B_CL
 
-# 0x60: 9B  OEM ID
+#### 0x60: 9B  OEM ID
 .oem_id
 LDI_B 0x0060
 CALL :add16_to_b
@@ -219,7 +219,7 @@ LDI_AL 7 # copy (7+1) bytes
 CALL :memcpy # C->D
 POP_AL
 
-# 0x69: 12B Volume Label
+#### 0x69: 12B Volume Label
 .volume_label
 LDI_B 0x0069
 CALL :add16_to_b
@@ -231,14 +231,14 @@ LDI_AL 10 # copy (10+1) bytes
 CALL :memcpy # C->D
 POP_AL
 
-# 0x5f: 1B  ATA device ID (0=master/1=slave)
+#### 0x5f: 1B  ATA device ID (0=master/1=slave)
 .device_id
 LDI_B 0x005f
 CALL :add16_to_b
 POP_CL                  # from push CL earlier
 STA_B_CL
 
-# 0x47: 4B  ReservedRegion start (LBA) = VolumeStart
+#### 0x47: 4B  ReservedRegion start (LBA) = VolumeStart
 .reserved_region_start
 LDI_B 0x0047
 CALL :add16_to_b
@@ -254,7 +254,7 @@ CALL :incr16_b
 POP_CL                  # from push BL earlier
 STA_B_CL
 
-# 0x4b: 4B  FATRegion start (LBA) = ReservedRegion + ReservedSectors
+#### 0x4b: 4B  FATRegion start (LBA) = ReservedRegion + ReservedSectors
 .fat_region_start
 LDI_B 0x0047            # ReservedRegion start
 CALL :add16_to_b
@@ -296,7 +296,7 @@ STA_B_CH
 CALL :incr16_b
 STA_B_CL
 
-# 0x4f: 4B  RootDirectoryRegion start (LBA) = FATRegion + (NumberOfFATs * SectorsPerFAT)
+#### 0x4f: 4B  RootDirectoryRegion start (LBA) = FATRegion + (NumberOfFATs * SectorsPerFAT)
 .rootdir_region_start
 LDI_B 0x0045            # Sectors per FAT
 CALL :add16_to_b
@@ -351,7 +351,16 @@ STA_B_DH
 CALL :incr16_b
 STA_B_DL
 
-# 0x53: 4B  DataRegion start (LBA) = RootDirectoryRegion + ((RootEntriesCount * 32) / BytesPerSector)
+#### 0x36: 2B  cluster number of current directory (0 since it's the root directory and the root
+####           directory is not in the data region and thus has no cluster number
+.current_dir_cluster
+LDI_B 0x0036            # current directory cluster
+CALL :add16_to_b
+ALUOP_ADDR_B %zero%
+CALL :incr16_b
+ALUOP_ADDR_B %zero%
+
+#### 0x53: 4B  DataRegion start (LBA) = RootDirectoryRegion + ((RootEntriesCount * 32) / BytesPerSector)
 .data_region_start
 LDI_B 0x003e
 CALL :add16_to_b
@@ -406,9 +415,6 @@ STA_B_DH
 CALL :incr16_b
 STA_B_DL
 
-# 0x36: 2B  cluster number of current directory (== RootDirectoryRegion start, as cluster number)
-.current_dir_cluster
-### TODO: lba2cluster
 
 # Done, prepare to return
 CALL :heap_push_A               # push address of filesystem handle to heap
