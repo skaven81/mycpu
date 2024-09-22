@@ -282,10 +282,10 @@ for input_file, line_num, line in concat_source:
     # handle math (e.g. `$some_var+1`) will work as expected.
     if not line.startswith('VAR') and not line.startswith('#'):
         newline = line
-        for v in re.findall('\$[a-zA-Z0-9_]+', line):
+        for v in re.findall(r'\$[a-zA-Z0-9_]+', line.split('#')[0]):
             varval = global_vars.get(v, global_arrays.get(v))
             if not varval:
-                raise SyntaxError(f"In {input_file} line {line_num}: undefined variable {v}")
+                raise SyntaxError(f"In {input_file} line {line_num}: undefined variable {v}\nSource code line: {line}")
             newline = newline.replace(v, f"0x{varval:04x}")
         if newline != line:
             logging.debug("{:16.16s} {:3d}: VAR: {}".format(input_file, line_num, newline))
