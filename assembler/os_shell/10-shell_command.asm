@@ -187,18 +187,20 @@ RET
 .cmd_004 "ata-write\0"      :cmd_ata_write
 .cmd_005 "clear\0"          :cmd_clear
 .cmd_006 "clockspeed\0"     :cmd_clockspeed
-.cmd_007 "colors\0"         :cmd_colors
-.cmd_008 "extmalloc\0"      :cmd_extmalloc
-.cmd_009 "extfree\0"        :cmd_extfree
-.cmd_010 "help\0"           .print_help
-.cmd_011 "hexdump\0"        :cmd_hexdump
-.cmd_012 "memtest\0"        :cmd_memtest
-.cmd_013 "mount\0"          :cmd_mount
-.cmd_014 "peek\0"           :cmd_peek
-.cmd_015 "poke\0"           :cmd_poke
-.cmd_016 "rand\0"           :cmd_rand
-.cmd_017 "setserial\0"      :cmd_setserial
-.cmd_018 "serialmon\0"      :cmd_serialmon
+.cmd_007 "cluster2lba\0"    :cmd_cluster_to_sector
+.cmd_008 "colors\0"         :cmd_colors
+.cmd_009 "extmalloc\0"      :cmd_extmalloc
+.cmd_010 "extfree\0"        :cmd_extfree
+.cmd_011 "help\0"           .print_help
+.cmd_012 "hexdump\0"        :cmd_hexdump
+.cmd_013 "lba2cluster\0"    :cmd_sector_to_cluster
+.cmd_014 "memtest\0"        :cmd_memtest
+.cmd_015 "mount\0"          :cmd_mount
+.cmd_016 "peek\0"           :cmd_peek
+.cmd_017 "poke\0"           :cmd_poke
+.cmd_018 "rand\0"           :cmd_rand
+.cmd_019 "setserial\0"      :cmd_setserial
+.cmd_020 "serialmon\0"      :cmd_serialmon
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"

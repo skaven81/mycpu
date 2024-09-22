@@ -550,13 +550,11 @@ ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %B%+%BL%
 ALUOP_PUSH %B%+%BH%
-PUSH_CL
-PUSH_CH
 PUSH_DL
 PUSH_DH
 
 CALL :heap_pop_A        # low word of first operand
-CALL :heap_pop_B        # high word of first operand
+CALL :heap_pop_B        # low word of second operand
 CALL :add16_to_b        # B now contains the low word result
 JO .add32_carry         # note if we need to carry in to next add
 CALL .add32_high_common
@@ -574,8 +572,6 @@ CALL :heap_push_D
 
 POP_DH
 POP_DL
-POP_CH
-POP_CL
 POP_BH
 POP_BL
 POP_AH
@@ -588,6 +584,57 @@ ALUOP_DH %B%+%BH%
 CALL :heap_pop_A        # high word of first operand
 CALL :heap_pop_B        # high word of second operand
 CALL :add16_to_b
+RET
+
+###
+# Subtract two 32-bit numbers
+#
+# To use:
+#  1. Push high word of second operand
+#  2. Push high word of first operand
+#  3. Push low word of second operand
+#  4. Push low word of first operand
+#  5. Call the function
+#  6. Pop low word of result
+#  7. Pop high word of result
+:sub32
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
+PUSH_DL
+PUSH_DH
+
+CALL :heap_pop_A        # low word of first operand
+CALL :heap_pop_B        # low word of second operand
+CALL :sub16_a_minus_b   # A now contains the low word result
+JO .sub32_borrow        # note if we need to borrow in next sub
+CALL .sub32_high_common
+JMP .sub32_done
+
+.sub32_borrow
+CALL .sub32_high_common
+CALL :decr16_a          # subtract borrow
+
+.sub32_done
+# result high word is in A, low word is in D
+CALL :heap_push_A
+CALL :heap_push_D
+
+POP_DH
+POP_DL
+POP_BH
+POP_BL
+POP_AH
+POP_AL
+RET
+
+.sub32_high_common
+ALUOP_DL %A%+%AL%       # store low word result in D
+ALUOP_DH %A%+%AH%
+CALL :heap_pop_A        # high word of first operand
+CALL :heap_pop_B        # high word of second operand
+CALL :sub16_a_minus_b   # A now contains high word result
 RET
 
 ###
