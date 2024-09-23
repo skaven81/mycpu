@@ -1,3 +1,65 @@
+2024-09-22: FAT16 traversal phase 1
+===================================
+
+Good progress today! I was able to get the code size reduced enough
+to be able to work on additional FAT16 computation code. This involved
+rewriting heap.asm to be more compact (but slightly slower as it now uses
+the stack and calls), and to remove the clock and console commands from
+the shell.
+
+I then added functions to fat16_calc.asm for converting cluster numbers
+to LBA and vice-versa. I added shell functions for testing this out
+and confirmed that I am able to traverse the filesystem:
+
+    > mount
+
+    "mounts" the FAT16 filesystem on ATA device 0 (the SD card)  "mounting"
+    just means a 128-byte memory region is allocated and now contains the
+    filesystem data (which is printed for convenience)
+
+    The output shows that the root directory starts at LBA 0x0000007c.
+
+    > ata-read 0 0 0x007c 0xd000
+
+    Reads a 512-byte sector from ATA device 0, at LBA address 0x0000007c into
+    memory at address 0xd000 - this is the first sector of the root directory.
+
+    > hexdump 0xd000 +127
+
+    Shows the first four directory entries of the root directory.  Each entry
+    is 32 bytes (two rows).  The fourth entry is FOO.TXT and at offset 0x1a is
+    the value 0x0005 (in little endian format) which is the FAT16 cluster
+    number of the file.
+
+    > cluster2lba 0x6180 0x0005
+
+    Convert the cluster number to an LBA sector number (0x000000a8)
+
+    > ata-read 0 0 0x00a8 0xd000
+
+    Read sector 0x000000a8 into memory at 0xd000
+
+    > hexdump 0xd000 +31
+
+    Read the first 31 bytes of the sector out of memory, showing the file
+    contents.
+
+    > next_cluster 0x6180 5
+
+    Reads the FAT and returns the value of the fifth cluster entry, in this
+    case 0xffff meaning "end of file".  Reading other FAT entries works
+    correctly, including entry 0 = 0xfff8, and entry 1 = 0xffff. Entries 2, 3,
+    4 all are 0x0000 (free) and 5 is 0xffff (end of file).
+
+The next thing to do is to implement a "dir" command that can print the
+contents of the current directory. This isn't strictly necessary to move
+on to the next steps, but it is a utility that will be handy to have in the
+BIOS in the event that the system boots without being able to find a shell.
+
+Finally I'll start working on a loader that can read a file from disk into
+memory, resolve its address stuff, then call the first address.
+
+
 2024-09-08: FAT16 mount stub
 ============================
 
