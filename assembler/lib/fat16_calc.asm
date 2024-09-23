@@ -208,3 +208,135 @@ POP_BH
 POP_AL
 POP_AH
 RET
+
+####
+# Return the next cluster number, given a current cluster number, by
+# reading the FAT and returning the value at the offset given by the
+# cluster number.
+#
+# For reference, a "next cluster" has the following meanings:
+#   * 0x0000 - free
+#   * 0x0001 - not allowed
+#   * 0x0002 - not allowed
+#   * 0x0003-0xffef - next cluster number
+#   * 0xfff7 - one or more bad sectors in this cluster
+#   * 0xfff8-0xffff - end of file
+# a cluster can cover multiple LBA addresses. Also note that
+#
+# To use:
+#  1. Push the address word of a FAT16 filesystem handle
+#  2. Push the word of the current cluster
+#  3. Call the function
+#  4. Pop the next cluster number
+#
+# Will return 0x0001 if there was an error reading the ATA device
+:fat16_next_cluster
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+LD_DH %e_page%
+PUSH_DH
+
+CALL :heap_pop_C                # Pop the cluster number and store on stack for later
+PUSH_CL
+PUSH_CH
+
+# We need to know which sector within the FAT to load from disk.
+#
+# Formula is $FATRegionStart + (N / 2 * BytesPerSector)
+# We assume BytesPerSector is 512, which means we need to
+# divide N by 256 == shift right 8 places, which actually
+# just means we want to add the high byte of the cluster number
+# to $FATRegionStart to get the LBA address.
+#
+# The low byte of the cluster number * 2 tells us the offset
+# within the sector to read
+
+CALL :heap_pop_B                # Pop the filesystem handle address into B
+LDI_A 0x005f                    # Offset of $ATAdeviceID
+CALL :add16_to_a                # A has address of $ATAdeviceID
+LDA_A_DL                        # DL has $ATAdeviceID
+
+LDI_A 0x004b                    # Offset of $FATRegionStart
+CALL :add16_to_a                # A has address of $ATAdeviceID
+LDA_A_CH
+CALL :incr16_a
+LDA_A_CL                        # C has high word of $FATRegionStart
+
+CALL :heap_push_C               # high word of $FATRegionStart
+
+LDI_C 0x0000
+CALL :heap_push_C               # high word of cluster number / 256
+
+CALL :incr16_a
+LDA_A_CH
+CALL :incr16_a
+LDA_A_CL                        # C has low word of $FATRegionStart
+
+CALL :heap_push_C               # low word of $FATRegionStart
+
+LDI_CH 0x00
+POP_CL                          # Cluster number high byte in CL
+CALL :heap_push_C               # low word of cluster number / 256
+
+CALL :add32                     # LBA of FAT sector is on the heap
+CALL :heap_pop_C                # low word of LBA
+CALL :heap_pop_A                # high word of LBA
+
+# Allocate an extended memory page at 0xe000
+CALL :extmalloc
+CALL :heap_pop_DH
+ST_DH %e_page%
+
+# Read FAT sector into 0xe000
+LDI_B 0xe000
+CALL :heap_push_B               # address of memory segment
+
+CALL :heap_push_A               # high LBA address
+CALL :heap_push_C               # low LBA address
+CALL :heap_push_DL              # ATA ID
+CALL :ata_read_lba
+CALL :heap_pop_AL               # status byte
+ALUOP_FLAGS %A%+%AL%
+JNZ .next_cluster_ata_err
+
+# Add 2x low byte of cluster to extended memory address
+LDI_AH 0x00
+POP_AL                          # Pop low byte of cluster number
+CALL :shift16_a_left
+
+LDI_B 0xe000
+CALL :add16_to_b                # B contains address of cluster
+
+# Read memory at that address and return it
+LDA_B_AL
+CALL :incr16_b
+LDA_B_AH
+CALL :heap_push_A
+JMP .next_cluster_done
+
+.next_cluster_ata_err
+POP_TD                          # Pop low byte of cluster number and discard
+LDI_C 0x0001                    # Return value 0x0001 = ATA error
+CALL :heap_push_C
+
+.next_cluster_done
+LD_DH %e_page%
+CALL :heap_push_DH
+CALL :extfree
+POP_DH
+ST_DH %e_page%
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+POP_BL
+POP_BH
+POP_AL
+POP_AH
+RET
