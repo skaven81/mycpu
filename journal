@@ -1,3 +1,101 @@
+2024-10-13: FAT16 traversal phase 2
+===================================
+
+I finally committed the last chunk of FAT16 traversal code, this time for
+processing directory entries. I implemented a trivial "dir" command that
+just lists the entries in the root directory.
+
+What this means is that I now have the building blocks I need to begin
+pivoting toward making the ROM code just a code library and boot code.
+
+So next I need to update the assembler so that I can generate executables
+instead of ROM images, then write a loader routine that can load and
+execute them.
+
+Reviewing my notes from 2024-09-02 I think the Odyssey executable format can
+be a bit simpler than what I proposed, because the directory entry already
+lists the size of the file, down to the byte, which means it's possible to
+allocate memory for executing the binary based on just that value. Then the
+executable itself only needs to contain:
+
+ * marker to indicate that it's actually an odyssey executable
+ * flags, initially just containing memory allocation option in lowest two bits:
+   0: malloc
+   1: extmalloc 0xd000
+   2: extmalloc 0xe000
+   3: extmalloc 0xd000+0xe000
+ * number of symbol rewrites (with each being a 16-bit word)
+
+So the loader would use this process:
+
+ 1. Read the number of bytes
+ 2. Allocate temporary memory (512 bytes)
+ 3. Read the first sector
+ 4. Verify that this is an Odyssey executable
+ 5. Read memory allocation preference
+ 6. Free temporary memory
+ 7. Allocate memory
+ 8. Read entire executable into allocated memory
+ 9. Calculate the address of the first byte of the program $first
+ 10. Iterate through symbol rewrites; for each 16-bit value $offset:
+    a. read 16-bit value $ptr at $offset
+    b. add $first to $ptr
+    c. write back to $offset
+ 11. Put $first into D
+ 12. CALL_D to jump into the program
+ 13. Free the allocated memory
+ 14. Return to caller
+
+An example of an executable:
+
+EXEOFFSET BINOFFSET DATA
+0000-0002           "ODY"
+0003                flags (1 byte)
+0004-0005           0003  number of symbol rewrites (2 bytes)
+0006-0007           000e  rewrite 0 binoffset
+0008-0009           0013  rewrite 1 binoffset
+000a-000b           0019  rewrite 2 binoffset
+000c      0000      NOP   $first byte of program
+000d      0001      JMP
+000e-000f 0002-0003 000c  (.lab1)
+0010      0004      NOP
+0011      0005      NOP   <-- .lab2
+0012      0006      JMP
+0013-0014 0007-0008 000f  (.lab3)
+0015      0009      NOP
+0016      000a      NOP
+0017      000b      NOP
+0018      000c      JMP    <-- .lab1
+0019-001a 000d-000e 0005  (.lab2)
+001b      000f      RET    <-- .lab3
+
+Let's assume this executable is loaded into extended memory at 0xe000. After
+the loader rewrites symbols, it should look like this:
+
+ADDRESS   EXEOFFSET BINOFFSET DATA
+e000-e002 0000-0002           "ODY"
+e003      0003                flags (1 byte)
+e004-e005 0004-0005           0003  number of symbol rewrites (2 bytes)
+e006-e007 0006-0007           000e  rewrite 0 binoffset
+e008-e009 0008-0009           0013  rewrite 1 binoffset
+e00a-e00b 000a-000b           0019  rewrite 2 binoffset
+e00c      000c      0000      NOP   $first byte of program
+e00d      000d      0001      JMP
+e00e-e00f 000e-000f 0002-0003 e018  *** (.lab1; e000 [$base] + 000c [$first] + 000c [$ptr] = e018)
+e010      0010      0004      NOP
+e011      0011      0005      NOP   <-- .lab2
+e012      0012      0006      JMP
+e013-e014 0013-0014 0007-0008 e01b  *** (.lab3; e000 [$base] + 000c [$first] + 000f [$ptr] = e01b)
+e015      0015      0009      NOP
+e016      0016      000a      NOP
+e017      0017      000b      NOP
+e018      0018      000c      JMP    <-- .lab1
+e019-e01a 0019-001a 000d-000e e011  *** (.lab2; e000 [$base] + 000c [$first] + 0005 [$ptr] = e011)
+e01b      001b      000f      RET    <-- .lab3
+
+Then $base+$first (e00c) is the CALL_D target
+
+
 2024-09-22: FAT16 traversal phase 1
 ===================================
 
