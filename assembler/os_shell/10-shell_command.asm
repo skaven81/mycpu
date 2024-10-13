@@ -184,11 +184,11 @@ RET
 .cmd_001 "ascii\0"          :cmd_ascii
 .cmd_002 "ata-id\0"         :cmd_ata_id
 .cmd_003 "ata-read\0"       :cmd_ata_read
-.cmd_004 "ata-write\0"      :cmd_ata_write
-.cmd_005 "clear\0"          :cmd_clear
-.cmd_006 "clockspeed\0"     :cmd_clockspeed
-.cmd_007 "cluster2lba\0"    :cmd_cluster_to_sector
-.cmd_008 "colors\0"         :cmd_colors
+.cmd_004 "clear\0"          :cmd_clear
+.cmd_005 "clockspeed\0"     :cmd_clockspeed
+.cmd_006 "cluster2lba\0"    :cmd_cluster_to_sector
+.cmd_007 "colors\0"         :cmd_colors
+.cmd_008 "dir\0"            :cmd_dir
 .cmd_009 "extmalloc\0"      :cmd_extmalloc
 .cmd_010 "extfree\0"        :cmd_extfree
 .cmd_011 "help\0"           .print_help
