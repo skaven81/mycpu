@@ -97,8 +97,7 @@ JMP .format_error
 
 .fmt_done
 # null-terminate the destination string
-LDI_TD 0x00
-STA_D_TD
+ALUOP_ADDR_D %zero%
 
 POP_DL
 POP_DH
