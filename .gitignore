@@ -1,5 +1,7 @@
 logi7400/
 __pycache__/
 *.hex
+*.sym
+*.ody
 *.swp
 *~
