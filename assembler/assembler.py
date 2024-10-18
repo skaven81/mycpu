@@ -243,9 +243,12 @@ for input_file in args.sources:
             try:
                 match = grammar.parseString(newline, parseAll=True).asDict()
             except ParseException:
+                match = None # clear match since we're looping to next line
                 pass # ignore parsing exceptions for now, we'll catch them later
             if match and 'var_declare' in match and match['scope'] == 'global':
                 logging.debug("{:16.16s} Line {}: VAR {} {} => 0x{:04x}".format(input_file, line_num, match['scope'], match['var'], next_global_var))
+                if match['var'] in global_vars or match['var'] in global_arrays:
+                    raise SyntaxError("{:16.16s} Line {}: Variable {} declared twice".format(input_file, line_num, match['var']))
                 if match['size'] == 'byte':
                     global_vars[match['var']] = next_global_var
                     next_global_var += 1
