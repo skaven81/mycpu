@@ -13,6 +13,7 @@ parser = argparse.ArgumentParser(description='Assemble program ROM')
 parser.add_argument('--opcodes', default='opcodes', help='File containing opcodes')
 parser.add_argument('--verbose', '-v', action='count', default=0)
 parser.add_argument('--macros', '-m', help='%%-%% style preprocessing macros', action='append')
+parser.add_argument('--symbols', '-S', help='Input symbol table')
 parser.add_argument('sources', help='Assembly source code, specified in order', nargs='+')
 parser.add_argument('--output', '-o', help='Output .hex file, or - for STDOUT')
 parser.add_argument('--output-symbols', '-s', help='Output exported symbol table')
@@ -197,6 +198,19 @@ global_vars = { }
 global_arrays = { }
 next_global_var = 0x4f00 # hidden framebuffer, 256 bytes, when full goes to 0x5f10 (more hidden framebuffer)
 next_global_array = 0xb9ff
+
+# If we are importing a symbol table, read that and update vars and arrays
+if args.symbols:
+    logging.info("Loading variable symbols from {}".format(args.symbols))
+    with open(args.symbols, 'r') as fh:
+        sym = yaml.load(fh, Loader=yaml.Loader)
+    global_vars = sym['global_vars']
+    global_arrays = sym['global_arrays']
+    next_global_var = sym['next_global_var']
+    next_global_array = sym['next_global_array']
+    logging.info("Loaded {} global vars, {} global arrays".format(len(global_vars), len(global_arrays)))
+    logging.info("Next global var: {:04x} Next global array: {:04x}".format(next_global_var, next_global_array))
+
 for input_file in args.sources:
     label_prefix="{}_".format(input_file.split('/')[-1].split('.')[0].replace(' ','_').replace('-','_')).upper()
     with open(input_file, 'r') as fh:
@@ -277,6 +291,17 @@ asm_addr = 0
 assembly = [ ]
 labels = { }
 label_addrs = { }
+
+# Load labels from symbol table if present
+if args.symbols:
+    logging.info("Loading label symbols from {}".format(args.symbols))
+    with open(args.symbols, 'r') as fh:
+        sym = yaml.load(fh, Loader=yaml.Loader)
+    labels = sym['labels']
+    label_addrs = { v: k for k, v in labels.items() }
+    logging.info("Loaded {} labels".format(len(labels)))
+    assert len(labels) == len(label_addrs)
+
 current_file = None
 for input_file, line_num, line in concat_source:
     logging.debug("{:16.16s} {:3d}: IN:  {}".format(input_file, line_num, line))
