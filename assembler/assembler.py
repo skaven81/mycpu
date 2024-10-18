@@ -462,12 +462,14 @@ if args.output != '-':
         fh.write(bytes(final_assembly))
 if args.output_symbols:
     logging.info("Writing symbols to {}".format(args.output_symbols))
-    symbol_data = { "labels": { }, "vars": { } }
+    symbol_data = { "labels": { }, "global_vars": { }, "global_arrays": { } }
     for label, addr in labels.items():
         if label[0] != ":":
             continue
         symbol_data['labels'][label] = addr
-    for var, addr in (global_vars | global_arrays).items():
-        symbol_data['vars'][var] = addr
+    symbol_data['global_vars'] = global_vars
+    symbol_data['global_arrays'] = global_arrays
+    symbol_data['next_global_var'] = next_global_var
+    symbol_data['next_global_array'] = next_global_array
     with open(args.output_symbols, mode='w') as fh:
         fh.write(yaml.dump(symbol_data))
