@@ -6,6 +6,7 @@ import fileinput
 import re
 import argparse
 import logging
+import yaml
 from pyparsing import Word, alphanums, nums, Regex, Literal, QuotedString, Or, And, Char, srange, printables, Optional, Combine, Group, StringStart, OneOrMore, oneOf, ParseException
 
 parser = argparse.ArgumentParser(description='Assemble program ROM')
@@ -14,6 +15,7 @@ parser.add_argument('--verbose', '-v', action='count', default=0)
 parser.add_argument('--macros', '-m', help='%%-%% style preprocessing macros', action='append')
 parser.add_argument('sources', help='Assembly source code, specified in order', nargs='+')
 parser.add_argument('--output', '-o', help='Output .hex file, or - for STDOUT')
+parser.add_argument('--output-symbols', '-s', help='Output exported symbol table')
 args = parser.parse_args()
 
 if not args.macros:
@@ -455,3 +457,14 @@ if args.output != '-':
     logging.info("Writing {} bytes to {}".format(len(final_assembly), args.output))
     with open(args.output, mode='wb') as fh:
         fh.write(bytes(final_assembly))
+if args.output_symbols:
+    logging.info("Writing symbols to {}".format(args.output_symbols))
+    symbol_data = { "labels": { }, "vars": { } }
+    for label, addr in labels.items():
+        if label[0] != ":":
+            continue
+        symbol_data['labels'][label] = addr
+    for var, addr in (global_vars | global_arrays).items():
+        symbol_data['vars'][var] = addr
+    with open(args.output_symbols, mode='w') as fh:
+        fh.write(yaml.dump(symbol_data))
