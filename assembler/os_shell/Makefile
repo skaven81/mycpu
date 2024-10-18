@@ -14,7 +14,7 @@ opcodes.out: $(OPCODES)
 	bash -c "$(OPCODES) > $@"
 
 os.hex: $(SOURCES) $(LIBS) opcodes.out $(MACROS)
-	../assembler.py -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(SOURCES) $(LIBS) --output $@ 2>&1 | tee assembler.log
+	../assembler.py -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(SOURCES) $(LIBS) --output $@ --output-symbols $(@:.hex=.sym) 2>&1 | tee assembler.log
 
 program: os.hex
 	~/serial-eeprom-programmer/programmer write os.hex
