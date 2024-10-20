@@ -17,6 +17,8 @@ parser.add_argument('--symbols', '-S', help='Input symbol table')
 parser.add_argument('sources', help='Assembly source code, specified in order', nargs='+')
 parser.add_argument('--output', '-o', help='Output .hex file, or - for STDOUT')
 parser.add_argument('--output-symbols', '-s', help='Output exported symbol table')
+parser.add_argument('--odyssey', '-O', help="Write output file in ODY executable format", action='store_true')
+parser.add_argument('--odyssey-target', help="Memory allocation target for ODY executable", choices=["main", "ext-d", "ext-e", "ext-de"], default="main")
 args = parser.parse_args()
 
 if not args.macros:
@@ -290,17 +292,16 @@ logging.info("Parsing source")
 asm_addr = 0
 assembly = [ ]
 labels = { }
+ext_labels = { }
 label_addrs = { }
 
 # Load labels from symbol table if present
 if args.symbols:
-    logging.info("Loading label symbols from {}".format(args.symbols))
+    logging.info("Loading external label symbols from {}".format(args.symbols))
     with open(args.symbols, 'r') as fh:
         sym = yaml.load(fh, Loader=yaml.Loader)
-    labels = sym['labels']
-    label_addrs = { v: k for k, v in labels.items() }
-    logging.info("Loaded {} labels".format(len(labels)))
-    assert len(labels) == len(label_addrs)
+    ext_labels = sym['labels']
+    logging.info("Loaded {} external labels".format(len(ext_labels)))
 
 current_file = None
 for input_file, line_num, line in concat_source:
@@ -336,6 +337,8 @@ for input_file, line_num, line in concat_source:
     if 'label' in match:
         if match['label'] in labels:
             raise SyntaxError(f"In {input_file} line {line_num}: label {match['label']} is already defined")
+        if match['label'] in ext_labels:
+            raise SyntaxError(f"In {input_file} line {line_num}: label {match['label']} is already defined in external labels")
         labels[match['label']] = len(assembly)
         label_addrs[len(assembly)] = match['label']
         logging.debug("{:16.16s} {:3d} Label {} => 0x{:04x}".format(input_file, line_num, match['label'], len(assembly)))
@@ -442,6 +445,7 @@ for idx, a in enumerate(assembly):
 # Now make a second pass to populate labels
 logging.info("Updating labels")
 final_assembly = [ ]
+internal_addr_references = [ ]
 for idx, a in enumerate(assembly):
     if type(a['val']) is str:
         hl, label = a['val'].split('>')
@@ -453,8 +457,13 @@ for idx, a in enumerate(assembly):
             label, offval = label.split('+')
             offset = int(offval)
 
-        if label in labels:
-            addr = labels[label] + offset
+        if label in labels or label in ext_labels:
+            if label in labels:
+                addr = labels[label] + offset
+                if hl == 'hi':
+                    internal_addr_references.append(idx)
+            else:
+                addr = ext_labels[label] + offset
             if offset:
                 logging.debug("Label {} with offset {} resolved to {}".format(a['val'], offset, addr))
             if hl == 'hi':
@@ -471,19 +480,66 @@ for idx, a in enumerate(assembly):
         assert -128 <= a['val'] <= 255
         final_assembly.append(a['val'])
 
+# Generate Odyssey executable header if desired
+header_offset = 0
+header_msg = { }
+header = [ ]
+if args.odyssey:
+    logging.info("Prepending Odyssey executable header")
+
+    # start with the magic string
+    header = [ ord('O'), ord('D'), ord('Y') ]
+    header_msg[0] = "Magic string 'O'"
+    header_msg[1] = "Magic string 'D'"
+    header_msg[2] = "Magic string 'Y'"
+
+    # add flag byte
+    flag = 0x00
+    if args.odyssey_target == 'main':
+        flag |= 0x00
+    elif args.odyssey_target == 'ext-d':
+        flag |= 0x01
+    elif args.odyssey_target == 'ext-e':
+        flag |= 0x02
+    elif args.odyssey_target == 'ext-de':
+        flag |= 0x03
+    header.append(flag)
+    header_msg[3] = "Execution flags"
+
+    # add number of target rewrites (16-bit)
+    target_count = len(internal_addr_references)
+    header.append( target_count >> 8 )
+    header.append( target_count & 0x00ff )
+    header_msg[4] = f"hi>rewrite count ({target_count})"
+    header_msg[5] = f"lo>rewrite count ({target_count})"
+    header_offset = len(header) + (target_count * 2)
+
+    # add label replacement offsets
+    header_msg_idx = 6
+    for target_offset in internal_addr_references:
+        header.append( (target_offset+header_offset) >> 8 )
+        header_msg[header_msg_idx] = "hi>rewrite offset"
+        header_msg_idx += 1
+        header.append( (target_offset+header_offset) & 0x00ff )
+        header_msg[header_msg_idx] = "lo>rewrite offset"
+        header_msg_idx += 1
+
 # Write output
 if args.output == '-' or args.verbose >= 1:
     if args.output != '-':
         print("Final assembly")
+    for idx, a in enumerate(header):
+        print("{:04x} {:02x} # {}".format(idx, a, header_msg[idx]))
     for idx, a in enumerate(final_assembly):
-        print("{:04x} {:02x} # {}".format(idx, a, assembly[idx]['msg']), end='')
+        print("{:04x} {:02x} # {}".format(idx + header_offset, a, assembly[idx]['msg']), end='')
         if idx in label_addrs:
             print(" <-- {}".format(label_addrs[idx]))
         else:
             print()
 if args.output != '-':
-    logging.info("Writing {} bytes to {}".format(len(final_assembly), args.output))
+    logging.info("Writing {} bytes to {}".format(len(header) + len(final_assembly), args.output))
     with open(args.output, mode='wb') as fh:
+        fh.write(bytes(header))
         fh.write(bytes(final_assembly))
 if args.output_symbols:
     logging.info("Writing symbols to {}".format(args.output_symbols))
