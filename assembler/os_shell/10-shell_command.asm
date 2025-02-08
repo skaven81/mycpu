@@ -224,13 +224,11 @@ RET
 .cmd_list
 .cmd_000 "0:\0"             :cmd_setdrive
 .cmd_001 "1:\0"             :cmd_setdrive
-.cmd_010 "ascii\0"          :cmd_ascii
 .cmd_020 "ata-id\0"         :cmd_ata_id
 .cmd_030 "ata-read\0"       :cmd_ata_read
 .cmd_040 "clear\0"          :cmd_clear
 .cmd_050 "clockspeed\0"     :cmd_clockspeed
 .cmd_060 "cluster2lba\0"    :cmd_cluster_to_sector
-.cmd_070 "colors\0"         :cmd_colors
 .cmd_080 "dir\0"            :cmd_dir
 .cmd_090 "extmalloc\0"      :cmd_extmalloc
 .cmd_100 "extfree\0"        :cmd_extfree
@@ -241,9 +239,7 @@ RET
 .cmd_150 "next_cluster\0"   :cmd_next_cluster
 .cmd_160 "peek\0"           :cmd_peek
 .cmd_170 "poke\0"           :cmd_poke
-.cmd_180 "rand\0"           :cmd_rand
 .cmd_190 "setserial\0"      :cmd_setserial
-.cmd_200 "serialmon\0"      :cmd_serialmon
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
