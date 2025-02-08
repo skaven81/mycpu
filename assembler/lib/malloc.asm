@@ -610,7 +610,8 @@ JO .calloc_fill_blocks
 .calloc_fill_segments
 ALUOP_AL %A>>1%+%AL%
 ALUOP_AL %A>>1%+%AL%
-ALUOP_AL %A>>1%+%AL%                    # divide AL by 8 to get the number of segments
+ALUOP_AL %A>>1%+%AL%                    # divide AL by 8 to get the number of segments, then add one
+ALUOP_AL %A+1%+%AL%
 CALL :memfill_segments
 CALL :heap_pop_all
 RET
