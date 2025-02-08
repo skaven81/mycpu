@@ -22,13 +22,33 @@ JEQ .setdrive_1
 JMP .usage
 
 .setdrive_0
+# Check if drive 0 is mounted
+LD_CH $drive_0_fs_handle
+LD_CL $drive_0_fs_handle+1
+LDA_C_AH        # AH=first char of filesystem handle=cwd
 LDI_AL '0'
+LDI_BL '/'
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JNE .err_not_mounted
 ALUOP_ADDR %A%+%AL% $current_drive
 RET
 
 .setdrive_1
+# Check if drive 1 is mounted
+LD_CH $drive_1_fs_handle
+LD_CL $drive_1_fs_handle+1
+LDA_C_AH        # AH=first char of filesystem handle=cwd
 LDI_AL '1'
+LDI_BL '/'
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JNE .err_not_mounted
 ALUOP_ADDR %A%+%AL% $current_drive
+RET
+
+.err_not_mounted
+CALL :heap_push_AL
+LDI_C .not_mounted
+CALL :printf
 RET
 
 .usage
@@ -37,3 +57,4 @@ CALL :print
 RET
 
 .helpstr "Usage: 0: or 1:\n\0"
+.not_mounted "Error: Drive %c is not mounted\n\0"
