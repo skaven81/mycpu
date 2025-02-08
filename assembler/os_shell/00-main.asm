@@ -185,7 +185,7 @@ CALL :printf
 # the filesystem handles themselves.
 VAR global word $drive_0_fs_handle
 LDI_AL 0x07     # size 7 = 128 bytes
-CALL :malloc    # address in A
+CALL :calloc    # address in A
 ALUOP_ADDR %A%+%AH% $drive_0_fs_handle
 ALUOP_ADDR %A%+%AL% $drive_0_fs_handle+1
 CALL :heap_push_AL
@@ -197,7 +197,7 @@ CALL :printf
 
 VAR global word $drive_1_fs_handle
 LDI_AL 0x07     # size 7 = 128 bytes
-CALL :malloc    # address in A
+CALL :calloc    # address in A
 ALUOP_ADDR %A%+%AH% $drive_1_fs_handle
 ALUOP_ADDR %A%+%AL% $drive_1_fs_handle+1
 CALL :heap_push_AL
@@ -206,6 +206,12 @@ LDI_AL '1'
 CALL :heap_push_AL
 LDI_C .mount_filehandle
 CALL :printf
+
+# Global var for storing our current active drive ('0' or '1')
+# Will be null if no drive is selected
+VAR global word $current_drive
+ALUOP_ADDR %zero% $current_drive
+ALUOP_ADDR %zero% $current_drive+1
 
 # Print blank line
 LDI_AL '\n'
