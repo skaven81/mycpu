@@ -5,7 +5,7 @@
 ####
 # Mount a FAT16 filesystem from an ATA device.
 # To use this function:
-#  1. Push address of a 128-byte memory region (malloc size 7)
+#  1. Push address of a 128-byte memory region (malloc size 7) that has been zero'd
 #  2. Push the high word of the filesystem start sector (usually 0)
 #  3. Push the low word of the filesystem start sector (usually 0)
 #  4. Push a byte for the ATA device ID (0/master or 1/slave)
@@ -105,10 +105,10 @@ JNZ .mount_abort_3
 CALL :heap_pop_A                # address in A
 
 #### 0x00: Path of current directory: set to '/'
+# Since the memory we write into is expected to be zero'd, this is naturally
+# null-terminated by just writing the first byte.
 LDI_CL '/'
 STA_A_CL
-CALL :incr16_a
-ALUOP_ADDR_A %zero%
 
 #### 0x38: 2B  Bytes per Sector
 LDI_B 0x0038
