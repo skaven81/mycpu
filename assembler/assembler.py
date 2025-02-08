@@ -487,6 +487,19 @@ header = [ ]
 if args.odyssey:
     logging.info("Prepending Odyssey executable header")
 
+    # Odyssey header format
+    # 0-2: 'ODY'
+    #   3: flag byte:
+    #       0-1: memory target:
+    #            0 = main memory (malloc)
+    #            1 = extended memory (extmalloc) page D
+    #            2 = extended memory (extmalloc) page E
+    #            3 = extended memory (extmalloc) pages D+E
+    #     2-7: unassigned (reserved)
+    # 4-5: number of address rewrites (word)
+    # 6+: rewrite offsets (words)
+    # after offsets: first byte of program
+
     # start with the magic string
     header = [ ord('O'), ord('D'), ord('Y') ]
     header_msg[0] = "Magic string 'O'"
