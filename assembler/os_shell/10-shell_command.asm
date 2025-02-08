@@ -194,14 +194,13 @@ RET
 .cmd_011 "help\0"           .print_help
 .cmd_012 "hexdump\0"        :cmd_hexdump
 .cmd_013 "lba2cluster\0"    :cmd_sector_to_cluster
-.cmd_014 "memtest\0"        :cmd_memtest
-.cmd_015 "mount\0"          :cmd_mount
-.cmd_016 "next_cluster\0"   :cmd_next_cluster
-.cmd_017 "peek\0"           :cmd_peek
-.cmd_018 "poke\0"           :cmd_poke
-.cmd_019 "rand\0"           :cmd_rand
-.cmd_020 "setserial\0"      :cmd_setserial
-.cmd_021 "serialmon\0"      :cmd_serialmon
+.cmd_014 "mount\0"          :cmd_mount
+.cmd_015 "next_cluster\0"   :cmd_next_cluster
+.cmd_016 "peek\0"           :cmd_peek
+.cmd_017 "poke\0"           :cmd_poke
+.cmd_018 "rand\0"           :cmd_rand
+.cmd_019 "setserial\0"      :cmd_setserial
+.cmd_020 "serialmon\0"      :cmd_serialmon
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"

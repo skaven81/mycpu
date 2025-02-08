@@ -180,6 +180,33 @@ LD_AL %tmr_clk_century%
 CALL :heap_push_AL
 CALL :printf
 
+# Allocate memory for drive 0 and 1 filesystem handles.
+# These are pointers, they contain a memory address, not
+# the filesystem handles themselves.
+VAR global word $drive_0_fs_handle
+LDI_AL 0x07     # size 7 = 128 bytes
+CALL :malloc    # address in A
+ALUOP_ADDR %A%+%AH% $drive_0_fs_handle
+ALUOP_ADDR %A%+%AL% $drive_0_fs_handle+1
+CALL :heap_push_AL
+CALL :heap_push_AH
+LDI_AL '0'
+CALL :heap_push_AL
+LDI_C .mount_filehandle
+CALL :printf
+
+VAR global word $drive_1_fs_handle
+LDI_AL 0x07     # size 7 = 128 bytes
+CALL :malloc    # address in A
+ALUOP_ADDR %A%+%AH% $drive_1_fs_handle
+ALUOP_ADDR %A%+%AL% $drive_1_fs_handle+1
+CALL :heap_push_AL
+CALL :heap_push_AH
+LDI_AL '1'
+CALL :heap_push_AL
+LDI_C .mount_filehandle
+CALL :printf
+
 # Print blank line
 LDI_AL '\n'
 CALL :putchar
@@ -205,4 +232,4 @@ RETI
 .clockspeed_banner "Current CPU frequency %UkHz\n\0"
 .clock_banner "Current clock %B%B-%B-%B %B:%B:%B\n\0" # YYYY-MM-DD HH:MM:SS
 .ata_banner "ATA %u: %s\n\0"
-
+.mount_filehandle "Filesystem handle address for drive %c: 0x%x%x\n\0"

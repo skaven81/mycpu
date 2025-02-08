@@ -5,16 +5,15 @@
 ####
 # Mount a FAT16 filesystem from an ATA device.
 # To use this function:
-#  1. Push the high word of the filesystem start sector
-#  2. Push the low word of the filesystem start sector
-#  3. Push a byte for the ATA device ID (0/master or 1/slave)
-#  4. Call :fat16_mount
-#  5. Pop status byte from :ata_read command. If non-zero, stop.
-#       0xff - extmalloc failed
+#  1. Push address of a 128-byte memory region (malloc size 7)
+#  2. Push the high word of the filesystem start sector (usually 0)
+#  3. Push the low word of the filesystem start sector (usually 0)
+#  4. Push a byte for the ATA device ID (0/master or 1/slave)
+#  5. Call :fat16_mount
+#  6. Pop status byte from :ata_read command. If non-zero, stop.
+#       0xfd - extmalloc failed
 #       0xfe - sector does not appear to be a FAT16 boot sector
 #       other - ATA read error (copy of the ata error register)
-#  6. Pop word containing memory address of filesystem handle
-#       Use this address when calling other fat16_* functions
 #  7. Unmount the filesystem by calling :fat16_unmount
 #
 # Data structure of the filesystem handle (128 bytes, malloc size 7):
@@ -102,9 +101,8 @@ CALL :strcmp
 ALUOP_FLAGS %A%+%AL%
 JNZ .mount_abort_3
 
-# Looks like a FAT16 filesystem so far...allocate the RAM for the filesystem handle
-LDI_AL 0x07                     # size 7 = 128 bytes
-CALL :calloc                    # address in A
+# Looks like a FAT16 filesystem so far...line up the RAM for the filesystem handle
+CALL :heap_pop_A                # address in A
 
 #### 0x00: Path of current directory: set to '/'
 LDI_CL '/'
@@ -180,6 +178,12 @@ JMP .total_sectors_continue
 .use_small_sectors      # small number of sectors was nonzero, so use the small number
 POP_AH
 POP_AL
+LDI_B 0x0040
+CALL :add16_to_b
+ALUOP_ADDR_B %zero%
+LDI_B 0x0041
+CALL :add16_to_b
+ALUOP_ADDR_B %zero%
 LDI_B 0x0042
 CALL :add16_to_b
 LD_CL 0xd014
@@ -417,20 +421,21 @@ STA_B_DL
 
 
 # Done, prepare to return
-CALL :heap_push_A               # push address of filesystem handle to heap
 LDI_CL 0x00
 CALL :heap_push_CL              # push OK status byte to heap
 JMP .mount_done
 
 # abort vector if extmalloc failed
 .mount_abort_1
+CALL :heap_pop_word             # discard memory address argument
 POP_AL
-LDI_AL 0xff
+LDI_AL 0xfd
 CALL :heap_push_AL
 JMP .mount_done
 
 # abort vector if ATA read failed
 .mount_abort_2
+CALL :heap_pop_word             # discard memory address argument
 POP_TD                          # eject the saved sector address and ATA ID from the stack
 POP_TD
 POP_TD
@@ -444,6 +449,7 @@ JMP .mount_done
 
 # abort vector if it doesn't look like a FAT16 filesystem
 .mount_abort_3
+CALL :heap_pop_word             # discard memory address argument
 POP_TD                          # eject the saved sector address and ATA ID from the stack
 POP_TD
 POP_TD
