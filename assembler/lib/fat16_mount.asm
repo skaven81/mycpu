@@ -19,7 +19,7 @@
 # Data structure of the filesystem handle (128 bytes, malloc size 7):
 #   Offset  Size  Type  Data
 #   ---------------------------------------------
-#   0x00    53    str   path of current directory, using / separators, up to four directories deep
+#   0x00    53    str   path of current directory, using / separators, up to four directories deep, null terminated
 #   0x36    2     cls   cluster number of current directory, will be zero if the root directory
 #   0x38    2     int   Bytes per Sector
 #   0x3a    1     int   Sectors per Cluster
@@ -106,7 +106,9 @@ CALL :heap_pop_A                # address in A
 
 #### 0x00: Path of current directory: set to '/'
 LDI_CL '/'
-STA_A_CL                        # memory is zeroed so this is already null terminated
+STA_A_CL
+CALL :incr16_a
+ALUOP_ADDR_A %zero%
 
 #### 0x38: 2B  Bytes per Sector
 LDI_B 0x0038
