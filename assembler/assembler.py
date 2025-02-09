@@ -103,10 +103,10 @@ labeloffset.setName('labeloffset')
 # byte as reserved.  If a number of bytes is specified instead of `byte` or
 # `word`, then an array is reserved. Currently `global` is the only scope but
 # we reserve the syntax to add other scopes later.
-#  VAR {global} {byte|word|<num_bytes>} $name
+#  VAR {global} {byte|word|dword|<num_bytes>} $name
 varprefix = Literal('VAR').setResultsName('var_declare')
 varscope = Literal('global').setResultsName('scope')
-varsize = Combine(Literal('byte') | Literal('word') | Word(nums)).setResultsName('size')
+varsize = Combine(Literal('byte') | Literal('word') | Literal('dword') | Word(nums)).setResultsName('size')
 varname = Combine(Literal('$') + Word(alphanums+"_")).setResultsName('var')
 var = varprefix + varscope + varsize + varname
 var.setName('var')
@@ -271,14 +271,17 @@ for input_file in args.sources:
                 elif match['size'] == 'word':
                     global_vars[match['var']] = next_global_var
                     next_global_var += 2
+                elif match['size'] == 'dword':
+                    global_vars[match['var']] = next_global_var
+                    next_global_var += 4
                 else:
                     next_global_array -= int(match['size'])
                     global_arrays[match['var']] = next_global_array + 1
                     assert 0xb000 <= next_global_array <= 0xb9ff
                 # If we have filled up the first global var range, roll to the next one
-                if match['size'] in ('byte', 'word',):
+                if match['size'] in ('byte', 'word','dword',):
                     if next_global_var <= 0x4fff:
-                        if next_global_var >= 0x4ffd:
+                        if next_global_var >= 0x4ffb:
                             logging.debug("{:16.16s} Line {}: first global var zone is full, moving to 0x5f10".format(input_file, line_num))
                             next_global_var = 0x5f10
                     assert (0x4f00 <= next_global_var <= 0x4fff) or (0x5f10 <= next_global_var <= 0x5fff)
@@ -371,7 +374,7 @@ for input_file, line_num, line in concat_source:
 
     # variable declaration
     if 'var_declare' in match:
-        if match['scope'] == 'global' and match['size'] in ('byte', 'word',):
+        if match['scope'] == 'global' and match['size'] in ('byte', 'word','dword',):
             logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x} (already defined)".format(input_file, line_num, match['scope'], match['var'], global_vars[match['var']]))
         elif match['scope'] == 'global':
             logging.debug("{:16.16s} {:3d}: VAR {} {} => 0x{:04x} (already defined)".format(input_file, line_num, match['scope'], match['var'], global_arrays[match['var']]))
