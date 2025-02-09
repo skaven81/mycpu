@@ -535,6 +535,33 @@ POP_BH
 RET
 
 ###
+# Increment a 32-bit number
+#
+# To use:
+#  1. Push high word of number
+#  2. Push low word of number
+#  3. Call the function
+#  4. Pop low word of result
+#  5. Pop high word of result
+:incr32
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+CALL :heap_pop_D        # low word of number; high word remains on stack
+LDI_C 0x0000
+CALL :heap_push_C       # high word of increment
+CALL :heap_push_D       # low word of number
+LDI_C 0x0001
+CALL :heap_push_C       # low word of increment
+CALL :add32             # Result now on heap
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+RET
+
+###
 # Add two 32-bit numbers
 #
 # To use:
