@@ -5,41 +5,20 @@
 :cmd_dir
 
 # Get current drive and a pointer to its filesystem handle
-LD_AL $current_drive
-LDI_BL '0'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JZ .abort_not_mounted           # if the current drive was null, zero flag will be set
-JNE .use_drive_1                # if result wasn't zero but they weren't the same, must be '1'
-LDI_C $drive_0_fs_handle
-JMP .fs_handle_addr_in_c
-.use_drive_1
-LDI_C $drive_1_fs_handle
-.fs_handle_addr_in_c
-LDA_C_AH
-INCR_C
-LDA_C_AL                        # filesystem handle address in A
-ALUOP_CH %A%+%AH%               # copy to C
-ALUOP_CL %A%+%AL%               # copy to C
-
-# Check to make sure filesystem is mounted
-LDI_BL '/'
-LDA_C_AL                        # first byte of filesystem handle in AL
-ALUOP_FLAGS %A&B%+%AL%+%BL%     # is '/'? If not, not mounted
-JNE .abort_not_mounted
+CALL :fat16_get_current_fs_handle
+CALL :heap_pop_A                # A = filesystem handle
+ALUOP_FLAGS %A%+%AH%
+JZ .abort_not_mounted           # if the current drive was null, result will be zero
 
 # Retrieve directory cluster number and push it to heap
-MOV_CH_AH                       # filesystem handle address in A
-MOV_CL_AL
-LDI_B 0x0036                    # Offset 0x36 = current directory cluster
-CALL :add16_to_b                # B=address of current directory cluster
-LDA_B_CH
-CALL :incr16_b
-LDA_B_CL                        # C = current directory cluster
-CALL :heap_push_C
+CALL :heap_push_A
+CALL :fat16_get_current_directory_cluster
+CALL :heap_pop_C                # C = current directory cluster
 
+# Push the current directory cluster
+CALL :heap_push_C
 # Push the filesystem handle address
 CALL :heap_push_A
-
 # Begin the directory walking process
 CALL :fat16_dirwalk_start
 
@@ -64,16 +43,6 @@ ALUOP_FLAGS %A&B%+%AL%+%BL%
 POP_AL
 JEQ .printdir_next_entry        # if 0xe5, don't print, move to next
 JZ .dir_done                    # if 0x00, stop processing
-
-CALL :heap_push_A               # address of directory entry
-CALL :fat16_dirent_attribute    # attribute byte on heap
-CALL :heap_pop_BL               # attribute byte in BL
-ALUOP_PUSH %A%+%AL%
-LDI_AL 0x08                     # fourth bit = volume
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-POP_AL
-JNZ .printdir_next_entry        # skip if it's the volume label entry
-
 CALL :heap_push_A               # address of directory entry
 CALL :fat16_dirent_string       # otherwise, load the dirent and print it
 CALL :heap_pop_C                # address of rendered string
