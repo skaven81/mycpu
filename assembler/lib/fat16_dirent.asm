@@ -71,6 +71,30 @@ POP_AH
 RET
 
 ####
+# Retrieve the attribute byte
+# To use:
+#  1. Push the address word of a FAT16 directory entry
+#  2. Call the function
+#  3. Pop the attribute byte
+:fat16_dirent_attribute
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+
+CALL :heap_pop_A                # directory entry address in A
+LDI_B 0x000b                    # offset 0x0b = attribute, 1 byte
+CALL :add16_to_a                # A points at the attribute byte
+LDA_A_BL                        # BL contains the attribute byte
+CALL :heap_push_BL              # Push it to heap to return it
+
+POP_BL
+POP_BH
+POP_AL
+POP_AH
+RET
+
+####
 # Retrieve the file size as a 32-bit number (pair of words)
 # To use:
 #  1. Push the address word of a FAT16 directory entry
