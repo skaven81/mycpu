@@ -43,6 +43,16 @@ ALUOP_FLAGS %A&B%+%AL%+%BL%
 POP_AL
 JEQ .printdir_next_entry        # if 0xe5, don't print, move to next
 JZ .dir_done                    # if 0x00, stop processing
+
+CALL :heap_push_A               # address of directory entry
+CALL :fat16_dirent_attribute    # attribute byte on heap
+CALL :heap_pop_BL               # attribute byte in BL
+ALUOP_PUSH %A%+%AL%             # save AL temporarily
+LDI_AL 0b00001000               # volume attribute
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # check if volume attr is set
+POP_AL
+JNZ .printdir_next_entry        # skip this entry if it's the volume ID
+
 CALL :heap_push_A               # address of directory entry
 CALL :fat16_dirent_string       # otherwise, load the dirent and print it
 CALL :heap_pop_C                # address of rendered string
