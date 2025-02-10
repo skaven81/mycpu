@@ -226,6 +226,7 @@ RET
 .cmd_001 "1:\0"             :cmd_setdrive
 .cmd_020 "ata-id\0"         :cmd_ata_id
 .cmd_030 "ata-read\0"       :cmd_ata_read
+.cmd_035 "cd\0"             :cmd_cd
 .cmd_040 "clear\0"          :cmd_clear
 .cmd_050 "clockspeed\0"     :cmd_clockspeed
 .cmd_060 "cluster2lba\0"    :cmd_cluster_to_sector
