@@ -1,3 +1,43 @@
+2025-02-08/09: FAT16 directory traversal
+========================================
+
+I have now added code to the startup sequence that allocates dedicated memory
+regions for the "0:" and "1:" drive filesystem handles, with global variables.
+I then added shell commands for mounting drives and setting them with familiar
+`0:` and `1:` commands.
+
+Then I added a `dir` command and extracted out most of its functionality into
+reusable code that allows easy traversal of a directory cluster.
+
+Finally, I added the `cd` command so that it is possible to walk through
+the directory structure. This all built on the existing code I'd written
+earlier to do things like extract directory entry details, and to easily
+convert cluster numbers into LBA addresses.
+
+Where this leaves me now is to implement a "load" command that takes a filename
+and reads a file into memory at a given address.  Most of this will be
+library code, of course.  This is the final structural library I need before
+I can implement the ODY executable loader.
+
+The problem is, I'm out of ROM space. Before I can get around to writing the
+file loader, I need to clear about a KB of ROM.  The good news is that once
+the executable loader stuff is working, I can rework the whole os_shell
+code stack so that it doesn't need to have any built-in commands at all;
+I can recompile all the commands to be on disk instead, and have the ROM
+just execute a static sequence of instructions to mount the first disk and
+execute the shell program as its first and only task.  That means I'll eventually
+be able to get away with removing (for example) the terminal input library,
+which is quite large, to make more room in the ROM for libraries critical
+for the boot sequence.
+
+But until then, I still need interactive input.  I ended up making the space
+by removing all the interactive commands except for hexdump. I'll have to
+just insert all the data loading test code directly into the boot sequence
+to finish up the remaining code updates to get to ODYEXE working. Once
+ODYEXE is working I can re-implement all the interactive commands as
+disk binaries.
+
+
 2024-10-13: FAT16 traversal phase 2
 ===================================
 
