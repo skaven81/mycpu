@@ -58,8 +58,17 @@ ALUOP_ADDR_D %B%+%BL%           # store character in destination string
 INCR_D                          # move to next character
 .get_filename_ext_no_write
 ALUOP_AL %A-1%+%AL%             # decrement counter
-JNZ .get_filename_ext_loop      # done with extif counter is zero
+JNZ .get_filename_ext_loop      # done with ext if counter is zero
 
+# Overwrite the trailing dot with a NULL if there was no filename extension
+DECR_D                          # move to last character in the string
+LDA_D_AL                        # load the char
+LDI_BL '.'                      # check if it's a dot
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JNE .get_filename_done
+ALUOP_ADDR_D %zero%             # overwrite the trailing dot
+
+.get_filename_done
 POP_DL
 POP_DH
 POP_CL
