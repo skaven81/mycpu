@@ -236,6 +236,7 @@ RET
 .cmd_110 "help\0"           .print_help
 .cmd_120 "hexdump\0"        :cmd_hexdump
 .cmd_130 "lba2cluster\0"    :cmd_sector_to_cluster
+.cmd_135 "load\0"           :cmd_load
 .cmd_140 "mount\0"          :cmd_mount
 .cmd_150 "next_cluster\0"   :cmd_next_cluster
 .cmd_160 "peek\0"           :cmd_peek
