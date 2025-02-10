@@ -218,8 +218,22 @@ LDI_AL '\n'
 CALL :putchar
 
 #######
-# Main loop
+# OS Loader sequence
 #######
+
+# Mount drive 0
+# TODO: insert :cmd_mount "0" here
+
+# Set 0 as current drive
+# TODO: insert :cmd_setdrive "0:" here
+
+# Walk root directory looking for OS binary
+# TODO
+
+# Load OS binary into memory 
+# TODO: this will be replaced with library ODY loader later
+
+# Drop into shell
 .main
 CALL :shell_command
 JMP .main

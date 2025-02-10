@@ -222,26 +222,26 @@ CALL :putchar
 RET
 
 .cmd_list
-.cmd_000 "0:\0"             :cmd_setdrive
-.cmd_001 "1:\0"             :cmd_setdrive
-.cmd_020 "ata-id\0"         :cmd_ata_id
-.cmd_030 "ata-read\0"       :cmd_ata_read
-.cmd_035 "cd\0"             :cmd_cd
-.cmd_040 "clear\0"          :cmd_clear
-.cmd_050 "clockspeed\0"     :cmd_clockspeed
-.cmd_060 "cluster2lba\0"    :cmd_cluster_to_sector
-.cmd_080 "dir\0"            :cmd_dir
-.cmd_090 "extmalloc\0"      :cmd_extmalloc
-.cmd_100 "extfree\0"        :cmd_extfree
+#.cmd_000 "0:\0"             :cmd_setdrive
+#.cmd_001 "1:\0"             :cmd_setdrive
+#.cmd_020 "ata-id\0"         :cmd_ata_id
+#.cmd_030 "ata-read\0"       :cmd_ata_read
+#.cmd_035 "cd\0"             :cmd_cd
+#.cmd_040 "clear\0"          :cmd_clear
+#.cmd_050 "clockspeed\0"     :cmd_clockspeed
+#.cmd_060 "cluster2lba\0"    :cmd_cluster_to_sector
+#.cmd_080 "dir\0"            :cmd_dir
+#.cmd_090 "extmalloc\0"      :cmd_extmalloc
+#.cmd_100 "extfree\0"        :cmd_extfree
 .cmd_110 "help\0"           .print_help
 .cmd_120 "hexdump\0"        :cmd_hexdump
-.cmd_130 "lba2cluster\0"    :cmd_sector_to_cluster
-.cmd_135 "load\0"           :cmd_load
-.cmd_140 "mount\0"          :cmd_mount
-.cmd_150 "next_cluster\0"   :cmd_next_cluster
-.cmd_160 "peek\0"           :cmd_peek
-.cmd_170 "poke\0"           :cmd_poke
-.cmd_190 "setserial\0"      :cmd_setserial
+#.cmd_130 "lba2cluster\0"    :cmd_sector_to_cluster
+#.cmd_135 "load\0"           :cmd_load
+#.cmd_140 "mount\0"          :cmd_mount
+#.cmd_150 "next_cluster\0"   :cmd_next_cluster
+#.cmd_160 "peek\0"           :cmd_peek
+#.cmd_170 "poke\0"           :cmd_poke
+#.cmd_190 "setserial\0"      :cmd_setserial
 .cmd_end 0x00
 
 .cmd_unknown_str "Unrecognized command: [%s]\n\0"
