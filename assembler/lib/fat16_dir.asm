@@ -46,6 +46,8 @@ LDI_C $dirwalk_current_fs_handle
 ALUOP_ADDR_C %A%+%AH%
 INCR_C
 ALUOP_ADDR_C %A%+%AL%
+ALUOP_DH %A%+%AH%
+ALUOP_DL %A%+%AL%                   # Save filesystem handle address in D for later
 
 # Pop the cluster number of the directory into A
 CALL :heap_pop_A
@@ -84,7 +86,7 @@ JMP .dirwalk_start_lba_done
 # If here, cluster>0, so set the starting LBA as the LBA of the cluster,
 # and the max sectors based on the number of sectors per cluster
 .dirwalk_start_subdir
-CALL :heap_push_C                   # filesystem handle
+CALL :heap_push_D                   # filesystem handle
 CALL :heap_push_A                   # cluster number
 CALL :fat16_cluster_to_lba
 CALL :heap_pop_B                    # B=low word of LBA
