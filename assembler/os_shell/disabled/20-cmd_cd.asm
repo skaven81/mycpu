@@ -13,6 +13,10 @@ INCR_D
 ALUOP_FLAGS %A%+%AH%            # check if null
 JZ .usage                       # abort with usage message if null
 
+##########################################################
+#### TODO: replace most of this logic with :fat16_dir_find
+##########################################################
+
 # Get current drive and a pointer to its filesystem handle
 CALL :fat16_get_current_fs_handle
 CALL :heap_pop_A                # A = filesystem handle
