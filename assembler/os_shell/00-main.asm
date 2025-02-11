@@ -221,22 +221,114 @@ CALL :putchar
 # OS Loader sequence
 #######
 
-# Mount drive 0
-# TODO: insert :cmd_mount "0" here
+# Attempt to mount drive 0
+LDI_C .mount_0
+CALL :print
+LDI_C $drive_0_fs_handle
+LDA_C_BH
+INCR_C
+LDA_C_BL
+CALL :heap_push_B               # address of filesystem handle
+LDI_C 0x0000
+CALL :heap_push_C               # high word of filesystem start sector (0x0000)
+CALL :heap_push_C               # low word of filesystem start sector (0x0000)
+CALL :heap_push_CL              # ATA device ID (0)
+CALL :fat16_mount
+CALL :heap_pop_AL               # status byte
+LDI_BL 0xff
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # 0xff = drive not attached
+JZ .mount_success               # 0x00 = success, move on
+LDI_C .mount_1                  # otherwise, print our failure header
+CALL :print
+JEQ .mount_failed_not_attached
+LDI_BL 0xfd
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # 0xfd = extmalloc failed
+JEQ .mount_failed_extmalloc
+LDI_BL 0xfe
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # 0xfe = Not a FAT16 filesystem
+JEQ .mount_failed_notfat16
+JMP .mount_failed_ataerror      # other = ATA error
 
+.mount_success
 # Set 0 as current drive
-# TODO: insert :cmd_setdrive "0:" here
+LDI_C .mount_setdrive
+CALL :print
+LDI_AL '0'
+ALUOP_ADDR %A%+%AL% $current_drive
 
 # Walk root directory looking for OS binary
-# TODO
+LDI_C .os_bin_filename
+CALL :heap_push_C
+LDI_C .mount_seekos
+CALL :printf
+LDI_C .os_bin_filename
+CALL :heap_push_C               # filename we are looking for
+LDI_CL 0x18
+CALL :heap_push_CL              # filter OUT = directories and volume labels
+LDI_CL 0xff
+CALL :heap_push_CL              # filter IN = all files
+CALL :fat16_dir_find
+CALL :heap_pop_A                # result in A
+LDI_BL 0x00
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .seekos_failed_notfound
+LDI_BL 0x02                     # code 1 should never happen because we just set it above
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .seekos_failed_ataerr
+# Binary is found, A contains the address of a copy
+# of the directory entry (which needs to be freed)
+CALL :heap_push_AL
+CALL :heap_push_AH
+LDI_C .mount_seekos_2
+CALL :printf
 
-# Load OS binary into memory 
-# TODO: this will be replaced with library ODY loader later
+# TODO - load from disk into memory (later this will be replaced with the ODY loader which
+# does the loading from disk into memory internally)
+
+# Free the directory entry from above (disabled for debugging)
+#LDI_BL 1                        # size 1 = 32 bytes
+#CALL :free                      # A still has the address
 
 # Drop into shell
-.main
+.emergency_shell
 CALL :shell_command
-JMP .main
+JMP .emergency_shell
+
+# Failure conditions when mounting
+.mount_failed_not_attached
+LDI_C .mount_2
+JMP .mount_failed_finish
+
+.mount_failed_extmalloc
+LDI_C .mount_3
+JMP .mount_failed_finish
+
+.mount_failed_notfat16
+LDI_C .mount_4
+JMP .mount_failed_finish
+
+.mount_failed_ataerror
+LDI_C .mount_5
+JMP .mount_failed_finish
+
+.mount_failed_finish
+CALL :heap_push_AL
+CALL :printf
+JMP .emergency_shell
+
+# Failure conditions when seeking the OS binary
+.seekos_failed_notfound
+LDI_C .mount_1
+CALL :print
+LDI_C .mount_seekos_1
+CALL :print
+JMP .emergency_shell
+
+.seekos_failed_ataerr
+LDI_C .mount_5
+CALL :heap_push_AL
+CALL :printf
+JMP .emergency_shell
 
 # Inert target for unused interrupts
 .noirq
@@ -253,3 +345,15 @@ RETI
 .clock_banner "Current clock %B%B-%B-%B %B:%B:%B\n\0" # YYYY-MM-DD HH:MM:SS
 .ata_banner "ATA %u: %s\n\0"
 .mount_filehandle "Filesystem handle address for drive %c: 0x%x%x\n\0"
+.mount_0 "Mounting drive 0...\n\0"
+.mount_1 "FAILED: \0"
+.mount_2 "Drive 0 not responding (code 0x%x)\n\0"
+.mount_3 "Extmalloc failed (code 0x%x)\n\0"
+.mount_4 "Not a FAT16 filesystem (code 0x%x)\n\0"
+.mount_5 "ATA error (code 0x%x)\n\0"
+.mount_setdrive "Setting current drive...\n\0"
+.mount_seekos "Searching for file named %s...\n\0"
+.mount_seekos_1 "Not found\n\0"
+.mount_seekos_2 "Found: directory entry at 0x%x%x\n\0"
+.os_bin_filename "SYSTEM.ODY\0"
+

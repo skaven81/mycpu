@@ -2,8 +2,7 @@
 
 # Function set for walking a FAT16 directory.
 #
-# Usage:
-#
+# To manually walk a directory:
 #  1. Push the cluster number of the directory to enumerate (or 0 for the root dir)
 #  2. Push the address of a filesystem handle
 #  3. CALL :fat16_dirwalk_start
@@ -15,7 +14,19 @@
 #     - Same return semantics as :fat16_dirwalk_start
 #  7. CALL :fat16_dirwalk_end to free the allocated memory
 #
-# Note: these functions are not recursive-safe due to the use of global vars
+# To seek a file or dir in the current directory:
+#  1. Push the address of a string with the filename/dirname
+#  2. Push a byte containing a mask used to filter OUT entries based on their attribute byte
+#  3. Push a byte containing a mask used to filter IN entries based on their attribute byte (0xff to allow all, even those with 0x00 attribute bytes)
+#  4. CALL :fat16_dir_find
+#  5. Pop the address of a 32-byte memory region that contains a copy of the
+#     directory entry you were looking for.
+#     * If 0x0000, the file/dir was not found.
+#     * If 0x0100, there is no current drive set or it's not mounted
+#     * If 0x02nn, an ATA error occurred, and the error code is nn
+#  6. If found, be sure to :free (size 1, 32 bytes) the returned memory address
+#
+# Note: these functions are not reentrant-safe due to the use of global vars
 # to store the directory entry data.
 
 VAR global word $dirwalk_current_fs_handle
@@ -23,6 +34,157 @@ VAR global dword $dirwalk_next_sector_lba
 VAR global word $dirwalk_current_sector_data
 VAR global byte $dirwalk_current_dir_idx
 VAR global byte $dirwalk_num_sectors_remaining
+VAR global byte $dirwalk_find_filter_out
+VAR global byte $dirwalk_find_filter_in
+
+:fat16_dir_find
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+
+CALL :heap_pop_CL                   # filter IN mask
+ST_CL $dirwalk_find_filter_in
+CALL :heap_pop_CL                   # filter OUT mask
+ST_CL $dirwalk_find_filter_out
+CALL :heap_pop_D                    # name string to match
+
+# Get current drive and a pointer to its filesystem handle
+CALL :fat16_get_current_fs_handle
+CALL :heap_pop_A                    # A = filesystem handle
+ALUOP_FLAGS %A%+%AH%
+JZ .dir_find_abort_not_mounted      # if the current drive was null, result will be zero
+
+# Retrieve current directory cluster number and push it to heap
+CALL :heap_push_A
+CALL :fat16_get_current_directory_cluster
+CALL :heap_pop_C                    # C = current directory cluster
+
+# Push the current directory cluster
+CALL :heap_push_C
+# Push the filesystem handle address
+CALL :heap_push_A
+# Begin the directory walking process
+CALL :fat16_dirwalk_start
+
+# First directory entry address is on heap; high byte will be 0x00 if
+# there was an error; the error code is in the low byte.
+
+## Loop until a call to :fat16_dirwalk_next returns an error, or
+## we reach the last directory entry
+.dir_find_loop
+CALL :heap_pop_A                    # Pop next directory entry off the heap
+ALUOP_FLAGS %A%+%AH%
+JZ .dir_find_abort_ata_error        # stop looping if we got an error
+
+## The first byte indicates directory entry type:
+##  0x00 - stop, no more directory entries
+##  0xe5 - skip, free entry
+##  anything else - valid directory entry
+LDA_A_BL                            # fetch the first character of the entry
+ALUOP_PUSH %A%+%AL%
+LDI_AL 0xe5
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+POP_AL
+JEQ .dir_find_next_entry            # if 0xe5, empty entry, skip
+JZ .dir_find_done_nomatch           # if 0x00, we're out of directory entries and did not find a match
+
+# Check that this matches the IN and OUT filters
+CALL :heap_push_A                   # address of directory entry
+CALL :fat16_dirent_attribute        # attribute byte on heap
+CALL :heap_pop_BL                   # attribute byte in BL
+
+# If IN filter == 0xff skip the IN filter test
+ALUOP_PUSH %A%+%AL%                 # save AL temporarily
+LD_AL $dirwalk_find_filter_in       # IN filter
+LDI_BH 0xff
+ALUOP_FLAGS %A&B%+%AL%+%BH%         # if IN filter == 0xff skip the IN filter
+POP_AL
+JEQ .dir_find_no_in_filter
+
+# IN filter test: if entry DOES NOT match the filter, skip it
+ALUOP_PUSH %A%+%AL%                 # save AL temporarily
+LD_AL $dirwalk_find_filter_in       # IN filter
+ALUOP_FLAGS %A&B%+%AL%+%BL%         # check attrs against IN filter
+POP_AL
+JZ .dir_find_next_entry             # skip this entry if it did not match the IN filter
+
+# OUT filter test: if entry DOES match the filter, skip it
+.dir_find_no_in_filter
+ALUOP_PUSH %A%+%AL%                 # save AL temporarily
+LD_AL $dirwalk_find_filter_out      # OUT filter
+ALUOP_FLAGS %A&B%+%AL%+%BL%         # check attrs against OUT filter
+POP_AL
+JNZ .dir_find_next_entry            # skip this entry if it matched the OUT filter
+
+# Does this entry name match our given string?
+CALL :heap_push_A                   # address of directory entry
+CALL :fat16_dirent_filename         # address word of filename on heap
+CALL :heap_pop_C                    # C contains pointer to filename in this directory entry;
+                                    # D already contains our target string
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+MOV_CL_AL                           # Copy C to A because we need to free the
+MOV_CH_AH                           #   memory when we're done comparing
+LDI_BL 0                            # size 0 = 16 bytes
+CALL :free                          # free the filename string
+CALL :strcmp                        # Compare strings in C and D, result in AL
+ALUOP_FLAGS %A%+%AL%                # is AL zero (strings matched)?
+POP_AH
+POP_AL
+JZ .dir_find_done_match             # escape loop if we found a match
+.dir_find_next_entry
+CALL :fat16_dirwalk_next
+JMP .dir_find_loop
+
+.dir_find_done_nomatch
+CALL :fat16_dirwalk_end             # Free the memory allocated by dirwalk
+LDI_C 0x0000
+CALL :heap_push_C                   # return 0x0000 meaning not found
+JMP .dir_find_done
+
+.dir_find_done_match
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%                   # Copy directory entry address to C (source address)
+LDI_AL 1                            # malloc size 1 = 32 bytes
+CALL :malloc                        # memory address in A
+ALUOP_DH %A%+%AH%
+ALUOP_DL %A%+%AL%                   # destination address into D
+PUSH_DH
+PUSH_DL                             # save destination address
+LDI_AL 1                            # copy two blocks from C to D
+CALL :memcpy_blocks                 # |
+POP_DL
+POP_DH                              # Restore destination address
+CALL :heap_push_D                   # save address to heap to return
+CALL :fat16_dirwalk_end             # Free the memory allocated by dirwalk
+
+.dir_find_done
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+POP_BL
+POP_BH
+POP_AL
+POP_AH
+RET
+
+
+
+.dir_find_abort_not_mounted
+LDI_C 0x0100
+CALL :heap_push_C
+JMP .dir_find_done
+
+.dir_find_abort_ata_error
+LDI_AH 0x02                     # the ATA error code is already in AL
+CALL :heap_push_A
+JMP .dir_find_done
 
 :fat16_dirwalk_start
 ALUOP_PUSH %A%+%AH%
