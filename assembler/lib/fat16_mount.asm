@@ -13,6 +13,7 @@
 #  6. Pop status byte from :ata_read command. If non-zero, stop.
 #       0xfd - extmalloc failed
 #       0xfe - sector does not appear to be a FAT16 boot sector
+#       0xff - drive is not attached (ATA read error)
 #       other - ATA read error (copy of the ata error register)
 #  7. Unmount the filesystem by calling :fat16_unmount
 #
