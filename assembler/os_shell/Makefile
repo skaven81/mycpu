@@ -6,16 +6,26 @@ OPCODES := ../gen_opcodes.sh
 MACROS := ../asm_macros
 SHELL_COMMANDS := $(shell find . -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/Makefile' \; -print)
 
+VERBOSE_quiet := 
+VERBOSE_verbose := -v
+VERBOSE_debug := -vv
+VERBOSE ?= quiet
+VERBOSE_FLAG=$(VERBOSE_$(VERBOSE))
+
+# ensure `tee` pipe doesn't mask assembler failures
+SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
+
 all: os.hex $(SHELL_COMMANDS:%=%/all)
 
 opcodes.out: $(OPCODES)
 	bash -c "$(OPCODES) > $@"
 
 os.hex os.sym: $(BIOS_SOURCES) $(LIBS) opcodes.out $(MACROS)
-	../assembler.py -v --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(BIOS_SOURCES) $(LIBS) --output $@ --output-symbols $(@:.hex=.sym) 2>&1 | tee assembler.log
+	../assembler.py $(VERBOSE_FLAG) --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(BIOS_SOURCES) $(LIBS) --output $@ --output-symbols $(@:.hex=.sym) 2>&1 | tee assembler.log
 
 $(SHELL_COMMANDS:%=%/all): os.sym opcodes.out
-	$(MAKE) -C $(@D)
+	$(MAKE) -C $(@D) VERBOSE_FLAG=$(VERBOSE_FLAG)
 
 program: os.hex
 	~/serial-eeprom-programmer/programmer write os.hex
@@ -29,3 +39,10 @@ clean:
 		$(MAKE) -C $$dir clean; \
 	done
 
+.PHONY: quiet verbose debug
+quiet:
+	$(MAKE) VERBOSE=quiet
+verbose:
+	$(MAKE) VERBOSE=verbose
+debug:
+	$(MAKE) VERBOSE=debug
