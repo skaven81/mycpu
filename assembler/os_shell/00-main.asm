@@ -284,6 +284,22 @@ CALL :printf
 
 # TODO - load from disk into memory (later this will be replaced with the ODY loader which
 # does the loading from disk into memory internally)
+LDI_C $drive_0_fs_handle
+LDA_C_BH
+INCR_C
+LDA_C_BL
+CALL :heap_push_B               # filesystem handle address
+ST %d_page% 15
+ST %e_page% 16                  # Make 8K contiguous extended memory available 0
+LDI_C 0xd000
+CALL :heap_push_C               # Destination memory address
+LDI_CL 0
+CALL :heap_push_CL              # Max sectors (just first sector)
+CALL :heap_push_A               # Directory entry address
+CALL :fat16_readfile
+
+LDI_C .mount_load
+CALL :print
 
 # Free the directory entry from above (disabled for debugging)
 #LDI_BL 1                        # size 1 = 32 bytes
@@ -355,5 +371,6 @@ RETI
 .mount_seekos "Searching for file named %s...\n\0"
 .mount_seekos_1 "Not found\n\0"
 .mount_seekos_2 "Found: directory entry at 0x%x%x\n\0"
+.mount_load "File loaded at 0xd000\n\0"
 .os_bin_filename "SYSTEM.ODY\0"
 
