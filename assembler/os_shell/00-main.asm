@@ -224,10 +224,8 @@ CALL :putchar
 # Attempt to mount drive 0
 LDI_C .mount_0
 CALL :print
-LDI_C $drive_0_fs_handle
-LDA_C_BH
-INCR_C
-LDA_C_BL
+LD_BH $drive_0_fs_handle
+LD_BL $drive_0_fs_handle+1
 CALL :heap_push_B               # address of filesystem handle
 LDI_C 0x0000
 CALL :heap_push_C               # high word of filesystem start sector (0x0000)
@@ -284,10 +282,8 @@ CALL :printf
 
 # TODO - load from disk into memory (later this will be replaced with the ODY loader which
 # does the loading from disk into memory internally)
-LDI_C $drive_0_fs_handle
-LDA_C_BH
-INCR_C
-LDA_C_BL
+LD_BH $drive_0_fs_handle
+LD_BL $drive_0_fs_handle+1
 CALL :heap_push_B               # filesystem handle address
 ST %d_page% 15
 ST %e_page% 16                  # Make 8K contiguous extended memory available 0
