@@ -33,6 +33,11 @@ program: all
 program1: all
 	~/serial-eeprom-programmer/programmer --port /dev/ttyUSB1 write os.hex
 
+sdcard: all
+	@for ody in $(foreach d,$(SHELL_COMMANDS),$(d)/*.ODY); do \
+		cp -f -v $$ody /media/skaven/ODYSSEY/$${ody##*/}; \
+	done
+
 clean:
 	rm -f os.hex os.sym opcodes.out
 	@for dir in $(SHELL_COMMANDS); do \
