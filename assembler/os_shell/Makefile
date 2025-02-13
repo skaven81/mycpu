@@ -27,10 +27,10 @@ os.hex os.sym: $(BIOS_SOURCES) $(LIBS) opcodes.out $(MACROS)
 $(SHELL_COMMANDS:%=%/all): os.sym opcodes.out
 	$(MAKE) -C $(@D) VERBOSE_FLAG=$(VERBOSE_FLAG)
 
-program: os.hex
+program: all
 	~/serial-eeprom-programmer/programmer write os.hex
 
-program1: os.hex
+program1: all
 	~/serial-eeprom-programmer/programmer --port /dev/ttyUSB1 write os.hex
 
 clean:
