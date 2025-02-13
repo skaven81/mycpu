@@ -213,7 +213,7 @@ VAR global word $current_drive
 ALUOP_ADDR %zero% $current_drive
 ALUOP_ADDR %zero% $current_drive+1
 
-# Global var used by shell to parse input
+# Global vars used by shell to parse input
 VAR global word $user_input_buf
 VAR global 32 $user_input_tokens # store up to 16 tokens
 
@@ -291,17 +291,20 @@ LD_BL $drive_0_fs_handle+1
 CALL :heap_push_B               # filesystem handle
 
 # This is expected to run forever, but if it does exit,
-# we'll drop into an emergency shell
+# we'll emit an error and halt
 CALL :fat16_load_and_run_ody
 
-# Free the directory entry from above (disabled for debugging)
-LDI_BL 1                        # size 1 = 32 bytes
-CALL :free                      # A still has the address
+# Free the directory entry from above
+# This will never be called, but retained for completeness
+#LDI_BL 1                        # size 1 = 32 bytes
+#CALL :free                      # A still has the address
 
-# Drop into shell
-.emergency_shell
-CALL :shell_command
-JMP .emergency_shell
+# Error! We should not have exited the shell
+.boot_halt
+CALL :heap_push_AL
+LDI_C .boot_halt_str
+CALL :printf
+HLT
 
 # Failure conditions when mounting
 .mount_failed_not_attached
@@ -323,7 +326,7 @@ JMP .mount_failed_finish
 .mount_failed_finish
 CALL :heap_push_AL
 CALL :printf
-JMP .emergency_shell
+JMP .boot_halt
 
 # Failure conditions when seeking the OS binary
 .seekos_failed_notfound
@@ -331,13 +334,13 @@ LDI_C .mount_1
 CALL :print
 LDI_C .mount_seekos_1
 CALL :print
-JMP .emergency_shell
+JMP .boot_halt
 
 .seekos_failed_ataerr
 LDI_C .mount_5
 CALL :heap_push_AL
 CALL :printf
-JMP .emergency_shell
+JMP .boot_halt
 
 # Inert target for unused interrupts
 .noirq
@@ -365,4 +368,4 @@ RETI
 .mount_seekos_1 "Not found\n\0"
 .mount_seekos_2 "Found: directory entry at 0x%x%x, executing..\n\0"
 .os_bin_filename "SYSTEM.ODY\0"
-
+.boot_halt_str "System process exited. Status byte 0x%x\nSystem halted.\n\0"

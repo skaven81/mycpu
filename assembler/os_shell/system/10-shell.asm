@@ -139,12 +139,48 @@ INCR_D                          # D now points at the next command
 JMP .check_cmd_loop             # loop to next command
 
 .try_files                      # Look for .ODY files matching the command
-# TODO
+PUSH_CH
+PEEK_DH
+PUSH_CL
+PEEK_DL                         # Make C and D point to same address, the command string
+CALL :strupper                  # make uppercase; C and D point at terminating null
+LDI_C .ody_suffix
+CALL :strcpy                    # append .ODY suffix
+ALUOP_ADDR_D %zero%             # write terminating null to D address
+POP_CL
+POP_CH                          # restore C pointer to beginning of string,
+                                # which is now uppercase, with .ODY extension
 
-.cmd_unknown                    # Searched for .ODY files and found nothing
-CALL :heap_push_C
-LDI_C .cmd_unknown_str
+CALL :heap_push_C               # filename string to look for
+LDI_AL 0x18
+CALL :heap_push_AL              # filter OUT = directories and volume labels
+LDI_AL 0xff
+CALL :heap_push_AL              # filter IN = all files
+CALL :fat16_dir_find
+CALL :heap_pop_A                # result in A
+LDI_BL 0x00
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .tryfiles_failed_notfound
+LDI_BL 0x02                     # code 1 should never happen because we just set it above
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .tryfiles_failed_ataerr
+# Binary is found, A contains the address of a copy
+# of the directory entry (which needs to be freed)
+LDI_BL 1                        # size 1 = 32 bytes
+CALL :free                      # A still has the address
+
+CALL :heap_push_A               # directory entry (freed, but no mallocs between here and there)
+CALL :fat16_get_current_fs_handle   # filesystem handle pushed to heap
+CALL :fat16_load_and_run_ody    # load and execute the command
+JMP .cmd_return
+
+.tryfiles_failed_ataerr
+CALL :heap_push_AL
+LDI_C .cmd_failed_ataerr
 CALL :printf
+.tryfiles_failed_notfound
+LDI_C .cmd_unknown_str
+CALL :print
 JMP .cmd_return
 
 .run_cmd                        # It was a match, so fast-forward D to the label
@@ -219,33 +255,29 @@ JMP .print_help_loop
 .print_help_done
 LDI_AL '\n'
 CALL :putchar
+LDI_C .cmd_help_header2
+CALL :print
 CALL :putchar
 RET
 
 .cmd_list
 .cmd_000 "0:\0"             :cmd_setdrive
 .cmd_001 "1:\0"             :cmd_setdrive
-.cmd_020 "ata-id\0"         :cmd_ata_id
-.cmd_030 "ata-read\0"       :cmd_ata_read
-.cmd_035 "cd\0"             :cmd_cd
-.cmd_040 "clear\0"          :cmd_clear
-.cmd_060 "cluster2lba\0"    :cmd_cluster_to_sector
-.cmd_080 "dir\0"            :cmd_dir
-.cmd_090 "extmalloc\0"      :cmd_extmalloc
-.cmd_100 "extfree\0"        :cmd_extfree
-.cmd_110 "help\0"           .print_help
-.cmd_120 "hexdump\0"        :cmd_hexdump
-.cmd_130 "lba2cluster\0"    :cmd_sector_to_cluster
-.cmd_140 "mount\0"          :cmd_mount
-.cmd_150 "next_cluster\0"   :cmd_next_cluster
-.cmd_160 "peek\0"           :cmd_peek
-.cmd_170 "poke\0"           :cmd_poke
-.cmd_190 "setserial\0"      :cmd_setserial
+.cmd_010 "cd\0"             :cmd_cd
+.cmd_020 "clear\0"          :cmd_clear
+.cmd_030 "dir\0"            :cmd_dir
+.cmd_040 "help\0"           .print_help
+.cmd_050 "mount\0"          :cmd_mount
+.cmd_060 "peek\0"           :cmd_peek
+.cmd_070 "poke\0"           :cmd_poke
 .cmd_end 0x00
 
-.cmd_unknown_str "Unrecognized command: [%s]\n\0"
-.cmd_help_header "The following commands are available:\n\0"
+.cmd_unknown_str "Unrecognized command\n\0"
+.cmd_failed_ataerr "ATA error looking for command: 0x%x\n\0"
+.cmd_help_header "The following built-in commands are available:\n\0"
+.cmd_help_header2 "Also, any .ODY files are executable by typing their name.\n\0"
 .prompt "%c:%s> \0"
+.ody_suffix "\.ODY\0"
 
 ######
 # troubleshooting function that prints out the user's
