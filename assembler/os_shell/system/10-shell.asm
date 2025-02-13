@@ -174,6 +174,11 @@ CALL :fat16_get_current_fs_handle   # filesystem handle pushed to heap
 CALL :fat16_load_and_run_ody    # load and execute the command
 JMP .cmd_return
 
+### TODO ###
+# Need to add code that also looks under the /SYS directory for
+# binaries if not found in the current directory
+### TODO ###
+
 .tryfiles_failed_ataerr
 CALL :heap_push_AL
 LDI_C .cmd_failed_ataerr
