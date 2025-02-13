@@ -234,3 +234,43 @@ ALUOP_PUSH %B%+%BH%                     # save BH (token counter) on stack
 CALL :heap_pop_all
 POP_AH                                  # and restore it into AH
 RET
+
+#######
+# Makes a string uppercase.
+#
+# Walks the string referenced in C, and any alphabetic character is
+# remapped to its uppercase equivalent, then written to C. Non-alphabetic
+# characters are copied without modification.  The trailing null is copied
+# to the destination string.
+#
+# Inputs:
+#   C: address of null-terminated source string
+#   D: address to write uppercase string
+#
+# Outputs:
+#   C and D will both point at the null character at the end of the string.
+:strupper
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%BL%
+.strupper_loop
+LDA_C_AL                    # source character into AL
+LDI_BL 'a'
+ALUOP_FLAGS %A-B%+%AL%+%BL% # if source char is before 'a' we'll overflow
+JO .strupper_continue
+LDI_BL 'z'
+ALUOP_FLAGS %B-A%+%AL%+%BL% # if source char is after 'z' we'll overflow
+JO .strupper_continue
+LDI_BL 0b00100000           # we'll clear this bit to make uppercase
+ALUOP_AL %A&~B%+%AL%+%BL%   
+.strupper_continue
+ALUOP_ADDR_D %A%+%AL%       # copy character to D
+ALUOP_FLAGS %A%+%AL%        # check if we are at null
+JZ .strupper_done
+INCR_C                      # if not, move to next char
+INCR_D
+JMP .strupper_loop          # and continue looping
+.strupper_done
+POP_BL
+POP_AL
+RET
+
