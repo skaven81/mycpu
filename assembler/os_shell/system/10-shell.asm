@@ -147,9 +147,8 @@ CALL :strupper                  # make uppercase; C and D point at terminating n
 LDI_C .ody_suffix
 CALL :strcpy                    # append .ODY suffix
 ALUOP_ADDR_D %zero%             # write terminating null to D address
-POP_CL
-POP_CH                          # restore C pointer to beginning of string,
-                                # which is now uppercase, with .ODY extension
+POP_CL                          # restore C pointer to beginning of string,
+POP_CH                          # which is now uppercase, with .ODY extension
 
 CALL :heap_push_C               # filename string to look for
 LDI_AL 0x18
@@ -161,7 +160,10 @@ CALL :heap_pop_A                # result in A
 LDI_BL 0x00
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JEQ .tryfiles_failed_notfound
-LDI_BL 0x02                     # code 1 should never happen because we just set it above
+LDI_BL 0x01
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .tryfiles_failed_nodrive
+LDI_BL 0x02
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JEQ .tryfiles_failed_ataerr
 # Binary is found, A contains the address of a copy
@@ -183,6 +185,13 @@ JMP .cmd_return
 CALL :heap_push_AL
 LDI_C .cmd_failed_ataerr
 CALL :printf
+JMP .tryfiles_failed_notfound
+
+.tryfiles_failed_nodrive
+LDI_C .cmd_failed_nodrive
+CALL :print
+JMP .tryfiles_failed_notfound
+
 .tryfiles_failed_notfound
 LDI_C .cmd_unknown_str
 CALL :print
@@ -279,6 +288,7 @@ RET
 
 .cmd_unknown_str "Unrecognized command\n\0"
 .cmd_failed_ataerr "ATA error looking for command: 0x%x\n\0"
+.cmd_failed_nodrive "Drive not set, can't seek .ODYs\n\0"
 .cmd_help_header "The following built-in commands are available:\n\0"
 .cmd_help_header2 "Also, any .ODY files are executable by typing their name.\n\0"
 .prompt "%c:%s> \0"
