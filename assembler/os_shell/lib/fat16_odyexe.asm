@@ -400,6 +400,8 @@ ALUOP_ADDR_B %A%+%AL%
 LD_BH $odyexe_rewrites_remaining
 LD_BL $odyexe_rewrites_remaining+1
 CALL :decr16_b
+ALUOP_ADDR %B%+%BH% $odyexe_rewrites_remaining
+ALUOP_ADDR %B%+%BL% $odyexe_rewrites_remaining+1
 JMP .rewrite_loop
 
 #######

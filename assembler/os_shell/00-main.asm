@@ -213,6 +213,10 @@ VAR global word $current_drive
 ALUOP_ADDR %zero% $current_drive
 ALUOP_ADDR %zero% $current_drive+1
 
+# Global var used by shell to parse input
+VAR global word $user_input_buf
+VAR global 32 $user_input_tokens # store up to 16 tokens
+
 # Print blank line
 LDI_AL '\n'
 CALL :putchar

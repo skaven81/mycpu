@@ -45,7 +45,7 @@ CALL :printf
 JMP .prompt_done
 
 .nodir_prompt
-LDI_AL '>'
+LDI_AL '!'
 CALL :putchar
 LDI_AL ' '
 CALL :putchar
@@ -74,8 +74,6 @@ CALL :heap_pop_all
 RET                             # if equal, return without doing anything
 
 .process_input
-VAR global word $user_input_buf
-VAR global 32 $user_input_tokens # store up to 16 tokens
 LDI_AL 7                        # allocate 8 blocks (1 segment, 128 bytes)
 CALL :malloc                    # for storing the user's input
 ALUOP_DH %A%+%AH%
