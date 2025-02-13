@@ -135,7 +135,7 @@ ST_DH $fat16_readfile_lba+0
 .sector_read_loop
 LD_BH $fat16_readfile_total_sectors_remaining
 ALUOP_FLAGS %B%+%BH%
-JZ .cluster_read_done           # if we've exhausted all the sectors in the file, we are done.
+JZ .cluster_read_done_noerrors  # if we've exhausted all the sectors in the file, we are done.
 
 LD_BH $fat16_readfile_sectors_remaining_in_cluster
 ALUOP_FLAGS %B%+%BH%
@@ -197,7 +197,7 @@ JMP .sector_read_loop
 # if total_remaining_sectors = 0, we are done
 LD_BH $fat16_readfile_total_sectors_remaining
 ALUOP_FLAGS %B%+%BH%
-JZ .cluster_read_done           # Done if remaining sectors is zero
+JZ .cluster_read_done_noerrors  # Done if remaining sectors is zero
 
 # if not done, we need to load our next cluster
 # $fat16_readfile_current_cluster := fat16_next_cluster($fat16_readfile_fs_handle, $fat16_readfile_current_cluster)
@@ -216,6 +216,7 @@ ST_DH $fat16_readfile_current_cluster
 JMP .cluster_read_loop
 
 # If no errors, return 0x00 status byte
+.cluster_read_done_noerrors
 LDI_AL 0x00
 CALL :heap_push_AL
 .cluster_read_done

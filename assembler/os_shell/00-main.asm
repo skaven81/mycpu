@@ -280,26 +280,19 @@ CALL :heap_push_AH
 LDI_C .mount_seekos_2
 CALL :printf
 
-# TODO - load from disk into memory (later this will be replaced with the ODY loader which
-# does the loading from disk into memory internally)
+# Execute the binary
+CALL :heap_push_A               # directory entry
 LD_BH $drive_0_fs_handle
 LD_BL $drive_0_fs_handle+1
-CALL :heap_push_B               # filesystem handle address
-ST %d_page% 15
-ST %e_page% 16                  # Make 8K contiguous extended memory available 0
-LDI_C 0xd000
-CALL :heap_push_C               # Destination memory address
-LDI_CL 0
-CALL :heap_push_CL              # Max sectors (just first sector)
-CALL :heap_push_A               # Directory entry address
-CALL :fat16_readfile
+CALL :heap_push_B               # filesystem handle
 
-LDI_C .mount_load
-CALL :print
+# This is expected to run forever, but if it does exit,
+# we'll drop into an emergency shell
+CALL :fat16_load_and_run_ody
 
 # Free the directory entry from above (disabled for debugging)
-#LDI_BL 1                        # size 1 = 32 bytes
-#CALL :free                      # A still has the address
+LDI_BL 1                        # size 1 = 32 bytes
+CALL :free                      # A still has the address
 
 # Drop into shell
 .emergency_shell
@@ -366,7 +359,6 @@ RETI
 .mount_setdrive "Setting current drive...\n\0"
 .mount_seekos "Searching for file named %s...\n\0"
 .mount_seekos_1 "Not found\n\0"
-.mount_seekos_2 "Found: directory entry at 0x%x%x\n\0"
-.mount_load "File loaded at 0xd000\n\0"
+.mount_seekos_2 "Found: directory entry at 0x%x%x, executing..\n\0"
 .os_bin_filename "SYSTEM.ODY\0"
 
