@@ -16,7 +16,7 @@
 #
 # To seek a file or dir in the current directory:
 #  1. Push the address of a string with the filename/dirname
-#  2. Push a byte containing a mask used to filter OUT entries based on their attribute byte
+#  2. Push a byte containing a mask used to filter OUT entries based on their attribute byte (0x18 = directories and volume labels; 0x10 = directories)
 #  3. Push a byte containing a mask used to filter IN entries based on their attribute byte (0xff to allow all, even those with 0x00 attribute bytes)
 #  4. CALL :fat16_dir_find
 #  5. Pop the address of a 32-byte memory region that contains a copy of the
