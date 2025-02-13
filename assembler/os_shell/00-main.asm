@@ -213,7 +213,7 @@ VAR global word $current_drive
 ALUOP_ADDR %zero% $current_drive
 ALUOP_ADDR %zero% $current_drive+1
 
-# Global vars used by shell to parse input
+# Global vars used by shell so commands can parse command line args
 VAR global word $user_input_buf
 VAR global 32 $user_input_tokens # store up to 16 tokens
 
@@ -347,7 +347,7 @@ JMP .boot_halt
 RETI
 
 .ok "OK\n\0"
-.hello_banner "Odyssey OS v0.1\n\0"
+.hello_banner "Odyssey OS v1.0\n\n\0"
 .malloc_init_banner "Malloc range 0x%x%x-0x%x%x (%U bytes)\n\0"
 .memtest_str "Extended memory %UK OK\0"
 .memtest_error_str "\nFAILED extended memory test\n\0"
