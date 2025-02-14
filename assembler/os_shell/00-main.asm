@@ -284,20 +284,151 @@ CALL :heap_push_AH
 LDI_C .mount_seekos_2
 CALL :printf
 
-# Execute the binary
-CALL :heap_push_A               # directory entry
+# Load the first sector of the binary into a temporary memory segment
+ALUOP_DH %A%+%AH%
+ALUOP_DL %A%+%AL%               # save directory entry address for freeing later
+LDI_AL 31                       # allocate 512 bytes
+CALL :malloc                    # address in A
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # save temp memory address for freeing later
+
 LD_BH $drive_0_fs_handle
 LD_BL $drive_0_fs_handle+1
 CALL :heap_push_B               # filesystem handle
+CALL :heap_push_C               # target memory address
+LDI_AL 1                        # one sector to load
+CALL :heap_push_AL
+CALL :heap_push_D               # directory entry
+CALL :fat16_readfile
+CALL :heap_pop_AL               # status byte
+ALUOP_FLAGS %A%+%AL%
+JZ .inspect_ody                 # success, proceed to inspect the file
+CALL :heap_push_AL              # error, print ATA error
+LDI_C .mount_seekos_3
+CALL :printf
+JMP .boot_halt
 
-# This is expected to run forever, but if it does exit,
-# we'll emit an error and halt
-CALL :fat16_load_and_run_ody
+# Inspect the binary to make sure it's an ODY, and get the
+# flags byte so we can allocate memory
+.inspect_ody
+CALL :heap_push_C               # temp memory address
+CALL :fat16_inspect_ody
+CALL :heap_pop_AL               # flag/status byte
+LDI_BL 0xff
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JNE .allocate_ody_memory
+LDI_C .mount_seekos_4
+CALL :print
+JMP .boot_halt
 
-# Free the directory entry from above
-# This will never be called, but retained for completeness
-#LDI_BL 1                        # size 1 = 32 bytes
-#CALL :free                      # A still has the address
+# Allocate the proper memory segment for the binary based
+# on the flag byte settings
+.allocate_ody_memory
+LDI_BL 31                       # 512 bytes to free
+MOV_CH_AH
+MOV_CL_AL
+CALL :free                      # free the temporary memory segment
+
+                                # Flag byte is in AL
+LDI_BL 0x03                     # lowest two bits are the memory allocation flag
+ALUOP_AL %A&B%+%AL%+%BL%        # remove all the other bits
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .extmalloc_de
+LDI_BL 0x02
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .extmalloc_e
+LDI_BL 0x01
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .extmalloc_d
+LDI_BL 0x00
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .malloc_main
+JMP .boot_halt                  # should never happen but just in case
+
+.extmalloc_de
+# We don't care about the file size, just allocate two extended
+# memory pages, assign them to D and E, and return 0xd000
+# TODO: test for filesize >8K and abort
+CALL :extmalloc
+CALL :heap_pop_CH
+ST_CH %d_page%
+CALL :extmalloc
+CALL :heap_pop_CL
+ST_CL %e_page%
+LDI_C 0xd000
+JMP .load_and_run
+
+.extmalloc_e
+# We don't care about the file size, just allocate one extended
+# memory page, assign to E, and return 0xe000
+# TODO: test for filesize >8K and abort
+CALL :extmalloc
+CALL :heap_pop_CL
+ST_CL %e_page%
+LDI_C 0xe000
+JMP .load_and_run
+
+.extmalloc_d
+# We don't care about the file size, just allocate one extended
+# memory page, assign to D, and return 0xd000
+# TODO: test for filesize >16K and abort
+CALL :extmalloc
+CALL :heap_pop_CL
+ST_CL %d_page%
+LDI_C 0xd000
+JMP .load_and_run
+
+.malloc_main
+# Round the file size up to the nearest 512 bytes
+CALL :heap_push_D               # directory entry
+CALL :fat16_dirent_filesize
+CALL :heap_pop_A                # low word of file size
+CALL :heap_pop_word             # high word of file size (ignored)
+ALUOP_AH %A>>1%+%AH%
+ALUOP_AH %A+1%+%AH%
+ALUOP_AH %A<<1%+%AH%
+ALUOP_AL %zero%
+# Shift right four positions to get the number of
+# blocks we need to malloc
+CALL :shift16_a_right
+CALL :shift16_a_right
+CALL :shift16_a_right
+CALL :shift16_a_right
+CALL :malloc
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # copy address to C
+JMP .load_and_run
+
+# Load the ODY into RAM
+.load_and_run
+LD_BH $drive_0_fs_handle
+LD_BL $drive_0_fs_handle+1
+CALL :heap_push_B               # filesystem handle
+CALL :heap_push_C               # target memory address
+LDI_AL 0                        # load all sectors
+CALL :heap_push_AL
+CALL :heap_push_D               # directory entry
+CALL :fat16_readfile
+CALL :heap_pop_AL               # status byte
+ALUOP_FLAGS %A%+%AL%
+JZ .localize_ody                # success, proceed to localize the file
+CALL :heap_push_AL              # error, print ATA error
+LDI_C .mount_seekos_5
+CALL :printf
+JMP .boot_halt
+
+.localize_ody
+# Free the directory handle, we no longer need it
+MOV_DH_AH
+MOV_DL_AL
+LDI_B 1                         # 32 bytes to free
+CALL :free
+
+# Localize the ODY memory addresses
+CALL :heap_push_C               # address of binary
+CALL :fat16_localize_ody
+CALL :heap_pop_D                # first byte of program
+CALL_D                          # execute the program - this should never return
 
 # Error! We should not have exited the shell
 .boot_halt
@@ -367,5 +498,8 @@ RETI
 .mount_seekos "Searching for file named %s...\n\0"
 .mount_seekos_1 "Not found\n\0"
 .mount_seekos_2 "Found: directory entry at 0x%x%x, executing..\n\0"
+.mount_seekos_3 "ATA error loading first sector of system binary: 0x%x\n\0"
+.mount_seekos_4 "System binary does not look like an ODY executable\n\0"
+.mount_seekos_5 "ATA error loading system binary: 0x%x\n\0"
 .os_bin_filename "SYSTEM.ODY\0"
 .boot_halt_str "System process exited. Status byte 0x%x\nSystem halted.\n\0"
