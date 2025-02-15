@@ -82,20 +82,13 @@ JEQ .tryfiles_failed_nodrive
 LDI_BL 0x02
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JEQ .tryfiles_failed_ataerr
-CALL :heap_push_C
-PUSH_CH
-PUSH_CL
-LDI_C .run_ody
-CALL :printf
-POP_CL
-POP_CH
 # Binary is found, A contains the address of a copy
 # of the directory entry (which needs to be freed)
+CALL :heap_push_A               # directory entry
+CALL :run_ody
+# free the directory entry
 LDI_BL 1                        # size 1 = 32 bytes
 CALL :free
-#CALL :heap_push_A               # directory entry (freed, but no mallocs between here and there)
-#CALL :fat16_get_current_fs_handle   # filesystem handle pushed to heap
-#CALL :fat16_load_and_run_ody    # load and execute the command
 JMP .cmd_return
 
 ### TODO ###
@@ -193,7 +186,6 @@ CALL :putchar
 RET
 
 .ody_suffix "\.ODY\0"
-.run_ody "Would have executed %s\n\0"
 .cmd_unknown_str "Unrecognized command\n\0"
 .cmd_failed_ataerr "ATA error looking for command: 0x%x\n\0"
 .cmd_failed_nodrive "Drive not set, can't seek .ODYs\n\0"
