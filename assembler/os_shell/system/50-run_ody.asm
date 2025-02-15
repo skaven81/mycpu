@@ -55,10 +55,12 @@ JMP .run_ody_done
 # Allocate the proper memory segment for the binary based
 # on the flag byte settings
 .allocate_ody_memory
+ALUOP_PUSH %A%+%AL%
 LDI_BL 31                       # 512 bytes to free
 MOV_CH_AH
 MOV_CL_AL
 CALL :free                      # free the temporary memory segment
+POP_AL
 
                                 # Flag byte is in AL
 LDI_BL 0x03                     # lowest two bits are the memory allocation flag
@@ -80,6 +82,8 @@ JMP .run_ody_done               # should never happen but just in case
 # We don't care about the file size, just allocate two extended
 # memory pages, assign them to D and E, and return 0xd000
 # TODO: test for filesize >8K and abort
+PUSH_DH
+PUSH_DL
 CALL :extmalloc
 CALL :heap_pop_DH
 ST_DH %d_page%
@@ -87,6 +91,8 @@ CALL :extmalloc
 CALL :heap_pop_DL
 ST_DL %e_page%
 LDI_C 0xd000
+POP_DL
+POP_DH
 CALL .load_and_run
 CALL :heap_push_DL
 CALL :extfree
@@ -98,10 +104,12 @@ JMP .run_ody_done
 # We don't care about the file size, just allocate one extended
 # memory page, assign to E, and return 0xe000
 # TODO: test for filesize >8K and abort
+PUSH_DL
 CALL :extmalloc
 CALL :heap_pop_DL
 ST_DL %e_page%
 LDI_C 0xe000
+POP_DL
 CALL .load_and_run
 CALL :heap_push_DL
 CALL :extfree
@@ -111,10 +119,12 @@ JMP .run_ody_done
 # We don't care about the file size, just allocate one extended
 # memory page, assign to D, and return 0xd000
 # TODO: test for filesize >16K and abort
+PUSH_DL
 CALL :extmalloc
 CALL :heap_pop_DL
 ST_DL %d_page%
 LDI_C 0xd000
+POP_DL
 CALL .load_and_run
 CALL :heap_push_DL
 CALL :extfree
