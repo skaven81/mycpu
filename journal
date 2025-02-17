@@ -1,5 +1,47 @@
-2025-02-08/09: FAT16 directory traversal
-========================================
+2025-02-14..17: VCF SoCal!
+==========================
+
+VCF SoCal was Feb 15, and I wanted to have a working example of FAT16 traversal
+as well as ODY executables working.  It was tight, but I got it all working
+just before the event.
+
+I ran into some serious problems with the ODY load-and-execute function, likely
+due to stack corruption.  I ended up breaking that function down into its two
+key methods, one for analysing an ODY file and extracting its flag byte, and
+another that localizes an ODY that has been loaded into memory.  The caller is
+now responsible for finding the ODY file, allocating memory, and loading the ODY
+into memory.  This actually works out better since there are already at least
+two different methodologies around this -- one in the BIOS where we don't actually
+care to retain the address of the allocated memory, and don't actually care
+what the flag byte says regarding memory allocation location, and thus can
+skip the "analyze ODY" part of the sequence, as well as freeing memory when
+the binary is done (since it will never exit).  Meanwhile, the OS shell DOES
+need to do all those things, for calling ODY commands.
+
+All of this is now working and the demos went great at VCF.
+
+What's next -- there's a laundry list:
+  * Update the website with the latest changes, and some new photos showing
+    the ATA port.  Maybe add a video showing the new functionality in action.
+  * Rework the terminal input and output systems to use some industry standard
+    TTY coding, such as VT220 ANSI, and hopefully improve the speed of printing
+    content to the display.
+  * Revisit the peripheral support routines, for example to ensure that the
+    RTC timer interrupt is disabled under normal conditions, and only activates
+    when in use
+  * The output of the above updates might be an animation player (B/W=BadApple,
+    color=RickRoll?)
+  * Add a programmable timer interrupt controller (probably 82C54)
+  * Add a sound peripheral, perhaps a Yamaha OPL-3 (YMF262) from the SB16. There
+    are community maintained file formats like VGM (video game music format) that
+    have supporting tools for playback and composition.  The VGM format supports
+    storing the raw OPL-3 register updates, making playback easier than something
+    like MOD.
+  * Maybe add a LCD?
+
+
+2025-02-08..09: FAT16 directory traversal
+=========================================
 
 I have now added code to the startup sequence that allocates dedicated memory
 regions for the "0:" and "1:" drive filesystem handles, with global variables.
