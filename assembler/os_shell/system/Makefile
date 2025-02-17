@@ -16,5 +16,12 @@ $(FILENAME): $(ASM_FILES) ../os.sym ../opcodes.out
 	@[ $$(echo -n $(DIRNAME) | wc -c) -le 8 ] # command names cannot be more than 8 characters
 	../../assembler.py $(VERBOSE_FLAG) --opcodes ../opcodes.out --symbols ../os.sym $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) --odyssey --odyssey-target $(MEM_TARGET) --output $(FILENAME) $(ASM_FILES) 2>&1 | tee assembler.log
 
+.PHONY: sdcard
+sdcard: $(FILENAME)
+	@test -d $(INSTALL_DIRECTORY) || ( echo ERROR: $(INSTALL_DIRECTORY) does not exist && exit 1 )
+	@mkdir -p $(INSTALL_DIRECTORY)
+	@cp -v $(FILENAME) $(INSTALL_DIRECTORY)/$(FILENAME)
+
+.PHONY: clean
 clean:
 	rm -f $(FILENAME)
