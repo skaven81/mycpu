@@ -221,26 +221,32 @@ VAR global 32 $user_input_tokens # store up to 16 tokens
 LDI_AL '\n'
 CALL :putchar
 
-#######
-# OS Loader sequence
-#######
+# Attempt to mount drives
+LDI_C $drive_1_fs_handle
+CALL :heap_push_C
+LDI_C $drive_0_fs_handle
+CALL :heap_push_C
 
-# Attempt to mount drive 0
-LDI_C .mount_0
-CALL :print
-LD_BH $drive_0_fs_handle
-LD_BL $drive_0_fs_handle+1
+LDI_AH 0x00                     # AH = current drive we're working on
+.mount_drives_loop
+CALL :heap_push_AH
+LDI_C .mount_0_str
+CALL :printf
+CALL :heap_pop_C                # Load filesystem handle address into B
+LDA_C_BH
+INCR_C
+LDA_C_BL
 CALL :heap_push_B               # address of filesystem handle
 LDI_C 0x0000
 CALL :heap_push_C               # high word of filesystem start sector (0x0000)
 CALL :heap_push_C               # low word of filesystem start sector (0x0000)
-CALL :heap_push_CL              # ATA device ID (0)
+CALL :heap_push_AH              # ATA device ID (AH)
 CALL :fat16_mount
 CALL :heap_pop_AL               # status byte
 LDI_BL 0xff
 ALUOP_FLAGS %A&B%+%AL%+%BL%     # 0xff = drive not attached
-JZ .mount_success               # 0x00 = success, move on
-LDI_C .mount_1                  # otherwise, print our failure header
+JZ .mount_drives_loop_end       # 0x00 = success, move on
+LDI_C .mount_1_str              # otherwise, print our failure header
 CALL :print
 JEQ .mount_failed_not_attached
 LDI_BL 0xfd
@@ -251,7 +257,43 @@ ALUOP_FLAGS %A&B%+%AL%+%BL%     # 0xfe = Not a FAT16 filesystem
 JEQ .mount_failed_notfat16
 JMP .mount_failed_ataerror      # other = ATA error
 
-.mount_success
+# Failure conditions when mounting
+.mount_failed_not_attached
+LDI_C .mount_2_str
+CALL :heap_push_AL
+CALL :printf
+JMP .mount_drives_loop_end
+
+.mount_failed_extmalloc
+LDI_C .mount_3_str
+CALL :heap_push_AL
+CALL :printf
+JMP .mount_drives_loop_end
+
+.mount_failed_notfat16
+LDI_C .mount_4_str
+CALL :heap_push_AL
+CALL :printf
+JMP .mount_drives_loop_end
+
+.mount_failed_ataerror
+LDI_C .mount_5_str
+CALL :heap_push_AL
+CALL :printf
+JMP .mount_drives_loop_end
+
+.mount_drives_loop_end
+ALUOP_AH %A+1%+%AH%
+LDI_BL 0x02
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .mount_drives_done
+JMP .mount_drives_loop
+.mount_drives_done
+
+#######
+# OS Loader sequence
+#######
+
 # Set 0 as current drive
 LDI_C .mount_setdrive
 CALL :print
@@ -437,23 +479,6 @@ LDI_C .boot_halt_str
 CALL :printf
 HLT
 
-# Failure conditions when mounting
-.mount_failed_not_attached
-LDI_C .mount_2
-JMP .mount_failed_finish
-
-.mount_failed_extmalloc
-LDI_C .mount_3
-JMP .mount_failed_finish
-
-.mount_failed_notfat16
-LDI_C .mount_4
-JMP .mount_failed_finish
-
-.mount_failed_ataerror
-LDI_C .mount_5
-JMP .mount_failed_finish
-
 .mount_failed_finish
 CALL :heap_push_AL
 CALL :printf
@@ -461,14 +486,14 @@ JMP .boot_halt
 
 # Failure conditions when seeking the OS binary
 .seekos_failed_notfound
-LDI_C .mount_1
+LDI_C .mount_1_str
 CALL :print
 LDI_C .mount_seekos_1
 CALL :print
 JMP .boot_halt
 
 .seekos_failed_ataerr
-LDI_C .mount_5
+LDI_C .mount_5_str
 CALL :heap_push_AL
 CALL :printf
 JMP .boot_halt
@@ -486,14 +511,14 @@ RETI
 .uart_init_banner "UART init 9600,8n1 \0"
 .clockspeed_banner "Current CPU frequency %UkHz\n\0"
 .clock_banner "Current clock %B%B-%B-%B %B:%B:%B\n\0" # YYYY-MM-DD HH:MM:SS
-.ata_banner "ATA %u: %s\n\0"
+.ata_banner "ATA%u: %s\n\0"
 .mount_filehandle "Filesystem handle address for drive %c: 0x%x%x\n\0"
-.mount_0 "Mounting drive 0...\n\0"
-.mount_1 "FAILED: \0"
-.mount_2 "Drive 0 not responding (code 0x%x)\n\0"
-.mount_3 "Extmalloc failed (code 0x%x)\n\0"
-.mount_4 "Not a FAT16 filesystem (code 0x%x)\n\0"
-.mount_5 "ATA error (code 0x%x)\n\0"
+.mount_0_str "Mounting drive %u...\n\0"
+.mount_1_str "FAILED: \0"
+.mount_2_str "Drive 0 not responding (code 0x%x)\n\0"
+.mount_3_str "Extmalloc failed (code 0x%x)\n\0"
+.mount_4_str "Not a FAT16 filesystem (code 0x%x)\n\0"
+.mount_5_str "ATA error (code 0x%x)\n\0"
 .mount_setdrive "Setting current drive...\n\0"
 .mount_seekos "Searching for file named %s...\n\0"
 .mount_seekos_1 "Not found\n\0"
