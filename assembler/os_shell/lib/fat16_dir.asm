@@ -14,7 +14,7 @@
 #     - Same return semantics as :fat16_dirwalk_start
 #  7. CALL :fat16_dirwalk_end to free the allocated memory
 #
-# To seek a file or dir in the current directory:
+# To seek a file or dir in a specific directory:
 #  1. Push a word containing the filesystem handle
 #  2. Push a word containing the cluster to search
 #  3. Push the address of a string with the filename/dirname
