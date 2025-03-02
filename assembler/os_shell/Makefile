@@ -26,8 +26,9 @@ all: os.hex os.sym $(SHELL_COMMANDS:%=%/all)
 opcodes.out: $(OPCODES)
 	bash -c "$(OPCODES) > $@"
 
-os.hex os.sym: $(BIOS_SOURCES) $(LIBS) opcodes.out $(MACROS)
+os.hex: $(BIOS_SOURCES) $(LIBS) opcodes.out $(MACROS)
 	../assembler.py $(VERBOSE_FLAG) --opcodes opcodes.out $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) $(BIOS_SOURCES) $(LIBS) --output $@ --output-symbols $(@:.hex=.sym) 2>&1 | tee assembler.log
+os.sym: os.hex
 
 # Create targets like ascii/all and clock/all, etc. and make them depend
 # on the symbol table and opcodes file. If these dependencies change, run
@@ -43,9 +44,9 @@ $(SHELL_COMMANDS:%=%/sdcard): %/sdcard: %/all
 
 # utility targets for programming the EEPROM
 .PHONY: program program1
-program: all
+program: os.hex
 	~/serial-eeprom-programmer/programmer write os.hex
-program1: all
+program1: os.hex
 	~/serial-eeprom-programmer/programmer --port /dev/ttyUSB1 write os.hex
 
 # Cleanup routines
