@@ -1,3 +1,26 @@
+2025-03-02: FAT16 pathfind
+==========================
+
+Yesterday I got the 2.5" IDE hard drive mounted to the Odyssey board. the
+installation looks good and the hard drive seems to be working properly.
+
+I spent today working to modernize the FAT16 file location code.  First I
+removed the unnecessary $current_drive global var, and replaced it with a
+$current_fs_handle global var, since the drive ID is embedded in the filesystem
+handle, and having the handle for the current mounted filesystem is much
+better than just having a char '0' or '1' describing the current drive.
+
+Next I tackled the fat16_pathfind function, which is able to take a path spec
+like 0:/SYS/HEXDUMP.ODY or ../FOO.TXT and return the relevant directory
+entry.  It seems to be working properly now, but I have left in the debug
+print statements for now as it's integrated into other components.
+
+Right now there's just a `pathfind` utility that calls it. I need to
+convert commands like `cd` and the shell's command search function, and
+the bootloader, to all use the new pathfind behavior.  But that will be
+an exercise for some other time.
+
+
 2025-02-14..17: VCF SoCal!
 ==========================
 
