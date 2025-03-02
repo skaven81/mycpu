@@ -82,13 +82,11 @@ ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %B%+%BL%
 
-CALL :heap_pop_C                    # C = address of path string
-
 # If second char of C is ':' and first char is '0' or '1', this is an absolute path
 LDA_C_AH                            # AH = drive letter '0' or '1'
 INCR_C
 LDA_C_AL                            # AL = colon
-DECR_C
+DECR_C                              # restore C pointer
 
 LDI_BL ':'                          # check for the colon first
 ALUOP_FLAGS %A&B%+%AL%+%BL%
