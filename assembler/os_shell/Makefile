@@ -20,7 +20,8 @@ $(shell mkdir -p $(STAMPS_DIR))
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 
-all: os.hex $(SHELL_COMMANDS:%=%/all)
+.PHONY: all
+all: os.hex os.sym $(SHELL_COMMANDS:%=%/all)
 
 opcodes.out: $(OPCODES)
 	bash -c "$(OPCODES) > $@"
