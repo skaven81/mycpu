@@ -28,6 +28,7 @@ POP_AL
 POP_AH
 RET
 
+######
 # Returns the current drive number (0 or 1) by reading
 # the $current_fs_handle pointer then extracting the ATA ID from
 # the referenced filesystem handle
@@ -63,3 +64,69 @@ POP_BH
 POP_AL
 POP_AH
 RET
+
+######
+# Given a path string, returns a filesystem handle referenced by
+# that path. So for example `0:/FOO` would return $drive_0_fs_handle
+# while `1:/FOO` would return $drive_1_fs_handle.  Relative paths
+# return $current_fs_handle.
+#
+# To use:
+#  1. Load the address of the path string into C
+#  2. Call the function
+#  3. Pop the filesystem handle.  If the high byte is 0x00 then
+#     the string was unparseable. C will point at the beginning
+#     of the path (skipping over 0: or 1: if present)
+:fat16_get_fs_handle_from_path
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+
+CALL :heap_pop_C                    # C = address of path string
+
+# If second char of C is ':' and first char is '0' or '1', this is an absolute path
+LDA_C_AH                            # AH = drive letter '0' or '1'
+INCR_C
+LDA_C_AL                            # AL = colon
+DECR_C
+
+LDI_BL ':'                          # check for the colon first
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JNE .gfhfp_current_drive            # no colon = current drive
+LDI_BL '0'
+ALUOP_FLAGS %A&B%+%AH%+%BL%         # check for '0'
+JEQ .gfhfp_drive_0
+LDI_BL '1'
+ALUOP_FLAGS %A&B%+%AH%+%BL%         # check for '1'
+JEQ .gfhfp_drive_1
+JMP .gfhfp_syntax_error
+
+.gfhfp_drive_0
+LD_AH $drive_0_fs_handle
+LD_AL $drive_0_fs_handle+1
+INCR_C                              # Move C past `0:`
+INCR_C
+JMP .gfhfp_done
+
+.gfhfp_drive_1
+LD_AH $drive_1_fs_handle
+LD_AL $drive_1_fs_handle+1
+INCR_C                              # Move C past `1:`
+INCR_C
+JMP .gfhfp_done
+
+.gfhfp_current_drive
+LD_AH $current_fs_handle
+LD_AL $current_fs_handle+1
+JMP .gfhfp_done                     # Keep C at beginning of string
+
+.gfhfp_syntax_error
+LDI_A 0x0000
+
+.gfhfp_done
+CALL :heap_push_A
+POP_BL
+POP_AL
+POP_AH
+RET
+

@@ -15,16 +15,17 @@
 #  7. CALL :fat16_dirwalk_end to free the allocated memory
 #
 # To seek a file or dir in the current directory:
-#  1. Push the address of a string with the filename/dirname
-#  2. Push a byte containing a mask used to filter OUT entries based on their attribute byte (0x18 = directories and volume labels; 0x10 = directories)
-#  3. Push a byte containing a mask used to filter IN entries based on their attribute byte (0xff to allow all, even those with 0x00 attribute bytes)
-#  4. CALL :fat16_dir_find
-#  5. Pop the address of a 32-byte memory region that contains a copy of the
+#  1. Push a word containing the filesystem handle
+#  2. Push a word containing the cluster to search
+#  3. Push the address of a string with the filename/dirname
+#  4. Push a byte containing a mask used to filter OUT entries based on their attribute byte (0x18 = directories and volume labels; 0x10 = directories)
+#  5. Push a byte containing a mask used to filter IN entries based on their attribute byte (0xff to allow all, even those with 0x00 attribute bytes)
+#  6. CALL :fat16_dir_find
+#  7. Pop the address of a 32-byte memory region that contains a copy of the
 #     directory entry you were looking for.
 #     * If 0x0000, the file/dir was not found.
-#     * If 0x0100, there is no current drive set or it's not mounted
 #     * If 0x02nn, an ATA error occurred, and the error code is nn
-#  6. If found, be sure to :free (size 1, 32 bytes) the returned memory address
+#  8. If found, be sure to :free (size 1, 32 bytes) the returned memory address
 #
 # Note: these functions are not reentrant-safe due to the use of global vars
 # to store the directory entry data.
@@ -52,21 +53,8 @@ ST_CL $dirwalk_find_filter_in
 CALL :heap_pop_CL                   # filter OUT mask
 ST_CL $dirwalk_find_filter_out
 CALL :heap_pop_D                    # name string to match
-
-# Get current drive and a pointer to its filesystem handle
-LD_AH $current_fs_handle
-LD_AL $current_fs_handle+1          # A = filesystem handle
-ALUOP_FLAGS %A%+%AH%
-JNZ .dir_find_fs_handle_valid
-ALUOP_FLAGS %A%+%AL%
-JNZ .dir_find_fs_handle_valid
-JMP .dir_find_abort_not_mounted      # if the current fs handle was null, abort
-
-.dir_find_fs_handle_valid
-# Retrieve current directory cluster number and push it to heap
-CALL :heap_push_A
-CALL :fat16_get_current_directory_cluster
-CALL :heap_pop_C                    # C = current directory cluster
+CALL :heap_pop_C                    # cluster to search
+CALL :heap_pop_A                    # filesystem handle
 
 # Push the current directory cluster
 CALL :heap_push_C
@@ -177,13 +165,6 @@ POP_BH
 POP_AL
 POP_AH
 RET
-
-
-
-.dir_find_abort_not_mounted
-LDI_C 0x0100
-CALL :heap_push_C
-JMP .dir_find_done
 
 .dir_find_abort_ata_error
 LDI_AH 0x02                     # the ATA error code is already in AL

@@ -309,6 +309,11 @@ LDI_C .os_bin_filename
 CALL :heap_push_C
 LDI_C .mount_seekos
 CALL :printf
+LD_CH $current_fs_handle
+LD_CL $current_fs_handle+1
+CALL :heap_push_C               # filesystem handle
+LDI_C 0x0000
+CALL :heap_push_C               # cluster number (root dir)
 LDI_C .os_bin_filename
 CALL :heap_push_C               # filename we are looking for
 LDI_CL 0x18

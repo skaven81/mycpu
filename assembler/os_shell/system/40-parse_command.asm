@@ -66,6 +66,17 @@ ALUOP_ADDR_D %zero%             # write terminating null to D address
 POP_CL                          # restore C pointer to beginning of string,
 POP_CH                          # which is now uppercase, with .ODY extension
 
+PUSH_DH
+PUSH_DL
+LD_DH $current_fs_handle
+LD_DL $current_fs_handle+1
+CALL :heap_push_D               # filesystem handle
+
+CALL :heap_push_D
+CALL :fat16_get_current_directory_cluster # push cluster of directory to search
+POP_DL
+POP_DH
+
 CALL :heap_push_C               # filename string to look for
 LDI_AL 0x18
 CALL :heap_push_AL              # filter OUT = directories and volume labels
