@@ -30,7 +30,8 @@ LDI_AL '0'
 LDI_BL '/'
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JNE .err_not_mounted
-ALUOP_ADDR %A%+%AL% $current_drive
+ST_CH $current_fs_handle
+ST_CL $current_fs_handle+1
 RET
 
 .setdrive_1
@@ -42,7 +43,8 @@ LDI_AL '1'
 LDI_BL '/'
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JNE .err_not_mounted
-ALUOP_ADDR %A%+%AL% $current_drive
+ST_CH $current_fs_handle
+ST_CL $current_fs_handle+1
 RET
 
 .err_not_mounted

@@ -5,10 +5,14 @@
 :cmd_dir
 
 # Get current drive and a pointer to its filesystem handle
-CALL :fat16_get_current_fs_handle
-CALL :heap_pop_A                # A = filesystem handle
+LD_AH $current_fs_handle
+LD_AL $current_fs_handle+1      # A = filesystem handle
 ALUOP_FLAGS %A%+%AH%
-JZ .abort_not_mounted           # if the current drive was null, result will be zero
+JNZ .current_fs_handle_valid
+ALUOP_FLAGS %A%+%AL%
+JNZ .current_fs_handle_valid
+JMP .abort_not_mounted          # if the current filesystem was null, result will be zero
+.current_fs_handle_valid
 
 # Retrieve directory cluster number and push it to heap
 CALL :heap_push_A

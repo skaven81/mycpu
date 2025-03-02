@@ -207,11 +207,12 @@ CALL :heap_push_AL
 LDI_C .mount_filehandle
 CALL :printf
 
-# Global var for storing our current active drive ('0' or '1')
+# Global var for storing our current active drive, a pointer
+# to either $drive_0_fs_handle or $drive_1_fs_handle.
 # Will be null if no drive is selected
-VAR global word $current_drive
-ALUOP_ADDR %zero% $current_drive
-ALUOP_ADDR %zero% $current_drive+1
+VAR global word $current_fs_handle
+ST $current_fs_handle   0x00
+ST $current_fs_handle+1 0x00
 
 # Global vars used by shell so commands can parse command line args
 VAR global word $user_input_buf
@@ -297,8 +298,11 @@ JMP .mount_drives_loop
 # Set 0 as current drive
 LDI_C .mount_setdrive
 CALL :print
-LDI_AL '0'
-ALUOP_ADDR %A%+%AL% $current_drive
+LD_CH $drive_0_fs_handle
+LD_CL $drive_0_fs_handle+1
+ST_CH $current_fs_handle
+ST_CL $current_fs_handle+1
+## TODO: seek SYSTEM.ODY on drive 0 and 1
 
 # Walk root directory looking for OS binary
 LDI_C .os_bin_filename

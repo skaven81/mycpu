@@ -54,11 +54,15 @@ ST_CL $dirwalk_find_filter_out
 CALL :heap_pop_D                    # name string to match
 
 # Get current drive and a pointer to its filesystem handle
-CALL :fat16_get_current_fs_handle
-CALL :heap_pop_A                    # A = filesystem handle
+LD_AH $current_fs_handle
+LD_AL $current_fs_handle+1          # A = filesystem handle
 ALUOP_FLAGS %A%+%AH%
-JZ .dir_find_abort_not_mounted      # if the current drive was null, result will be zero
+JNZ .dir_find_fs_handle_valid
+ALUOP_FLAGS %A%+%AL%
+JNZ .dir_find_fs_handle_valid
+JMP .dir_find_abort_not_mounted      # if the current fs handle was null, abort
 
+.dir_find_fs_handle_valid
 # Retrieve current directory cluster number and push it to heap
 CALL :heap_push_A
 CALL :fat16_get_current_directory_cluster

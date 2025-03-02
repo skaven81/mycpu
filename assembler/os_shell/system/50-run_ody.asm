@@ -16,8 +16,8 @@ PUSH_DL
 CALL :heap_pop_D                # directory handle
 
 # Get current drive and a pointer to its filesystem handle
-CALL :fat16_get_current_fs_handle
-CALL :heap_pop_B                # A = filesystem handle
+LD_BH $current_fs_handle
+LD_BL $current_fs_handle+1      # B = filesystem handle
 
 # Load the first sector of the binary into a temporary memory segment
 LDI_AL 31                       # allocate 512 bytes
@@ -163,7 +163,14 @@ RET
 .load_and_run
 CALL :heap_push_all
 
-CALL :fat16_get_current_fs_handle # filesystem handle on heap
+PUSH_DH
+PUSH_DL
+LD_DH $current_fs_handle
+LD_DL $current_fs_handle+1
+CALL :heap_push_D               # filesystem handle on heap
+POP_DL
+POP_DH
+
 CALL :heap_push_C               # target memory address
 LDI_AL 0                        # load all sectors
 CALL :heap_push_AL
