@@ -306,6 +306,8 @@ RET
 # FILENAME EXT YYYY-MM-DD HH:MM 0x00001234 (for files >64K in size)
 # DIR      EXT YYYY-MM-DD HH:MM <DIR>      (for directories)
 #
+# The string will be null-terminated not have a trailing newline.
+#
 # The filename and extension will be padded with spaces to maintain column widths.
 # The YYYY-MM-DD HH:MM will be the last write timestamp.
 # The size will be in decimal if <= 64k, otherwise a 32-bit hexadecimal number
