@@ -481,6 +481,27 @@ RET
 .str_fat16 "FAT16\0"
 
 ####
+# Retrieve the ATA ID from a filesystem handle
+#  1. Push the address of the handle
+#  2. Call the function
+#  3. Pop a byte that contains 0x0 or 0x1 (or garbage if the handle is corrupt)
+:fat16_handle_get_ataid
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+CALL :heap_pop_B
+LDI_A 0x005f
+CALL :add16_to_b
+LDA_B_AL
+CALL :heap_push_AL
+POP_AL
+POP_AH
+POP_BL
+POP_BH
+RET
+
+####
 # Print a human-readable FAT16 filesystem descriptor
 #  1. Push the address of the descriptor onto the heap
 #  2. Call the function
