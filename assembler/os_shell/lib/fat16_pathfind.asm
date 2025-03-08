@@ -170,8 +170,8 @@ CALL :heap_push_A                   # name to search for
 CALL :heap_push_A   # name
 CALL :heap_push_BL  # cluster
 CALL :heap_push_BH  # cluster
-CALL :heap_push_DL  # cluster
-CALL :heap_push_DH  # cluster
+CALL :heap_push_DL  # fs handle
+CALL :heap_push_DH  # fs handle
 PUSH_CH
 PUSH_CL
 LDI_C .debug_loop
