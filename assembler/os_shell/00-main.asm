@@ -435,17 +435,38 @@ CALL :heap_push_D               # directory entry
 CALL :fat16_dirent_filesize
 CALL :heap_pop_A                # low word of file size
 CALL :heap_pop_word             # high word of file size (ignored)
+
+CALL :heap_push_AL              # push filesize for printf later
+CALL :heap_push_AH
+
+# Our goal is to take the 16-bit filesize and convert it to a malloc
+# number that is rounded up to the nearest 512 bytes.
+#
+# Rounding to the nearest 512 bytes means clearing the lowest 9 bits
+# (which rounds _down_ to the nearest 512 bytes), so we then need to
+# add 0x0200 to the result to round up. Observe that this means we
+# completely ignore the bottom 8 bits.  So the "add" step is really
+# to just add 0x02 to the high byte, and set the low byte to zero.
+# We can simplify the addition so that we only need to add 0x01 to the
+# high byte, by shifting it right first, then adding 1, then shifting
+# left.
 ALUOP_AH %A>>1%+%AH%
 ALUOP_AH %A+1%+%AH%
 ALUOP_AH %A<<1%+%AH%
 ALUOP_AL %zero%
-# Shift right four positions to get the number of
-# blocks we need to malloc
+# Shift right four positions (divide by 16) to get the number of blocks we need to malloc
 CALL :shift16_a_right
 CALL :shift16_a_right
 CALL :shift16_a_right
 CALL :shift16_a_right
+# But this is the actual number of blocks; malloc expects that number, minus one.
+ALUOP_AL %A-1%+%AL%
+CALL :heap_push_AL              # push block count for printf later
 CALL :malloc
+CALL :heap_push_AL              # push malloc address for printf
+CALL :heap_push_AH
+LDI_C .ody_malloc
+CALL :printf
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%               # copy address to C
 JMP .load_and_run
@@ -537,3 +558,4 @@ RETI
 .mount_seekos_5 "ATA error loading system binary: 0x%x\n\0"
 .os_bin_filename "SYSTEM.ODY\0"
 .boot_halt_str "System process exited. Status byte 0x%x\nSystem halted.\n\0"
+.ody_malloc "SYSTEM.ODY loaded at 0x%x%x size %u from filesize 0x%x%x\n\0"

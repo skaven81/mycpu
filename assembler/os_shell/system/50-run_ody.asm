@@ -128,18 +128,40 @@ CALL :heap_push_D               # directory entry
 CALL :fat16_dirent_filesize
 CALL :heap_pop_A                # low word of file size
 CALL :heap_pop_word             # high word of file size (ignored)
+
+CALL :heap_push_AL              # DEBUG
+CALL :heap_push_AH              # DEBUG Push filesize for printf
+
+# Our goal is to take the 16-bit filesize and convert it to a malloc
+# number that is rounded up to the nearest 512 bytes.
+#
+# Rounding to the nearest 512 bytes means clearing the lowest 9 bits
+# (which rounds _down_ to the nearest 512 bytes), so we then need to
+# add 0x0200 to the result to round up. Observe that this means we
+# completely ignore the bottom 8 bits.  So the "add" step is really
+# to just add 0x02 to the high byte, and set the low byte to zero.
+# We can simplify the addition so that we only need to add 0x01 to the
+# high byte, by shifting it right first, then adding 1, then shifting
+# left.
 ALUOP_AH %A>>1%+%AH%
 ALUOP_AH %A+1%+%AH%
 ALUOP_AH %A<<1%+%AH%
 ALUOP_AL %zero%
-# Shift right four positions to get the number of
-# blocks we need to malloc
+# Shift right four positions to get the number of blocks we need to malloc
 CALL :shift16_a_right
 CALL :shift16_a_right
 CALL :shift16_a_right
 CALL :shift16_a_right
+# But this is the actual number of blocks; malloc expects that number, minus one.
+ALUOP_AL %A-1%+%AL%
+
 ALUOP_BL %A%+%AL%               # save malloc size for freeing
+CALL :heap_push_AL              # DEBUG push malloc size for printf
 CALL :malloc
+CALL :heap_push_AL              # DEBUG push resulting addr for printf
+CALL :heap_push_AH              # DEBUG
+LDI_C .ody_malloc               # DEBUG
+CALL :printf                    # DEBUG
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%               # copy address to C
 CALL .load_and_run
@@ -199,3 +221,4 @@ RET
 .ata_err1 "ATA error loading first sector of binary: 0x%x\n\0"
 .ata_err2 "ATA error loading binary: 0x%x\n\0"
 .ody_err1 "Error: file does not look like an ODY executable\n\0"
+.ody_malloc "ODY loaded at 0x%x%x size %u from filesize 0x%x%x\n\0"
