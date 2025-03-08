@@ -20,7 +20,8 @@
 #       * 0x00 - everything was fine, but the requested file/dir was not found
 #       * 0x01 - the provided path had a syntax error
 #     * 0x01 - ATA error, and the low byte is the ATA status byte
-#  4. If found, free the returned memory (size 1, 32 bytes)
+#  4. If it wasn't an error, pop the address of the filesystem handle
+#  5. If it wasn't an error, free the returned memory (size 1, 32 bytes)
 #
 # Algorithm used:
 #   1. if first chars of path are '0:' or '1:', set the working drive to that,
@@ -155,6 +156,7 @@ PUSH_CL
 #  C = path token array
 #  D = filesystem handle
 ####
+
 .fat16_pathfind_loop
 CALL :heap_push_D                   # filesystem handle
 CALL :heap_push_B                   # cluster(dir) to search
@@ -222,6 +224,7 @@ JMP .fat16_pathfind_loop
 .next_token_null2
 # next token is null, so the entry we found must be what
 # we were looking for, so return it.
+CALL :heap_push_D                   # since we're returning a directory entry, also push the filesystem handle
 CALL :heap_push_A                   # return the directory entry, don't free it
 JMP .fat16_pathfind_done
 
