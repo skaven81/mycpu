@@ -1,6 +1,6 @@
 # vim: ts=4 sts=4 sw=4 noexpandtab
 
-BIOS_SOURCES := 00-main.asm
+BIOS_SOURCES := $(sort $(wildcard *.asm))
 LIBS := $(wildcard lib/*.asm)
 OPCODES := ../gen_opcodes.sh
 MACROS := ../asm_macros
