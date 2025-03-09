@@ -216,6 +216,11 @@ VAR global word $current_fs_handle_ptr
 ST $current_fs_handle_ptr   0x00
 ST $current_fs_handle_ptr+1 0x00
 
+# Global var for storing the filesystem handle that we booted from
+VAR global word $boot_fs_handle_ptr
+ST $boot_fs_handle_ptr   0x00
+ST $boot_fs_handle_ptr+1 0x00
+
 # Global vars used by shell so commands can parse command line args
 VAR global word $user_input_buf
 VAR global 32 $user_input_tokens # store up to 16 tokens
@@ -245,7 +250,7 @@ CALL :fat16_mount
 CALL :heap_pop_AL               # status byte
 LDI_BL 0xff
 ALUOP_FLAGS %A&B%+%AL%+%BL%     # 0xff = drive not attached
-JZ .mount_drives_loop_end       # 0x00 = success, move on
+JZ .mount_drives_ok             # 0x00 = success, move on
 LDI_C .mount_1_str              # otherwise, print our failure header
 CALL :print
 JEQ .mount_failed_not_attached
@@ -282,6 +287,11 @@ CALL :heap_push_AL
 CALL :printf
 JMP .mount_drives_loop_end
 
+.mount_drives_ok
+LDI_C .ok
+CALL :print
+JMP .mount_drives_loop_end
+
 .mount_drives_loop_end
 ALUOP_AH %A+1%+%AH%
 LDI_BL 0x02
@@ -295,139 +305,63 @@ JMP .mount_drives_loop
 #######
 
 # Set 0 as current drive
-LDI_C .mount_setdrive
-CALL :print
 LDI_C $drive_0_fs_handle
 ST_CH $current_fs_handle_ptr
 ST_CL $current_fs_handle_ptr+1
-## TODO: seek SYSTEM.ODY on drive 0 and 1
+ST_CH $boot_fs_handle_ptr
+ST_CL $boot_fs_handle_ptr+1
 
-# Walk root directory looking for OS binary
+# Check for SYSTEM.ODY on that drive
 LDI_C .os_bin_filename
 CALL :heap_push_C
-LDI_C .mount_seekos
-CALL :printf
-LD_CH $current_fs_handle_ptr
-LD_CL $current_fs_handle_ptr+1
-CALL :heap_push_C               # filesystem handle
-LDI_C 0x0000
-CALL :heap_push_C               # cluster number (root dir)
+CALL :fat16_pathfind
+CALL :heap_pop_A                # pointer to dirent if success, or 0x00.. or 0x01.. if error
+LDI_BL 0x01
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .try_drive_1
+ALUOP_FLAGS %A%+%AH%
+JZ .try_drive_1
+JMP .found_system_ody
+
+.try_drive_1
+# Set 1 as current drive
+LDI_C $drive_1_fs_handle
+ST_CH $current_fs_handle_ptr
+ST_CL $current_fs_handle_ptr+1
+ST_CH $boot_fs_handle_ptr
+ST_CL $boot_fs_handle_ptr+1
+
+# Check for SYSTEM.ODY on that drive
 LDI_C .os_bin_filename
-CALL :heap_push_C               # filename we are looking for
-LDI_CL 0x18
-CALL :heap_push_CL              # filter OUT = directories and volume labels
-LDI_CL 0xff
-CALL :heap_push_CL              # filter IN = all files
-CALL :fat16_dir_find
-CALL :heap_pop_A                # result in A
-LDI_BL 0x00
+CALL :heap_push_C
+CALL :fat16_pathfind
+CALL :heap_pop_A                # pointer to dirent if success, or 0x00.. or 0x01.. if error
+LDI_BL 0x01
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JEQ .seekos_failed_notfound
-LDI_BL 0x02                     # code 1 should never happen because we just set it above
-ALUOP_FLAGS %A&B%+%AH%+%BL%
-JEQ .seekos_failed_ataerr
+ALUOP_FLAGS %A%+%AH%
+JZ .seekos_failed_notfound
+JMP .found_system_ody
+
 # Binary is found, A contains the address of a copy
-# of the directory entry (which needs to be freed)
-CALL :heap_push_AL
+# of the directory entry (which needs to be freed),
+# and the heap has the filesystem handle where it was
+# found (which should match $current_fs_handle_ptr and
+# $boot_fs_handle_ptr)
+.found_system_ody
+CALL :heap_pop_word             # discard the filesystem handle
+
+CALL :heap_push_AL              # print boot status
 CALL :heap_push_AH
 LDI_C .mount_seekos_2
 CALL :printf
 
-# Load the first sector of the binary into a temporary memory segment
-ALUOP_DH %A%+%AH%
-ALUOP_DL %A%+%AL%               # save directory entry address for freeing later
-LDI_AL 31                       # allocate 512 bytes
-CALL :malloc                    # address in A
-ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%               # save temp memory address for freeing later
-
-LDI_B $drive_0_fs_handle
-CALL :heap_push_B               # filesystem handle
-CALL :heap_push_C               # target memory address
-LDI_AL 1                        # one sector to load
-CALL :heap_push_AL
-CALL :heap_push_D               # directory entry
-CALL :fat16_readfile
-CALL :heap_pop_AL               # status byte
-ALUOP_FLAGS %A%+%AL%
-JZ .inspect_ody                 # success, proceed to inspect the file
-CALL :heap_push_AL              # error, print ATA error
-LDI_C .mount_seekos_3
-CALL :printf
-JMP .boot_halt
-
-# Inspect the binary to make sure it's an ODY, and get the
-# flags byte so we can allocate memory
-.inspect_ody
-CALL :heap_push_C               # temp memory address
-CALL :fat16_inspect_ody
-CALL :heap_pop_AL               # flag/status byte
-LDI_BL 0xff
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JNE .allocate_ody_memory
-LDI_C .mount_seekos_4
-CALL :print
-JMP .boot_halt
-
-# Allocate the proper memory segment for the binary based
-# on the flag byte settings
+# Allocate a proper memory segment for the binary
 .allocate_ody_memory
-LDI_BL 31                       # 512 bytes to free
-MOV_CH_AH
-MOV_CL_AL
-CALL :free                      # free the temporary memory segment
 
-                                # Flag byte is in AL
-LDI_BL 0x03                     # lowest two bits are the memory allocation flag
-ALUOP_AL %A&B%+%AL%+%BL%        # remove all the other bits
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .extmalloc_de
-LDI_BL 0x02
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .extmalloc_e
-LDI_BL 0x01
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .extmalloc_d
-LDI_BL 0x00
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .malloc_main
-JMP .boot_halt                  # should never happen but just in case
-
-.extmalloc_de
-# We don't care about the file size, just allocate two extended
-# memory pages, assign them to D and E, and return 0xd000
-# TODO: test for filesize >8K and abort
-CALL :extmalloc
-CALL :heap_pop_CH
-ST_CH %d_page%
-CALL :extmalloc
-CALL :heap_pop_CL
-ST_CL %e_page%
-LDI_C 0xd000
-JMP .load_and_run
-
-.extmalloc_e
-# We don't care about the file size, just allocate one extended
-# memory page, assign to E, and return 0xe000
-# TODO: test for filesize >8K and abort
-CALL :extmalloc
-CALL :heap_pop_CL
-ST_CL %e_page%
-LDI_C 0xe000
-JMP .load_and_run
-
-.extmalloc_d
-# We don't care about the file size, just allocate one extended
-# memory page, assign to D, and return 0xd000
-# TODO: test for filesize >16K and abort
-CALL :extmalloc
-CALL :heap_pop_CL
-ST_CL %d_page%
-LDI_C 0xd000
-JMP .load_and_run
-
-.malloc_main
 # Round the file size up to the nearest 512 bytes
+ALUOP_DH %A%+%AH%               # copy dirent to D for safekeeping
+ALUOP_DL %A%+%AL%
 CALL :heap_push_D               # directory entry
 CALL :fat16_dirent_filesize
 CALL :heap_pop_A                # low word of file size
@@ -466,11 +400,10 @@ LDI_C .ody_malloc
 CALL :printf
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%               # copy address to C
-JMP .load_and_run
 
 # Load the ODY into RAM
-.load_and_run
-LDI_B $drive_0_fs_handle
+LD_BH $boot_fs_handle_ptr
+LD_BL $boot_fs_handle_ptr+1
 CALL :heap_push_B               # filesystem handle
 CALL :heap_push_C               # target memory address
 LDI_AL 0                        # load all sectors
@@ -505,24 +438,11 @@ LDI_C .boot_halt_str
 CALL :printf
 HLT
 
-.mount_failed_finish
-CALL :heap_push_AL
-CALL :printf
-JMP .boot_halt
-
-# Failure conditions when seeking the OS binary
+# Failure condition when seeking the OS binary
 .seekos_failed_notfound
-LDI_C .mount_1_str
+LDI_C .sys_not_found
 CALL :print
-LDI_C .mount_seekos_1
-CALL :print
-JMP .boot_halt
-
-.seekos_failed_ataerr
-LDI_C .mount_5_str
-CALL :heap_push_AL
-CALL :printf
-JMP .boot_halt
+HLT
 
 # Inert target for unused interrupts
 .noirq
@@ -539,19 +459,15 @@ RETI
 .clock_banner "Current clock %B%B-%B-%B %B:%B:%B\n\0" # YYYY-MM-DD HH:MM:SS
 .ata_banner "ATA%u: %s\n\0"
 .mount_filehandle "Filesystem handle address for drive %c: 0x%x%x\n\0"
-.mount_0_str "Mounting drive %u...\n\0"
+.mount_0_str "Mounting drive %u...\0"
 .mount_1_str "FAILED: \0"
 .mount_2_str "Drive 0 not responding (code 0x%x)\n\0"
 .mount_3_str "Extmalloc failed (code 0x%x)\n\0"
 .mount_4_str "Not a FAT16 filesystem (code 0x%x)\n\0"
 .mount_5_str "ATA error (code 0x%x)\n\0"
-.mount_setdrive "Setting current drive...\n\0"
-.mount_seekos "Searching for file named %s...\n\0"
-.mount_seekos_1 "Not found\n\0"
 .mount_seekos_2 "Found: directory entry at 0x%x%x, executing..\n\0"
-.mount_seekos_3 "ATA error loading first sector of system binary: 0x%x\n\0"
-.mount_seekos_4 "System binary does not look like an ODY executable\n\0"
 .mount_seekos_5 "ATA error loading system binary: 0x%x\n\0"
-.os_bin_filename "SYSTEM.ODY\0"
+.os_bin_filename "/SYSTEM.ODY\0"
+.sys_not_found "SYSTEM.ODY not found. System halted.\n\0"
 .boot_halt_str "System process exited. Status byte 0x%x\nSystem halted.\n\0"
 .ody_malloc "SYSTEM.ODY loaded at 0x%x%x size %u from filesize 0x%x%x\n\0"
