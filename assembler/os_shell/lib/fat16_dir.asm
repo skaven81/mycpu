@@ -18,8 +18,14 @@
 #  1. Push a word containing the filesystem handle
 #  2. Push a word containing the cluster to search
 #  3. Push the address of a string with the filename/dirname
-#  4. Push a byte containing a mask used to filter OUT entries based on their attribute byte (0x18 = directories and volume labels; 0x10 = directories)
-#  5. Push a byte containing a mask used to filter IN entries based on their attribute byte (0xff to allow all, even those with 0x00 attribute bytes)
+#       (an empty string if you want to ignore the filename
+#       and just return the first entry that matches the filters)
+#  4. Push a byte containing a mask used to filter OUT entries
+#       based on their attribute byte (0x18 = directories and
+#       volume labels; 0x10 = directories)
+#  5. Push a byte containing a mask used to filter IN entries
+#       based on their attribute byte (0xff to allow all,
+#       even those with 0x00 attribute bytes)
 #  6. CALL :fat16_dir_find
 #  7. Pop the address of a 32-byte memory region that contains a copy of the
 #     directory entry you were looking for.
@@ -113,11 +119,20 @@ ALUOP_FLAGS %A&B%+%AL%+%BL%         # check attrs against OUT filter
 POP_AL
 JNZ .dir_find_next_entry            # skip this entry if it matched the OUT filter
 
-# Does this entry name match our given string?
+# Get the filename of this directory entry
 CALL :heap_push_A                   # address of directory entry
 CALL :fat16_dirent_filename         # address word of filename on heap
 CALL :heap_pop_C                    # C contains pointer to filename in this directory entry;
                                     # D already contains our target string
+
+# If the target string (D) is empty, then we match
+ALUOP_PUSH %A%+%AL%
+LDA_D_AL
+ALUOP_FLAGS %A%+%AL%
+POP_AL
+JZ .dir_find_done_match
+
+# Otherwise, use strcmp to see if the filename maches the target string
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
 MOV_CL_AL                           # Copy C to A because we need to free the
