@@ -4,7 +4,7 @@ DIRNAME := $(notdir $(CURDIR))
 FILENAME := $(shell echo $(DIRNAME) | tr '[:lower:]' '[:upper:]').ODY
 ASM_FILES := $(sort $(wildcard *.asm))
 MACROS := $(shell ls -1 ../../asm_macros asm_macros 2>/dev/null)
-MEM_TARGET=ext-e
+MEM_TARGET=main
 
 # ensure `tee` pipe doesn't mask assembler failures
 SHELL := /bin/bash
