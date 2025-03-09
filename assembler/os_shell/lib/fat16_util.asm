@@ -42,7 +42,7 @@ ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
 
-LD16_A $current_fs_handle       # A contains either $drive_0_fs_handle or $drive_1_fs_handle
+LD16_A $current_fs_handle_ptr   # A contains either $drive_0_fs_handle or $drive_1_fs_handle
 ALUOP_FLAGS %A%+%AH%
 JNZ .gcdn_current_fs_handle_valid
 ALUOP_FLAGS %A%+%AL%
@@ -100,22 +100,20 @@ JEQ .gfhfp_drive_1
 JMP .gfhfp_syntax_error
 
 .gfhfp_drive_0
-LD_AH $drive_0_fs_handle
-LD_AL $drive_0_fs_handle+1
+LDI_A $drive_0_fs_handle
 INCR_C                              # Move C past `0:`
 INCR_C
 JMP .gfhfp_done
 
 .gfhfp_drive_1
-LD_AH $drive_1_fs_handle
-LD_AL $drive_1_fs_handle+1
+LDI_A $drive_1_fs_handle
 INCR_C                              # Move C past `1:`
 INCR_C
 JMP .gfhfp_done
 
 .gfhfp_current_drive
-LD_AH $current_fs_handle
-LD_AL $current_fs_handle+1
+LD_AH $current_fs_handle_ptr
+LD_AL $current_fs_handle_ptr+1
 JMP .gfhfp_done                     # Keep C at beginning of string
 
 .gfhfp_syntax_error

@@ -16,8 +16,8 @@ PUSH_DL
 CALL :heap_pop_D                # directory handle
 
 # Get current drive and a pointer to its filesystem handle
-LD_BH $current_fs_handle
-LD_BL $current_fs_handle+1      # B = filesystem handle
+LD_BH $current_fs_handle_ptr
+LD_BL $current_fs_handle_ptr+1  # B = filesystem handle
 
 # Load the first sector of the binary into a temporary memory segment
 LDI_AL 31                       # allocate 512 bytes
@@ -187,8 +187,8 @@ CALL :heap_push_all
 
 PUSH_DH
 PUSH_DL
-LD_DH $current_fs_handle
-LD_DL $current_fs_handle+1
+LD_DH $current_fs_handle_ptr
+LD_DL $current_fs_handle_ptr+1
 CALL :heap_push_D               # filesystem handle on heap
 POP_DL
 POP_DH

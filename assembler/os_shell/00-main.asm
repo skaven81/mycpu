@@ -183,11 +183,12 @@ CALL :printf
 # Allocate memory for drive 0 and 1 filesystem handles.
 # These are pointers, they contain a memory address, not
 # the filesystem handles themselves.
-VAR global word $drive_0_fs_handle
-LDI_AL 0x07     # size 7 = 128 bytes
-CALL :calloc    # address in A
-ALUOP_ADDR %A%+%AH% $drive_0_fs_handle
-ALUOP_ADDR %A%+%AL% $drive_0_fs_handle+1
+VAR global 128 $drive_0_fs_handle
+LDI_C $drive_0_fs_handle
+LDI_AH 0x00     # byte to fill
+LDI_AL 127      # bytes to fill, minus one
+CALL :memfill
+LDI_A $drive_0_fs_handle
 CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_AL '0'
@@ -195,11 +196,12 @@ CALL :heap_push_AL
 LDI_C .mount_filehandle
 CALL :printf
 
-VAR global word $drive_1_fs_handle
-LDI_AL 0x07     # size 7 = 128 bytes
-CALL :calloc    # address in A
-ALUOP_ADDR %A%+%AH% $drive_1_fs_handle
-ALUOP_ADDR %A%+%AL% $drive_1_fs_handle+1
+VAR global 128 $drive_1_fs_handle
+LDI_C $drive_1_fs_handle
+LDI_AH 0x00     # byte to fill
+LDI_AL 127      # bytes to fill, minus one
+CALL :memfill
+LDI_A $drive_1_fs_handle
 CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_AL '1'
@@ -210,9 +212,9 @@ CALL :printf
 # Global var for storing our current active drive, a pointer
 # to either $drive_0_fs_handle or $drive_1_fs_handle.
 # Will be null if no drive is selected
-VAR global word $current_fs_handle
-ST $current_fs_handle   0x00
-ST $current_fs_handle+1 0x00
+VAR global word $current_fs_handle_ptr
+ST $current_fs_handle_ptr   0x00
+ST $current_fs_handle_ptr+1 0x00
 
 # Global vars used by shell so commands can parse command line args
 VAR global word $user_input_buf
@@ -233,10 +235,7 @@ LDI_AH 0x00                     # AH = current drive we're working on
 CALL :heap_push_AH
 LDI_C .mount_0_str
 CALL :printf
-CALL :heap_pop_C                # Load filesystem handle address into B
-LDA_C_BH
-INCR_C
-LDA_C_BL
+CALL :heap_pop_B                # Load filesystem handle address into B
 CALL :heap_push_B               # address of filesystem handle
 LDI_C 0x0000
 CALL :heap_push_C               # high word of filesystem start sector (0x0000)
@@ -298,10 +297,9 @@ JMP .mount_drives_loop
 # Set 0 as current drive
 LDI_C .mount_setdrive
 CALL :print
-LD_CH $drive_0_fs_handle
-LD_CL $drive_0_fs_handle+1
-ST_CH $current_fs_handle
-ST_CL $current_fs_handle+1
+LDI_C $drive_0_fs_handle
+ST_CH $current_fs_handle_ptr
+ST_CL $current_fs_handle_ptr+1
 ## TODO: seek SYSTEM.ODY on drive 0 and 1
 
 # Walk root directory looking for OS binary
@@ -309,8 +307,8 @@ LDI_C .os_bin_filename
 CALL :heap_push_C
 LDI_C .mount_seekos
 CALL :printf
-LD_CH $current_fs_handle
-LD_CL $current_fs_handle+1
+LD_CH $current_fs_handle_ptr
+LD_CL $current_fs_handle_ptr+1
 CALL :heap_push_C               # filesystem handle
 LDI_C 0x0000
 CALL :heap_push_C               # cluster number (root dir)
@@ -343,8 +341,7 @@ CALL :malloc                    # address in A
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%               # save temp memory address for freeing later
 
-LD_BH $drive_0_fs_handle
-LD_BL $drive_0_fs_handle+1
+LDI_B $drive_0_fs_handle
 CALL :heap_push_B               # filesystem handle
 CALL :heap_push_C               # target memory address
 LDI_AL 1                        # one sector to load
@@ -473,8 +470,7 @@ JMP .load_and_run
 
 # Load the ODY into RAM
 .load_and_run
-LD_BH $drive_0_fs_handle
-LD_BL $drive_0_fs_handle+1
+LDI_B $drive_0_fs_handle
 CALL :heap_push_B               # filesystem handle
 CALL :heap_push_C               # target memory address
 LDI_AL 0                        # load all sectors

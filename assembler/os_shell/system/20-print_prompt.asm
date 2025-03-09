@@ -17,8 +17,8 @@ ALUOP_FLAGS %A&B%+%AL%+%BL%
 JEQ .nodir_prompt
 
 # Load the address of the active filesystem handle into C
-LD_CH $current_fs_handle
-LD_CL $current_fs_handle+1
+LD_CH $current_fs_handle_ptr
+LD_CL $current_fs_handle_ptr+1
 
 # If the filesystem handle is uninitialized, then use the "nodir" prompt
 LDA_C_AL        # first byte will be '/' if initialized

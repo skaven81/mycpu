@@ -23,28 +23,26 @@ JMP .usage
 
 .setdrive_0
 # Check if drive 0 is mounted
-LD_CH $drive_0_fs_handle
-LD_CL $drive_0_fs_handle+1
+LDI_C $drive_0_fs_handle
 LDA_C_AH        # AH=first char of filesystem handle=cwd
 LDI_AL '0'
 LDI_BL '/'
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JNE .err_not_mounted
-ST_CH $current_fs_handle
-ST_CL $current_fs_handle+1
+ST_CH $current_fs_handle_ptr
+ST_CL $current_fs_handle_ptr+1
 RET
 
 .setdrive_1
 # Check if drive 1 is mounted
-LD_CH $drive_1_fs_handle
-LD_CL $drive_1_fs_handle+1
+LDI_C $drive_1_fs_handle
 LDA_C_AH        # AH=first char of filesystem handle=cwd
 LDI_AL '1'
 LDI_BL '/'
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JNE .err_not_mounted
-ST_CH $current_fs_handle
-ST_CL $current_fs_handle+1
+ST_CH $current_fs_handle_ptr
+ST_CL $current_fs_handle_ptr+1
 RET
 
 .err_not_mounted

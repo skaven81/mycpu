@@ -18,8 +18,8 @@ JZ .usage                       # abort with usage message if null
 ##########################################################
 
 # Get current drive and a pointer to its filesystem handle
-LD_AH $current_fs_handle
-LD_AL $current_fs_handle+1      # A = filesystem handle
+LD_AH $current_fs_handle_ptr
+LD_AL $current_fs_handle_ptr+1  # A = filesystem handle
 ALUOP_FLAGS %A%+%AH%
 JNZ .current_fs_handle_valid
 ALUOP_FLAGS %A%+%AL%
@@ -129,8 +129,8 @@ MOV_CL_AL
 LDI_BL 0                        # size 0, 16 bytes
 CALL :free                      # Free the memory
 # load up the filesystem handle into D
-LD_DH $current_fs_handle
-LD_DL $current_fs_handle+1      # D = filesystem handle; first field is cwd
+LD_DH $current_fs_handle_ptr
+LD_DL $current_fs_handle_ptr+1  # D = filesystem handle; first field is cwd
 # loop to find the end of the CWD string
 .doubledot_cd_loop
 LDA_D_BL                        # character @ D => BL
@@ -163,8 +163,8 @@ JMP .cd_done_match_finish
 ####
 # "normal" cd where we're going deeper into the tree
 .normal_cd
-LD_DH $current_fs_handle
-LD_DL $current_fs_handle+1      # D = filesystem handle; first field is cwd
+LD_DH $current_fs_handle_ptr
+LD_DL $current_fs_handle_ptr+1  # D = filesystem handle; first field is cwd
 .normal_cd_loop
 LDA_D_BL                        # character @ D => BL
 ALUOP_FLAGS %B%+%BL%            # check if null
@@ -188,8 +188,8 @@ JMP .cd_done_match_finish
 # cluster number on top.
 .cd_done_match_finish
 CALL :heap_pop_C                # C contains new directory cluster number
-LD_AH $current_fs_handle
-LD_AL $current_fs_handle+1      # A = filesystem handle
+LD_AH $current_fs_handle_ptr
+LD_AL $current_fs_handle_ptr+1  # A = filesystem handle
 LDI_B 0x0036                    # offset 0x36 = cluster number
 CALL :add16_to_a                # A = address of cluster number high byte
 STA_A_CH                        # Save cluster number in filesystem handle

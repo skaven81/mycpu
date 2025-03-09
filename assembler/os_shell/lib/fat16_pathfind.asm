@@ -46,6 +46,7 @@
 .debug_input "Input: [%s]\n\0"
 .debug_loop "fs 0x%x%x clus 0x%x%x search [%s]\n\0"
 .debug_ret "pathfind return 0x%x%x\n\0"
+.debug_dirfind "dirfind return 0x%x%x\n\0"
 
 :fat16_pathfind
 ALUOP_PUSH %A%+%AH%
@@ -225,12 +226,26 @@ CALL :heap_push_AL
 .do_dir_find
 CALL :fat16_dir_find
 CALL :heap_pop_A                    # A = address of matching directory entry, or error
+
+##### DEBUG
+CALL :heap_push_AL
+CALL :heap_push_AH
+PUSH_CH
+PUSH_CL
+LDI_C .debug_dirfind
+CALL :printf
+POP_CL
+POP_CH
+##### DEBUG
+
 ALUOP_PUSH %B%+%BL%
 LDI_BL 0x02                         # high byte = 0x02 = ATA error
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 POP_BL
 JEQ .fat16_pathfind_ata_error
+ALUOP_FLAGS %A%+%AH%
 JZ .fat16_pathfind_notfound
+
 # If we are here, A contains a memory address of a directory entry
 # that matches the token we were looking for.  If the next token
 # is null, then we are done and this is what we want to return. If

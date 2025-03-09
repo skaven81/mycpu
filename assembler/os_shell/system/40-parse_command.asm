@@ -68,8 +68,8 @@ POP_CH                          # which is now uppercase, with .ODY extension
 
 PUSH_DH
 PUSH_DL
-LD_DH $current_fs_handle
-LD_DL $current_fs_handle+1
+LD_DH $current_fs_handle_ptr
+LD_DL $current_fs_handle_ptr+1
 CALL :heap_push_D               # filesystem handle
 
 CALL :heap_push_D

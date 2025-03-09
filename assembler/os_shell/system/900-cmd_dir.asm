@@ -5,8 +5,8 @@
 :cmd_dir
 
 # Get current drive and a pointer to its filesystem handle
-LD_AH $current_fs_handle
-LD_AL $current_fs_handle+1      # A = filesystem handle
+LD_AH $current_fs_handle_ptr
+LD_AL $current_fs_handle_ptr+1  # A = filesystem handle
 ALUOP_FLAGS %A%+%AH%
 JNZ .current_fs_handle_valid
 ALUOP_FLAGS %A%+%AL%
