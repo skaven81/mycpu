@@ -1,7 +1,10 @@
 # vim: syntax=asm-mycpu
 
-# Runs the ODY referenced in the directory handle on the heap,
-# which is assumed to be from the current drive filesystem handle.
+# 1. Push the filesystem handle
+# 2. Push the directory entry
+# 3. Call run_ody
+
+VAR global word $shell_ody_fh
 
 :run_ody
 ALUOP_PUSH %A%+%AH%
@@ -14,10 +17,9 @@ PUSH_DH
 PUSH_DL
 
 CALL :heap_pop_D                # directory handle
-
-# Get current drive and a pointer to its filesystem handle
-LD_BH $current_fs_handle_ptr
-LD_BL $current_fs_handle_ptr+1  # B = filesystem handle
+CALL :heap_pop_B                # filesystem handle
+ALUOP_ADDR %B%+%BH% $shell_ody_fh # save filesystem handl
+ALUOP_ADDR %B%+%BL% $shell_ody_fh+1
 
 # Load the first sector of the binary into a temporary memory segment
 LDI_AL 31                       # allocate 512 bytes
@@ -45,8 +47,10 @@ JMP .run_ody_done
 CALL :heap_push_C               # temp memory address
 CALL :fat16_inspect_ody
 CALL :heap_pop_AL               # flag/status byte
+ALUOP_PUSH %B%+%BL%
 LDI_BL 0xff
 ALUOP_FLAGS %A&B%+%AL%+%BL%
+POP_BL
 JNE .allocate_ody_memory
 LDI_C .ody_err1
 CALL :print
@@ -185,14 +189,9 @@ RET
 .load_and_run
 CALL :heap_push_all
 
-PUSH_DH
-PUSH_DL
-LD_DH $current_fs_handle_ptr
-LD_DL $current_fs_handle_ptr+1
-CALL :heap_push_D               # filesystem handle on heap
-POP_DL
-POP_DH
-
+LD_AH $shell_ody_fh
+LD_AL $shell_ody_fh+1
+CALL :heap_push_A               # filesystem handle on heap
 CALL :heap_push_C               # target memory address
 LDI_AL 0                        # load all sectors
 CALL :heap_push_AL

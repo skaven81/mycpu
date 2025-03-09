@@ -23,6 +23,12 @@ LDA_B_CL                        # CL=lo byte of token[0] string pointer
 # rest of the tokens in the $user_input_tokens array being the arguments.
 # We now search for a command matching the string in C.
 
+# If the string is empty, the user just pressed enter so just exit
+# without running a command.
+LDA_C_AL
+ALUOP_FLAGS %A%+%AL%
+JZ .cmd_return
+
 # Loop through the list of built-in commands and find
 # a matching one.  The function address is
 # located in the two bytes after the string.
@@ -66,57 +72,55 @@ ALUOP_ADDR_D %zero%             # write terminating null to D address
 POP_CL                          # restore C pointer to beginning of string,
 POP_CH                          # which is now uppercase, with .ODY extension
 
-PUSH_DH
-PUSH_DL
-LD_DH $current_fs_handle_ptr
-LD_DL $current_fs_handle_ptr+1
-CALL :heap_push_D               # filesystem handle
-
-CALL :heap_push_D
-CALL :fat16_get_current_directory_cluster # push cluster of directory to search
-POP_DL
-POP_DH
-
-CALL :heap_push_C               # filename string to look for
-LDI_AL 0x18
-CALL :heap_push_AL              # filter OUT = directories and volume labels
-LDI_AL 0xff
-CALL :heap_push_AL              # filter IN = all files
-CALL :fat16_dir_find
-CALL :heap_pop_A                # result in A
-LDI_BL 0x00
-ALUOP_FLAGS %A&B%+%AH%+%BL%
-JEQ .tryfiles_failed_notfound
+# C points at a string that is COMMAND.ODY - search for this first
+CALL :heap_push_C
+CALL :fat16_pathfind
+CALL :heap_pop_A                # A will be 0x00.. or 0x01.. if not found
+ALUOP_FLAGS %A%+%AH%
+JZ .try_sys_path
 LDI_BL 0x01
 ALUOP_FLAGS %A&B%+%AH%+%BL%
-JEQ .tryfiles_failed_nodrive
-LDI_BL 0x02
+JEQ .try_sys_path
+JMP .found_ody
+
+# command was not found in current dir, try {boot_drive}:/SYS/COMMAND.ODY
+.try_sys_path
+PUSH_CH
+PUSH_CL
+LD_CH $boot_fs_handle_ptr
+LD_CL $boot_fs_handle_ptr+1
+CALL :heap_push_C
+CALL :fat16_handle_get_ataid    # 0 or 1 on heap
+CALL :heap_pop_AL
+POP_CL
+POP_CH
+
+CALL :heap_push_C               # still the COMMAND.ODY string
+CALL :heap_push_AL              # the 0 or 1
+LDI_C .sys_path_template
+LDI_D .sys_path
+CALL :sprintf                   # .sys_path now contains {0,1}:/SYS/COMMAND.ODY
+
+LDI_D .sys_path
+CALL :heap_push_D
+CALL :fat16_pathfind
+CALL :heap_pop_A                # A will be 0x00.. or 0x01.. if not found
+ALUOP_FLAGS %A%+%AH%
+JZ .tryfiles_failed_notfound
+LDI_BL 0x01
 ALUOP_FLAGS %A&B%+%AH%+%BL%
-JEQ .tryfiles_failed_ataerr
+JEQ .tryfiles_failed_notfound
+
 # Binary is found, A contains the address of a copy
 # of the directory entry (which needs to be freed)
+.found_ody
+                                # fs handle is already on heap
 CALL :heap_push_A               # directory entry
 CALL :run_ody
 # free the directory entry
 LDI_BL 1                        # size 1 = 32 bytes
 CALL :free
 JMP .cmd_return
-
-### TODO ###
-# Need to add code that also looks under the /SYS directory for
-# binaries if not found in the current directory
-### TODO ###
-
-.tryfiles_failed_ataerr
-CALL :heap_push_AL
-LDI_C .cmd_failed_ataerr
-CALL :printf
-JMP .tryfiles_failed_notfound
-
-.tryfiles_failed_nodrive
-LDI_C .cmd_failed_nodrive
-CALL :print
-JMP .tryfiles_failed_notfound
 
 .tryfiles_failed_notfound
 LDI_C .cmd_unknown_str
@@ -196,6 +200,11 @@ CALL :print
 CALL :putchar
 RET
 
+.sys_path_template "%u:/SYS/%s\0"
+# inline variable as this will be executed from RAM. Maximum length of
+# .sys_path string is 1:/SYS/FILENAME.ODY (8+3 filename) which makes
+# 20 characters, plus a trailing newline. We allocate 24 bytes just in case.
+.sys_path "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
 .ody_suffix "\.ODY\0"
 .cmd_unknown_str "Unrecognized command\n\0"
 .cmd_failed_ataerr "ATA error looking for command: 0x%x\n\0"
