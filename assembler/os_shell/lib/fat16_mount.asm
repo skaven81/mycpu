@@ -53,7 +53,7 @@ PUSH_DH
 LD_CL %d_page%
 PUSH_CL
 
-# Pop arguments off the heap
+# Pop arguments off the heap, except for the target memory address
 CALL :heap_pop_CL               # ATA ID
 CALL :heap_pop_B                # low word of start sector
 CALL :heap_pop_A                # high word of start sector
@@ -66,6 +66,16 @@ ALUOP_FLAGS %A%+%AL%
 JZ .mount_abort_1               # Fail if we're out of memory
 ALUOP_ADDR %A%+%AL% %d_page%    # Our memory page is at 0xd000
 POP_AL                          # restore AL, so A+B are the start sector again
+
+# Reset the device before attempting to mount; this helps
+# for SD card swaps to ensure mounting works.
+CALL :heap_push_CL              # drive ID
+CALL :ata_reset
+ALUOP_PUSH %A%+%AL%
+CALL :heap_pop_AL
+ALUOP_FLAGS %A%+%AL%
+POP_AL
+JNZ .mount_abort_4
 
 # Save our starting sector number for later
 ALUOP_PUSH %B%+%BL%
@@ -463,6 +473,12 @@ CALL :heap_push_AL              # put the "not FAT16 filesystem" error on the he
 LD_AL %d_page%                  # free our extended memory allocation
 CALL :heap_push_AL
 CALL :extfree
+JMP .mount_done
+
+# abort vector if the drive reset failed
+.mount_abort_4
+CALL :heap_pop_word             # discard memory address argument
+CALL :heap_push_AL              # Push non-zero status byte onto heap
 JMP .mount_done
 
 .mount_done

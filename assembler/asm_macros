@@ -254,6 +254,7 @@
 %ata_err_bad_block%         0x80
 
 # ATA commands written to %ata_cmd_stat%
+%ata_cmd_reset%         0x08
 %ata_cmd_read_retry%    0x20
 %ata_cmd_write_retry%   0x30
 %ata_cmd_identify%      0xec

@@ -512,6 +512,25 @@ RET
 
 
 ########
+# .ata_wait_drive_ready
+# Wait for the drive to become ready
+.ata_wait_drive_ready
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+.ata_rdy_wait_loop
+LD_SLOW_PUSH %ata_cmd_stat%
+POP_AL
+LDI_BL %ata_stat_busy%
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JNZ .ata_rdy_wait_loop          # continue waiting if busy flag is set
+LDI_BL %ata_stat_rdy%
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JZ .ata_rdy_wait_loop           # continue waiting if rdy flag is not set
+POP_BL
+POP_AL
+RET
+
+########
 # .ata_wait_data_request_ready
 # Wait for the drive to complete the requested operation.
 .ata_wait_data_request_ready
@@ -578,3 +597,63 @@ JNO .ata_write_loop             # keep looping until we overflow back to 0xff
 POP_BL
 POP_AL
 RET
+
+# Reset an ATA device by sending command 0x08
+# To use:
+#  1. Push a byte with the ATA id (0 or 1)
+#  2. Call the function
+#  3. Pop a status byte. 0x00 = success, non-zero
+#     is an ATA error, 0xff is a timeout.
+:ata_reset
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+PUSH_CH
+PUSH_CL
+
+# Pop the master/slave byte from the heap into AL
+# and set the %ata_lba3% register to the requested drive
+CALL :heap_pop_AL                   # master/slave in AL
+ALUOP_FLAGS %A%+%AL%
+JZ .ata_reset_master
+ST_SLOW %ata_lba3% %ata_lba3_slave%
+JMP .ata_reset_1
+.ata_reset_master
+ST_SLOW %ata_lba3% %ata_lba3_master%
+.ata_reset_1
+
+# Pop the address we'll be writing to, into C
+CALL :heap_pop_C
+
+# Wait for the newly selected drive to become ready - returns
+# status via the ALU zero flag
+CALL .ata_wait_ready
+JNZ .ata_reset_timeout              # If timeout, abort
+
+# Send the drive ID command
+ST_SLOW %ata_cmd_stat% %ata_cmd_reset%
+
+# Pause 100 milliseconds to give the drive a chance to begin reset
+LDI_A 0x0010                        # 00.10 seconds
+CALL :sleep
+
+# Wait for drive to be ready
+CALL .ata_wait_drive_ready
+
+# Return success
+LDI_AL 0x00
+CALL :heap_push_AL
+JMP .ata_reset_done
+
+# Return failure on timeout
+.ata_reset_timeout
+LD_SLOW_PUSH %ata_err%
+POP_AL
+CALL :heap_push_AL
+
+.ata_reset_done
+POP_CL
+POP_CH
+POP_AL
+POP_AH
+RET
+
