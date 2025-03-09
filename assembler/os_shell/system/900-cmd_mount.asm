@@ -34,16 +34,12 @@ ALUOP_FLAGS %A&B%+%AL%+%BL%
 JNE .abort_bad_drive
 
 # If we make it here, D contains the memory
-# address of the pointer to the filesystem handle
+# address of the filesystem handle
 .drive_num_ok
 
 # Mount the filesystem
 
-# Get the actual memory address from D
-LDA_D_BH
-INCR_D
-LDA_D_BL
-CALL :heap_push_B           # address to store fs handle
+CALL :heap_push_D           # address to store fs handle
 
 LDI_C 0x0000
 CALL :heap_push_C           # high word of LBA (0)
@@ -56,12 +52,12 @@ CALL :heap_pop_AL           # status byte
 ALUOP_FLAGS %A%+%AL%
 JNZ .mount_error
 
-CALL :heap_push_BL
-CALL :heap_push_BH
+CALL :heap_push_DL
+CALL :heap_push_DH
 LDI_C .str_success
 CALL :printf
 
-CALL :heap_push_B           # address of fliesystem handle
+CALL :heap_push_D           # address of fliesystem handle
 CALL :fat16_print
 
 RET
