@@ -164,7 +164,7 @@ LDA_C_AH                            # load address of next token into A
 INCR_C
 LDA_C_AL
 INCR_C
-CALL :heap_push_A                   # name to search for
+CALL :heap_push_A                   # name to search for in fat16_dir_find below
 
 #### DEBUG
 CALL :heap_push_A   # name
@@ -180,8 +180,35 @@ POP_CL
 POP_CH
 #### DEBUG
 
+# If we have reached the end of the list of tokens without a match,
+# then there was no match. A contains the pointer to the current token
+# string, so check if it's null.  Just checking the high byte is sufficient
+# since we'll never have a token string get malloc'd into 0x00...memory
+ALUOP_FLAGS %A%+%AH%
+JNZ .token_addr_is_valid
+CALL :heap_pop_word                 # pop the name
+CALL :heap_pop_word                 # pop the cluster
+CALL :heap_pop_word                 # pop the filesystem handle
+JMP .fat16_pathfind_notfound
+
+# If search string is empty, there may be something like a double-slash
+# in the path, so just skip this token and move on.
+.token_addr_is_valid
+ALUOP_PUSH %B%+%BL%
+LDA_A_BL                            # load first char of token into BL
+ALUOP_FLAGS %B%+%BL%
+POP_BL
+JNZ .token_is_not_null
+# If we are here, then the search token is null.  We need to discard the
+# three items on the heap and loop back to the top.
+CALL :heap_pop_word                 # pop the name
+CALL :heap_pop_word                 # pop the cluster
+CALL :heap_pop_word                 # pop the filesystem handle
+JMP .fat16_pathfind_loop
+
 # If next token = null, this is the last token and so we are looking
 # for a directory or file. Otherwise, we are only looking for a directory
+.token_is_not_null
 LDA_C_AH
 ALUOP_FLAGS %A%+%AH%                # malloc addresses start at 0x6000
 JZ .next_token_null1                # so this is sufficient
