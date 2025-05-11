@@ -37,8 +37,19 @@ JNE .abort_bad_drive
 # address of the filesystem handle
 .drive_num_ok
 
-# Mount the filesystem
+# Clear the memory before calling the mount command
+PUSH_DH
+PUSH_DL
+POP_CL
+POP_CH                      # Copy D to C (address to fill)
 
+ALUOP_PUSH %A%+%AL%         # save AL (ATA ID) for later
+LDI_AH 0x00                 # byte to fill
+LDI_AL 127                  # bytes to fill minus 1
+CALL :memfill
+POP_AL
+
+# Mount the filesystem
 CALL :heap_push_D           # address to store fs handle
 
 LDI_C 0x0000
