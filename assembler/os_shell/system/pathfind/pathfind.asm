@@ -43,21 +43,11 @@ ALUOP_PUSH %B%+%BL%             # save the low byte of the directory entry
 MOV_CH_AH
 MOV_CL_AL
 LDI_BL 2                        # size 2, 48 bytes
-CALL :heap_push_BL
-CALL :heap_push_AL
-CALL :heap_push_AH
-LDI_C .free_str
-CALL :printf
 CALL :free                      # Free the directory entry string
 # Free the directory entry
 ALUOP_AH %B%+%BH%
 POP_AL                          # from the push above
 LDI_BL 1                        # size 1, 32 bytes
-CALL :heap_push_BL
-CALL :heap_push_AL
-CALL :heap_push_AH
-LDI_C .free_str
-CALL :printf
 CALL :free                      # Free the directory entry
 RET
 
@@ -96,4 +86,3 @@ RET
 .syntax_err "Error: unparseable path spec\n\0"
 .notfound_str "File/dir not found\n\0"
 .ataerr_str "ATA error: %x\n\0"
-.free_str "Free 0x%x%x size %u\n\0"
