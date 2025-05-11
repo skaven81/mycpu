@@ -40,14 +40,6 @@
 #   8. copy directory entry of matching file/dir to new memory
 #   9. return address of directory entry
 
-.debug_targetfs "Target filesystem handle: 0x%x%x\n\0"
-.debug_start_cluster "Starting cluster number: 0x%x%x\n\0"
-.debug_search_string "Search: [%s]\n\0"
-.debug_input "Input: [%s]\n\0"
-.debug_loop "fs 0x%x%x clus 0x%x%x search [%s]\n\0"
-.debug_ret "pathfind return 0x%x%x\n\0"
-.debug_dirfind "dirfind return 0x%x%x\n\0"
-
 :fat16_pathfind
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
@@ -59,15 +51,6 @@ PUSH_DH
 PUSH_DL
 
 CALL :heap_pop_C                    # C = path
-#### DEBUG
-CALL :heap_push_C
-PUSH_CH
-PUSH_CL
-LDI_C .debug_input
-CALL :printf
-POP_CL
-POP_CH
-#### DEBUG
 
 ####
 # Get target filesystem handle into D
@@ -78,16 +61,6 @@ ALUOP_FLAGS %A%+%AH%
 JZ .fat16_pathfind_syntax_error
 ALUOP_DH %A%+%AH%                   # copy filesystem handle into D
 ALUOP_DL %A%+%AL%
-#### DEBUG
-CALL :heap_push_DL
-CALL :heap_push_DH
-PUSH_CH
-PUSH_CL
-LDI_C .debug_targetfs
-CALL :printf
-POP_CL
-POP_CH
-#### DEBUG
 
 ####
 # Get starting cluster number into B
@@ -111,25 +84,6 @@ INCR_C                              # move to the first char after the first /
 # Split up the path into parts using '/' as a separator.
 # Store the address of the resulting array in C
 .fat16_pathfind_splitpath
-#### DEBUG
-CALL :heap_push_BL
-CALL :heap_push_BH
-PUSH_CH
-PUSH_CL
-LDI_C .debug_start_cluster
-CALL :printf
-POP_CL
-POP_CH
-
-CALL :heap_push_C
-PUSH_CH
-PUSH_CL
-LDI_C .debug_search_string
-CALL :printf
-POP_CL
-POP_CH
-#### DEBUG
-
 LDI_AL 1                            # size 1, 32 bytes, enough for 16 substrings
 CALL :malloc                        # allocated address in A
 ALUOP_PUSH %A%+%AH%                 # save for later
@@ -166,20 +120,6 @@ INCR_C
 LDA_C_AL
 INCR_C
 CALL :heap_push_A                   # name to search for in fat16_dir_find below
-
-#### DEBUG
-CALL :heap_push_A   # name
-CALL :heap_push_BL  # cluster
-CALL :heap_push_BH  # cluster
-CALL :heap_push_DL  # fs handle
-CALL :heap_push_DH  # fs handle
-PUSH_CH
-PUSH_CL
-LDI_C .debug_loop
-CALL :printf
-POP_CL
-POP_CH
-#### DEBUG
 
 # If we have reached the end of the list of tokens without a match,
 # then there was no match. A contains the pointer to the current token
@@ -226,17 +166,6 @@ CALL :heap_push_AL
 .do_dir_find
 CALL :fat16_dir_find
 CALL :heap_pop_A                    # A = address of matching directory entry, or error
-
-##### DEBUG
-CALL :heap_push_AL
-CALL :heap_push_AH
-PUSH_CH
-PUSH_CL
-LDI_C .debug_dirfind
-CALL :printf
-POP_CL
-POP_CH
-##### DEBUG
 
 ALUOP_PUSH %B%+%BL%
 LDI_BL 0x02                         # high byte = 0x02 = ATA error
@@ -309,15 +238,6 @@ LDI_BL 1                            # size 1, 32 bytes
 CALL :free
 
 .fat16_pathfind_final
-##### DEBUG
-CALL :heap_pop_D
-CALL :heap_push_DL
-CALL :heap_push_DH
-LDI_C .debug_ret
-CALL :printf
-CALL :heap_push_D
-##### DEBUG
-
 POP_DL
 POP_DH
 POP_CL
