@@ -139,7 +139,7 @@ LDI_C .sys_not_found
 CALL :print
 HLT
 
-.mount_seekos_2 "Found: directory entry at 0x%x%x, executing..\n\0"
+.mount_seekos_2 "SYSTEM.ODY found in directory entry at 0x%x%x, executing..\n\0"
 .mount_seekos_5 "ATA error loading system binary: 0x%x\n\0"
 .os_bin_filename "/SYSTEM.ODY\0"
 .sys_not_found "SYSTEM.ODY not found. System halted.\n\0"
