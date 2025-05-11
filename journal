@@ -1,3 +1,24 @@
+2025-05-11: fat16_mount bugfix
+==============================
+
+Spent today working on a tricky bug where the Odyssey would boot up fine
+but issuing a `mount` command would cause the system to go haywire.  I
+implemented some new `:trace` calls that are helpful for pinpointing where
+in RAM (not just ROM) code is running, which aids in setting up the logic
+analyzer with configuring a trigger.  I ended up finding the bug, which
+was a stray heap pop in the `:ata_reset` function which caused :fat16_mount
+to pop the wrong value off the heap for the target memory address.
+
+Now that this is fixed, it's time to resume with the work noted in my
+2025-03-02 update below -- updating commands like `cd` and the shell's
+command search, to use `pathfind` instead of their custom routines.
+It would be nice to have pathfind updated to be case-insensitive as well.
+
+Once that is sorted, I want to try implementing a "video" player -- something
+that can read a series of frames from a file or a set of files, and
+write them to the framebuffer at a predetermined pace (using the timer).
+
+
 2025-03-02: FAT16 pathfind
 ==========================
 
