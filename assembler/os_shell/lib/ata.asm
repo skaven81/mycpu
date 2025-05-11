@@ -621,15 +621,12 @@ JMP .ata_reset_1
 ST_SLOW %ata_lba3% %ata_lba3_master%
 .ata_reset_1
 
-# Pop the address we'll be writing to, into C
-CALL :heap_pop_C
-
 # Wait for the newly selected drive to become ready - returns
 # status via the ALU zero flag
 CALL .ata_wait_ready
 JNZ .ata_reset_timeout              # If timeout, abort
 
-# Send the drive ID command
+# Send the drive reset command
 ST_SLOW %ata_cmd_stat% %ata_cmd_reset%
 
 # Pause 100 milliseconds to give the drive a chance to begin reset
