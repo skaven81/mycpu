@@ -160,11 +160,9 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 0xbd00 - 0xbdff 256b UART buffer (lib/uart.asm)
 0xbe00 - 0xbeff 256b keyboard buffer (lib/keyboard.asm)
 0xbf00 - 0xbfff 256b CPU stack
-0xc000 - 0xcfef peripherals
-         0xcff0 ext RAM bank select
-         0xcff1 storage bank select
-0xd000 - 0xdfff ext RAM window (4k)
-0xe000 - 0xefff storage window (4k)
+0xc000 - 0xcfff peripherals
+0xd000 - 0xdfff ext RAM D-page window (4k)
+0xe000 - 0xefff ext RAM E-page window (4k)
 0xf000 - 0xfffe unallocated
          0xffff reserved (idle bus) 
 
@@ -198,6 +196,10 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 0xc200 - 0xc2ff extended RAM control
     0xc2x0 (any even 0xc2) - Page address for 0xdxxx
     0xc2x1 (any odd 0xc2)  - Page address for 0xexxx
+
+# Extended memory zero-page allocation
+0x000 - 0x7ff malloc ledger
+
 
 # Interrupt handling
 When CPU comes out of reset, IRQMASK will be set.  In order to take advantage
