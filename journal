@@ -1,3 +1,29 @@
+2025-05-17: next-gen malloc
+===========================
+
+Got started today on the next-gen malloc routines. After some back and forth
+I decided on a simpler architecture that leverages extended memory to allow
+for a large (2KiB) ledger with each byte in the ledger representing one
+block (as opposed to the current design which has each ledger byte represent
+a whole segment).  This also means I can store the size of each allocation
+in the ledger itself, which will make :free a lot simpler to use.
+
+Since I can write binaries now, I am working on the new code in the context
+of a shell command.  Once it's working there, I'll move it into the ROM
+library and update all the :malloc and :free calls to use the new system.
+
+This update extends malloc so that up to 30,592 bytes (239 segments) can
+be allocated in a single block.  This ensures that as SYSTEM.ODY approaches
+and perhaps exceeds 4KiB in size, that memory allocation will continue to
+work.
+
+I have also considered that more main memory could be freed up if some of
+the buffers (such as the keyboard buffer and the UART buffer) were moved
+into the zero-page in extended memory. Not an issue right now, but if RAM
+starts to get tight in main memory that's a possible option.
+
+
+
 2025-05-11: fat16_mount bugfix
 ==============================
 
