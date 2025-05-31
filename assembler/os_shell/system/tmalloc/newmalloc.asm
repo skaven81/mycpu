@@ -111,17 +111,14 @@ LDI_C 0xd000
 # Byte to fill into AH (0x00 = unallocated)
 LDI_AH 0x00
 
-# The number of ledger bytes will be 8x the value in BL, since BL is the number
-# of 128-byte segments to allocate, and each block (each byte in the ledger) is
-# 16 bytes.  128 / 16 = 8.  We can use :memfill_blocks to fill 16 bytes at a
-# time, which means we should take BL and divide by 2 (shift right one) and add
-# one, to cover cases where an odd number of segments was requested.
-ALUOP_AL %B>>1%+%BL%
-ALUOP_AL %A+1%+%AL%
+# The number of ledger bytes will be 8x the value in BL, since BL is the number of 128-byte
+# segments to allocate, and each block (each byte in the ledger) is 16 bytes.
+# 128 / 16 = 8.  We can use :memfill_half_blocks to fill 8 bytes at a time.
+ALUOP_AL %B-1%+%BL%                 # AL = 8-byte half-blocks minus one
 
-# Now C = address to fill, AH = byte to fill, and
-# AL = number of 16-byte blocks to fill
-CALL :memfill_blocks
+# C = address to fill, AH = byte to fill, and
+# AL = number of 8-byte half-blocks to fill, minus one
+CALL :memfill_half_blocks
 
 CALL :extzero_d_restore             # Switch d-page back to previous value
 
