@@ -119,5 +119,5 @@ RET
 .entry_init "Calling :new_malloc_init(0x6000, 0x%x)\n\0"
 .entry_blk "Calling :new_malloc_blocks(0x%x)\n\0"
 .entry_seg "Calling :new_malloc_segments(0x%x)\n\0"
-.entry_free "Calling :new_free(0x%x%x\n\0"
+.entry_free "Calling :new_free(0x%x%x)\n\0"
 
