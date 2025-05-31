@@ -18,6 +18,7 @@
 #  0x00 - unallocated block
 #  0x01..0xef - segment allocation size, 1 segment (128 bytes) to 239 segments (30592 bytes)
 #  0xf1..0xf7 - block allocation size, 1 block (16 bytes), to 7 blocks (112 bytes)
+#  0xf8..0xfe - unused, invalid
 #  0xff - part of previous allocation
 #
 # The ledger for a 32KiB allocatable range (maximum we will ever need) is 2048
@@ -206,13 +207,69 @@ RET
 # Output:
 #  A: Memory address of allocated memory (zero if allocation failed)
 :new_malloc_blocks
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0x08
+ALUOP_FLAGS %B-A%+%AL%+%BL%     # if AL >= 8, zero or overflow bit will be set
+POP_BL
+JO .blocks_as_segments
+JZ .blocks_as_segments
 
-# if AL > 7, shift AL right 3 places and call :malloc_segments
+# AL was < 8, so we perform allocation in 16-byte blocks
+PUSH_CH
+PUSH_CL
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AL%             # save ledger run length for later
+LDI_BH 0x00
+ALUOP_BL %A%+%AL%               # B = length of ledger run we need
+CALL .find_unused_run           # B will either be a ledger address or zero
+ALUOP_FLAGS %B%+%BH%
+JNZ .valid_block_allocation
+ALUOP_FLAGS %B%+%BL%
+JNZ .valid_block_allocation
+# if we get here, B was zero so allocation failed, and
+# we need to return zero
+LDI_A 0x0000
+JMP .new_malloc_blocks_done
 
-# call .find_unused_run with current value of AL
+# If we get here, B contains a ledger address for the beginning of our run of zeroes.
+# We need to update the ledger to fill the run with 0xff's, then write the size of the
+# allocation in segments, to the first byte of the run.
+.valid_block_allocation
+CALL :extzero_d                 # switch to the zero page at 0xd000
+PEEK_AL                         # restore AL (number of blocks). For each count,
+                                # we need to write 1x 0xff's to the ledger.
+ALUOP_AL %A-1%+%AL%             # minus one since :memfill uses bytes minus one
+LDI_AH 0xff                     # byte to fill
+ALUOP_CH %B%+%BH%
+ALUOP_CL %B%+%BL%               # C = address to fill
+CALL :memfill
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0xf0
+ALUOP_AL %A|B%+%AL%+%BL%        # AL is now 0xfn with n = number of blocks
+POP_BL
+ALUOP_ADDR_B %A+1%+%AL%         # Write allocation length in blocks to start of ledger addr
+                                # Incrementing because we decremented before :memfill
+ALUOP_AL %B%+%BL%
+ALUOP_AH %B%+%BH%               # copy ledger address to A
+CALL .ledger_to_addr            # get memory address of allocation into A
+CALL :extzero_d_restore         # restore D page
 
+.new_malloc_blocks_done
+POP_TD                          # discard saved AL from before
+POP_BL
+POP_BH
+POP_CL
+POP_CH
 RET
 
+# AL was >= 8, so we will call :new_malloc_segments instead
+.blocks_as_segments
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%            # shift AL right three places to get number of segments
+CALL :new_malloc_segments
+RET
 
 #######
 # malloc_segments - Allocate a 128-byte segments of RAM and return its address
@@ -252,11 +309,12 @@ JMP .new_malloc_segments_done
 CALL :extzero_d                 # switch to the zero page at 0xd000
 PEEK_AL                         # restore AL (number of segments). For each count,
                                 # we need to write 8x 0xff's to the ledger.
+ALUOP_AL %A-1%+%AL%             # minus one since :memfill_half_blocks uses blocks minus one
 LDI_AH 0xff                     # byte to fill
 ALUOP_CH %B%+%BH%
 ALUOP_CL %B%+%BL%               # C = address to fill
 CALL :memfill_half_blocks
-ALUOP_ADDR_B %A%+%AL%           # Write allocation length in segments to start of ledger addr
+ALUOP_ADDR_B %A+1%+%AL%         # Write allocation length in segments to start of ledger addr
 
 ALUOP_AL %B%+%BL%
 ALUOP_AH %B%+%BH%               # copy ledger address to A
@@ -315,11 +373,10 @@ CALL :shift16_a_left
 CALL :shift16_a_left
 CALL :shift16_a_left                # A contains the number of ledger bytes
 LDI_B 0xd000
-CALL :add16_to_a                    # A contains the address of the last ledger byte
+CALL :add16_to_a                    # A contains the address of the last ledger byte, plus one
 ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%                   # C now contains the address of the last ledger byte
-INCR_C                              # to offset the DECR_C at the beginning of the loop
-
+ALUOP_CL %A%+%AL%                   # C now contains the address of the last ledger byte, plus one
+                                    # the first thing the .find_unused_run_loop will do is decrement this.
 .find_unused_run_loop
 DECR_C
 MOV_CH_AL                           # check to see if we've left 0xd000 land
@@ -342,16 +399,16 @@ JMP .find_unused_run_loop           # try next ledger byte
 CALL :heap_pop_B                    # restore current count
 CALL :decr16_b                      # decrement counter
 CALL :heap_push_B                   # put it back on the heap
-ALUOP_FLAGS %B%+%BL%
-JNZ .find_unused_run_loop           # if current count isn't zero, keep going
 ALUOP_FLAGS %B%+%BH%
+JNZ .find_unused_run_loop           # if current count isn't zero, keep going
+ALUOP_FLAGS %B%+%BL%
 JNZ .find_unused_run_loop           # if current count isn't zero, keep going
 
 .find_unused_run_success
 CALL :heap_pop_word                 # discard current count
 CALL :heap_pop_word                 # discard original count
 MOV_CH_BH
-MOV_CH_BL                           # copy current ledger address to B
+MOV_CL_BL                           # copy current ledger address to B
 JMP .find_unused_run_done           # and return it
 
 .find_unused_run_failed
