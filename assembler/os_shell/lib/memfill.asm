@@ -28,6 +28,30 @@ POP_AL
 RET
 
 ########
+# memfill_half_blocks - fill a memory range with bytes
+#
+# Inputs:
+#   C - address to begin fill
+#  AH - byte to fill
+#  AL - number of 8-byte half-blocks to fill, minus 1
+#
+# Outputs:
+#   C - at first byte after fill
+#  AH - unchanged
+#  AL - unchanged
+:memfill_half_blocks
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%                     # fill byte is top of stack
+.memfill_half_blocks_loop
+MEMFILL4_C_PEEK                         # write 4 bytes + incr C
+MEMFILL4_C_PEEK                         # write 4 bytes + incr C
+ALUOP_AL %A-1%+%AL%                     # decrement AL
+JNO .memfill_half_blocks_loop                # if no overflow, keep looping
+POP_AH
+POP_AL
+RET
+
+########
 # memfill_blocks - fill a memory range with bytes
 #
 # Inputs:
