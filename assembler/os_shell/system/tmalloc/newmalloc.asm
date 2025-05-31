@@ -182,7 +182,7 @@ CALL :shift16_a_right
 CALL :shift16_a_right
 
 # Add the ledger index to the ledger base address
-LD16_B 0xd000                       # Add ledger base addr (B)
+LDI_B 0xd000                        # Add ledger base addr (B)
 CALL :add16_to_a                    # to ledger offset (A) and store in A
 
 POP_BL
@@ -433,6 +433,57 @@ RET
 # Output:
 #  none
 :new_free
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+CALL :extzero_d
+
+# Convert real address to ledger address
+CALL .addr_to_ledger                    # A contains ledger address at 0xd000 base
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%                       # C contains ledger address
+INCR_C                                  # pre-increment before loop starts
+
+# Walk backward until we reach a value <ff
+.free_loop
+DECR_C                                  # move to next byte in ledger
+LDA_C_AL                                # get ledger byte into AL
+ALUOP_FLAGS %A+1%+%AL%                  # if overflow, value was 0xff
+JO .free_loop                           # ... and we should keep looping
+
+ALUOP_FLAGS %A%+%AL%                    # check AL
+JZ .free_done                           # if zero, we're in an unallocated zone already, nothing to do
+
+# C points at the ledger address of the beginning of an allocation
+# AL contains the allocation size, 01-ef = segments, f1-f8 blocks
+LDI_BL 0xf0
+ALUOP_BL %A&B%+%AL%+%BL%                # BL will be 0xf0 if ledger byte was 0xfn
+LDI_AH 0xf0
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .free_blocks
+
+.free_segments
+LDI_AH 0x00                             # byte to fill
+ALUOP_AL %A-1%+%AL%                     # minus one because :memfill_half_blocks takes blocks minus one
+CALL :memfill_half_blocks               # Write nulls to ledger address in C, in half blocks (8 bytes = one malloc segment)
+JMP .free_done
+
+.free_blocks
+LDI_AH 0x00                             # byte to fill
+LDI_BL 0x0f
+ALUOP_AL %A&B%+%AL%+%BL%                # strip top 0xfn to get number of blocks
+ALUOP_AL %A-1%+%AL%                     # minus one because :memfill takes bytes minus one
+CALL :memfill                           # Write nulls to ledger address in C, in bytes (1 byte = one malloc block)
+
+.free_done
+CALL :extzero_d_restore
+POP_CL
+POP_CH
+POP_BL
+POP_AL
+POP_AH
 RET
 
 
