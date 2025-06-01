@@ -201,8 +201,12 @@ RET
 #       2 blocks (32 bytes)
 #       ...
 #       7 blocks (112 bytes)
-#       8 blocks -> calls malloc_segments(8>>3=1)
-#       9 blocks -> calls malloc_segments(9>>3=1)
+#       8 blocks -> calls malloc_segments(1)
+#       9 blocks -> calls malloc_segments(2)
+#       ...
+#      15 blocks -> calls malloc_segments(2)
+#      16 blocks -> calls malloc_segments(2)
+#      17 blocks -> calls malloc_segments(3)
 #
 # Output:
 #  A: Memory address of allocated memory (zero if allocation failed)
@@ -265,10 +269,22 @@ RET
 
 # AL was >= 8, so we will call :new_malloc_segments instead
 .blocks_as_segments
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0x07
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # check if any of the lowest three bits are set
+JNZ .blocks_as_segments_roundup
 ALUOP_AL %A>>1%+%AL%
 ALUOP_AL %A>>1%+%AL%
 ALUOP_AL %A>>1%+%AL%            # shift AL right three places to get number of segments
+JMP .do_blocks_as_segments
+.blocks_as_segments_roundup
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%            # shift AL right three places to get number of segments
+ALUOP_AL %A+1%+%AL%
+.do_blocks_as_segments
 CALL :new_malloc_segments
+POP_BL
 RET
 
 #######
