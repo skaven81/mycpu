@@ -104,7 +104,7 @@ ALUOP_ADDR %A%+%AH% $new_malloc_range_start
 ALUOP_ADDR %A%+%AL% $new_malloc_range_start+1
 ALUOP_ADDR %B%+%BL% $new_malloc_segments
 
-CALL :extzero_d                     # switch to the zero page at 0xd000
+CALL :extpage_d_push_zero           # switch to the zero page at 0xd000
 
 # Put the starting ledger address into C
 LDI_C 0xd000 
@@ -121,7 +121,7 @@ ALUOP_AL %B-1%+%BL%                 # AL = 8-byte half-blocks minus one
 # AL = number of 8-byte half-blocks to fill, minus one
 CALL :memfill_half_blocks
 
-CALL :extzero_d_restore             # Switch d-page back to previous value
+CALL :extpage_d_pop                 # Switch d-page back to previous value
 
 POP_CL
 POP_CH
@@ -236,7 +236,7 @@ JMP .new_malloc_blocks_done
 # We need to update the ledger to fill the run with 0xff's, then write the size of the
 # allocation in segments, to the first byte of the run.
 .valid_block_allocation
-CALL :extzero_d                 # switch to the zero page at 0xd000
+CALL :extpage_d_push_zero       # switch to the zero page at 0xd000
 PEEK_AL                         # restore AL (number of blocks). For each count,
                                 # we need to write 1x 0xff's to the ledger.
 ALUOP_AL %A-1%+%AL%             # minus one since :memfill uses bytes minus one
@@ -253,7 +253,7 @@ ALUOP_ADDR_B %A+1%+%AL%         # Write allocation length in blocks to start of 
 ALUOP_AL %B%+%BL%
 ALUOP_AH %B%+%BH%               # copy ledger address to A
 CALL .ledger_to_addr            # get memory address of allocation into A
-CALL :extzero_d_restore         # restore D page
+CALL :extpage_d_pop             # restore D page
 
 .new_malloc_blocks_done
 POP_TD                          # discard saved AL from before
@@ -306,7 +306,7 @@ JMP .new_malloc_segments_done
 # We need to update the ledger to fill the run with 0xff's, then write the size of the
 # allocation in segments, to the first byte of the run.
 .valid_segment_allocation
-CALL :extzero_d                 # switch to the zero page at 0xd000
+CALL :extpage_d_push_zero       # switch to the zero page at 0xd000
 PEEK_AL                         # restore AL (number of segments). For each count,
                                 # we need to write 8x 0xff's to the ledger.
 ALUOP_AL %A-1%+%AL%             # minus one since :memfill_half_blocks uses blocks minus one
@@ -319,7 +319,7 @@ ALUOP_ADDR_B %A+1%+%AL%         # Write allocation length in segments to start o
 ALUOP_AL %B%+%BL%
 ALUOP_AH %B%+%BH%               # copy ledger address to A
 CALL .ledger_to_addr            # get memory address of allocation into A
-CALL :extzero_d_restore         # restore D page
+CALL :extpage_d_pop             # restore D page
 
 .new_malloc_segments_done
 POP_TD                          # discard saved AL from before
@@ -361,7 +361,7 @@ ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
 PUSH_CL
 PUSH_CH
-CALL :extzero_d                     # switch to the zero page at 0xd000
+CALL :extpage_d_push_zero           # switch to the zero page at 0xd000
 
 CALL :heap_push_B                   # save target count for later
 CALL :heap_push_B                   # save it again, this one will stay the original value
@@ -417,7 +417,7 @@ CALL :heap_pop_word                 # discard original count
 LDI_B 0x0000                        # we'll return zero indicating allocation failure
 
 .find_unused_run_done
-CALL :extzero_d_restore             # Switch d-page back to previous value
+CALL :extpage_d_pop                 # Switch d-page back to previous value
 POP_CH
 POP_CL
 POP_AH
@@ -438,7 +438,7 @@ ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %B%+%BL%
 PUSH_CH
 PUSH_CL
-CALL :extzero_d
+CALL :extpage_d_push_zero
 
 # Convert real address to ledger address
 CALL .addr_to_ledger                    # A contains ledger address at 0xd000 base
@@ -478,7 +478,7 @@ ALUOP_AL %A-1%+%AL%                     # minus one because :memfill takes bytes
 CALL :memfill                           # Write nulls to ledger address in C, in bytes (1 byte = one malloc block)
 
 .free_done
-CALL :extzero_d_restore
+CALL :extpage_d_pop
 POP_CL
 POP_CH
 POP_BL
