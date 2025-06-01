@@ -1,3 +1,34 @@
+2025-05-31: next-gen malloc
+===========================
+
+The next-gen malloc and free is working, when used in the `tmalloc` utility.
+But when integrated into the OS to replace the old malloc routines, the system
+fails to boot, as it gets stuck inside the :strsplit function.
+
+I've created a branch in the repository to track the integration work and
+master is back to the old malloc routines.  I need to nail down the calloc
+functions and make sure they're rock solid before going back and retrying the
+integration.  Do the new calloc functions return exactly the same as the old ones?
+
+I also need to fix the extmalloc_d functions to use an independent stack
+instead of a global variable, as it's possible for nested calls to functions
+to try switching to the zero page, and in the current setup, the nested call
+would blow away the old d-page pointer.  I'm not sure there are any nested
+calls at the moment, but it's best to solve this properly now instead of it
+hitting a problem later.
+
+It's possible that the :strsplit function has a legitimate bug but that
+it just hasn't been noticed due to the behavior of the old memory allocator.
+
+
+2025-05-24: next-gen malloc
+===========================
+
+Made some more progress on the code, but haven't actually run it on the
+Odyssey yet. Idea is to call the new malloc functions as OS commands
+until I'm confident they're stable, then cutover to the new ones.
+
+
 2025-05-17: next-gen malloc
 ===========================
 
