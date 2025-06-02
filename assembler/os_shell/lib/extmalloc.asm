@@ -209,6 +209,8 @@ RET
 ALUOP_PUSH %A%+%AL%
 PUSH_DH
 PUSH_DL
+LD_DL %d_page%
+CALL :heap_push_DL
 # set up the stack pointer in D, and move to
 # previous stack item
 LD_DH $extpage_d_ptr
@@ -250,11 +252,13 @@ RET
 
 # extpage_e_pop - restore a previous E page
 # input: none
-# output: %e_page% set to value on top of stack
+# output: %e_page% set to value on top of stack, previous page placed on heap
 :extpage_e_pop
 ALUOP_PUSH %A%+%AL%
 PUSH_DH
 PUSH_DL
+LD_DL %e_page%
+CALL :heap_push_DL
 # set up the stack pointer in D, and move to
 # previous stack item
 LD_DH $extpage_e_ptr
