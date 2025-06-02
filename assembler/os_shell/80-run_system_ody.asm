@@ -80,16 +80,15 @@ ALUOP_AH %A>>1%+%AH%
 ALUOP_AH %A+1%+%AH%
 ALUOP_AH %A<<1%+%AH%
 ALUOP_AL %zero%
-# Shift right seven positions (divide by 128) to get the number of segments we need to malloc
+# Shift right four positions (divide by 16) to get the number of blocks we need to malloc
 CALL :shift16_a_right
 CALL :shift16_a_right
 CALL :shift16_a_right
 CALL :shift16_a_right
-CALL :shift16_a_right
-CALL :shift16_a_right
-CALL :shift16_a_right
-CALL :heap_push_AL              # push segment count for printf later
-CALL :new_malloc_segments
+# But this is the actual number of blocks; malloc expects that number, minus one.
+ALUOP_AL %A-1%+%AL%
+CALL :heap_push_AL              # push block count for printf later
+CALL :malloc
 CALL :heap_push_AL              # push malloc address for printf
 CALL :heap_push_AH
 LDI_C .ody_malloc
@@ -145,4 +144,4 @@ HLT
 .os_bin_filename "/SYSTEM.ODY\0"
 .sys_not_found "SYSTEM.ODY not found. System halted.\n\0"
 .boot_halt_str "System process exited. Status byte 0x%x\nSystem halted.\n\0"
-.ody_malloc "SYSTEM.ODY loaded at 0x%x%x %u segments from filesize 0x%x%x\n\0"
+.ody_malloc "SYSTEM.ODY loaded at 0x%x%x size %u from filesize 0x%x%x\n\0"
