@@ -239,8 +239,6 @@ PUSH_CH
 PUSH_CL
 PUSH_DH
 PUSH_DL
-LD_DH %e_page%
-PUSH_DH
 
 CALL :heap_pop_C                # Pop the cluster number and store on stack for later
 PUSH_CL
@@ -289,9 +287,8 @@ CALL :heap_pop_C                # low word of LBA
 CALL :heap_pop_A                # high word of LBA
 
 # Allocate an extended memory page at 0xe000
-CALL :extmalloc
-CALL :heap_pop_DH
-ST_DH %e_page%
+CALL :extmalloc                 # allocated page is on heap
+CALL :extpage_e_push            # make that the active E page
 
 # Read FAT sector into 0xe000
 LDI_B 0xe000
@@ -326,11 +323,8 @@ LDI_C 0x0001                    # Return value 0x0001 = ATA error
 CALL :heap_push_C
 
 .next_cluster_done
-LD_DH %e_page%
-CALL :heap_push_DH
-CALL :extfree
-POP_DH
-ST_DH %e_page%
+CALL :extpage_e_pop             # restore previous E page; current page on heap
+CALL :extfree                   # Free the extended memory page on heap
 POP_DL
 POP_DH
 POP_CL
