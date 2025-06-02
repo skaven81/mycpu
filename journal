@@ -1,3 +1,17 @@
+2025-06-01: next-gen malloc
+===========================
+
+Got the extmalloc push/pop page functions written, and have the new malloc
+library installed alongside the old one.  Integrating the new malloc is tricky
+though...something odd is happening when I try to update the 80-run_system_ody.asm
+file because it correctly computes that it needs to allocate 32 segments to
+hold the ~4KiB SYSTEM.ODY, but the debug statement suggests that something gets
+left on the heap in the process.  So I need to do some further testing with
+tmalloc to check that everything is working as expected:
+ * are the extmalloc push/pop commands working right?
+ * does calling :malloc_blocks or :malloc_segments cause a heap leak?
+
+
 2025-05-31: next-gen malloc
 ===========================
 
