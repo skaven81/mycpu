@@ -122,6 +122,7 @@ ALUOP_AL %B-1%+%BL%                 # AL = 8-byte half-blocks minus one
 CALL :memfill_half_blocks
 
 CALL :extpage_d_pop                 # Switch d-page back to previous value
+CALL :heap_pop_byte                 # Discard previous d-page
 
 POP_CL
 POP_CH
@@ -258,6 +259,7 @@ ALUOP_AL %B%+%BL%
 ALUOP_AH %B%+%BH%               # copy ledger address to A
 CALL .ledger_to_addr            # get memory address of allocation into A
 CALL :extpage_d_pop             # restore D page
+CALL :heap_pop_byte             # discard previous D page
 
 .new_malloc_blocks_done
 POP_TD                          # discard saved AL from before
@@ -336,6 +338,7 @@ ALUOP_AL %B%+%BL%
 ALUOP_AH %B%+%BH%               # copy ledger address to A
 CALL .ledger_to_addr            # get memory address of allocation into A
 CALL :extpage_d_pop             # restore D page
+CALL :heap_pop_byte             # discard previous D page
 
 .new_malloc_segments_done
 POP_TD                          # discard saved AL from before
@@ -434,6 +437,7 @@ LDI_B 0x0000                        # we'll return zero indicating allocation fa
 
 .find_unused_run_done
 CALL :extpage_d_pop                 # Switch d-page back to previous value
+CALL :heap_pop_byte                 # Discard previous d-page
 POP_CH
 POP_CL
 POP_AH
@@ -494,7 +498,8 @@ ALUOP_AL %A-1%+%AL%                     # minus one because :memfill takes bytes
 CALL :memfill                           # Write nulls to ledger address in C, in bytes (1 byte = one malloc block)
 
 .free_done
-CALL :extpage_d_pop
+CALL :extpage_d_pop                     # reset D page
+CALL :heap_pop_byte                     # discard previous D page
 POP_CL
 POP_CH
 POP_BL
