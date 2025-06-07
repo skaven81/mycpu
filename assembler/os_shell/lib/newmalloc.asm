@@ -515,8 +515,68 @@ RET
 # Output: same as malloc
 #
 :new_calloc_blocks
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0x08
+ALUOP_FLAGS %B-A%+%AL%+%BL%     # if AL >= 8, zero or overflow bit will be set
+POP_BL
+JO .calloc_blocks_as_segments
+JZ .calloc_blocks_as_segments
+
+# AL was < 8, so we perform allocation in 16-byte blocks
+PUSH_CH
+PUSH_CL
+ALUOP_PUSH %A%+%AL%             # save request size
+CALL :new_malloc_blocks         # address in A
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # Copy address to C
+POP_AL                          # restore request size in blocks
+ALUOP_AL %A-1%+%AL%             # memfill takes blocks minus one
+LDI_AH 0x00                     # fill value
+PUSH_CH
+PUSH_CL                         # save address since memfill_blocks will overwrite it
+CALL :memfill_blocks
+POP_AL
+POP_AH                          # restore address into A for return
+POP_CL
+POP_CH                          # restore C from above
 RET
 
+.calloc_blocks_as_segments
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0x07
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # check if any of the lowest three bits are set
+JNZ .calloc_blocks_as_segments_roundup
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%            # shift AL right three places to get number of segments
+JMP .do_calloc_blocks_as_segments
+.calloc_blocks_as_segments_roundup
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%            # shift AL right three places to get number of segments
+ALUOP_AL %A+1%+%AL%
+.do_calloc_blocks_as_segments
+CALL :new_calloc_segments
+POP_BL
+RET
+
+
 :new_calloc_segments
+PUSH_CH
+PUSH_CL
+ALUOP_PUSH %A%+%AL%             # save request size
+CALL :new_malloc_segments       # address in A
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # Copy address to C
+POP_AL                          # restore request size in blocks
+ALUOP_AL %A-1%+%AL%             # memfill takes segments minus one
+LDI_AH 0x00                     # fill value
+PUSH_CH
+PUSH_CL                         # save address since memfill_segments will overwrite it
+CALL :memfill_segments
+POP_AL
+POP_AH                          # restore address into A for return
+POP_CL
+POP_CH                          # restore C from above
 RET
 
