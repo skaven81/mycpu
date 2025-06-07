@@ -1,8 +1,8 @@
 # vim: syntax=asm-mycpu
 
-# Tests the next-gen malloc functions
+# Allocate memory
 
-:cmd_tmalloc
+:cmd_malloc
 
 # Check first argument so we know what subcommand to run
 LD_CH $user_input_tokens+2
@@ -16,10 +16,13 @@ LDA_C_BH                        # BH contains the first character of the first a
 LDI_AL 's'
 ALUOP_FLAGS %A&B%+%AL%+%BH%
 JEQ .get_size
+LDI_AL 'S'
+ALUOP_FLAGS %A&B%+%AL%+%BH%
+JEQ .get_size
 LDI_AL 'b'
 ALUOP_FLAGS %A&B%+%AL%+%BH%
 JEQ .get_size
-LDI_AL 'i'
+LDI_AL 'B'
 ALUOP_FLAGS %A&B%+%AL%+%BH%
 JEQ .get_size
 LDI_AL 'f'
@@ -29,7 +32,7 @@ LDI_C .error_command
 CALL :print
 JMP .usage
 
-# 's' or 'b' or 'i' is in BH; check for next argument
+# 's' or 'b' is in BH; check for next argument
 .get_size
 LD_CH $user_input_tokens+4      # Pointer to second argument in C
 LD_CL $user_input_tokens+5
@@ -42,46 +45,52 @@ CALL :strtoi8                   # Convert to number from string pointer in C int
 ALUOP_FLAGS %B%+%BL%
 JNZ .usage
 
-##### User wants to init or allocate
+##### User wants to allocate
 # Size is in AL, seg/block is in BH
 LDI_AH 's'
 ALUOP_FLAGS %A&B%+%AH%+%BH%
-JEQ .do_segments
+JEQ .do_malloc_segments
+LDI_AH 'S'
+ALUOP_FLAGS %A&B%+%AH%+%BH%
+JEQ .do_calloc_segments
 LDI_AH 'b'
 ALUOP_FLAGS %A&B%+%AH%+%BH%
-JEQ .do_blocks
-LDI_AH 'i'
+JEQ .do_malloc_blocks
+LDI_AH 'B'
 ALUOP_FLAGS %A&B%+%AH%+%BH%
-JEQ .do_init
+JEQ .do_calloc_blocks
 JMP .usage
 
-.do_init
-ALUOP_BL %A%+%AL%               # Copy size to BL so we can see it in :trace
-LDI_A 0x6000                    # fixed base address in A
-CALL :heap_push_BL
-LDI_C .entry_init
-CALL :printf
-CALL :trace_begin
-CALL :new_malloc_init
-CALL :trace_end
-RET
-
-.do_blocks
-CALL :heap_push_AL
-LDI_C .entry_blk
-CALL :printf
-CALL :trace_begin
+.do_malloc_blocks
 CALL :new_malloc_blocks
-CALL :trace_end
+CALL :heap_push_AL
+CALL :heap_push_AH
+LDI_C .malloc_print
+CALL :printf
 RET
 
-.do_segments
+.do_calloc_blocks
+CALL :new_calloc_blocks
 CALL :heap_push_AL
-LDI_C .entry_seg
+CALL :heap_push_AH
+LDI_C .calloc_print
 CALL :printf
-CALL :trace_begin
+RET
+
+.do_malloc_segments
 CALL :new_malloc_segments
-CALL :trace_end
+CALL :heap_push_AL
+CALL :heap_push_AH
+LDI_C .malloc_print
+CALL :printf
+RET
+
+.do_calloc_segments
+CALL :new_calloc_segments
+CALL :heap_push_AL
+CALL :heap_push_AH
+LDI_C .calloc_print
+CALL :printf
 RET
 
 
@@ -100,13 +109,11 @@ ALUOP_FLAGS %B%+%BL%
 JNZ .usage
 
 # Address is in A
+CALL :new_free
 CALL :heap_push_AL
 CALL :heap_push_AH
-LDI_C .entry_free
+LDI_C .free_print
 CALL :printf
-CALL :trace_begin
-CALL :new_free
-CALL :trace_end
 RET
 
 .usage
@@ -114,10 +121,8 @@ LDI_C .helpstr
 CALL :print
 RET
 
-.helpstr "Usage: tmalloc {i[nit],s[eg],b[lock],f[ree]} size|addr\n\0"
-.error_command "ERR: invalid subcommand provided\n\0"
-.entry_init "Calling :new_malloc_init(0x6000, 0x%x)\n\0"
-.entry_blk "Calling :new_malloc_blocks(0x%x)\n\0"
-.entry_seg "Calling :new_malloc_segments(0x%x)\n\0"
-.entry_free "Calling :new_free(0x%x%x)\n\0"
-
+.helpstr "Usage:\n  malloc [sS] size - malloc / calloc segments\n  malloc [bB] size - malloc / calloc blocks\n  malloc f addr - free memory\n\0"
+.error_command "ERR: invalid subcommand provided, expecting one of [sSbBf]\n\0"
+.malloc_print "Allocated memory at 0x%x%x\n\0"
+.calloc_print "Allocated and cleared memory at 0x%x%x\n\0"
+.free_print "Freed memory near 0x%x%x\n\0"
