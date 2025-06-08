@@ -63,8 +63,8 @@ RET
 # If the loop completes all 32 ledger bytes without finding a free page, it
 # returns zero. The zero page is not a "successful" allocation -- it means
 # the extended memory is full; any subsequent calls to :extmalloc will return
-# zero. Programs can (with caution) use the zero page without allocating it,
-# as a scratch space.
+# zero. The zero page is used by system library functions like :malloc to
+# store state data.  User programs should not use the zero page.
 :extmalloc
 PUSH_DH
 PUSH_DL
