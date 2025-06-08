@@ -1,3 +1,18 @@
+2025-06-07: next-gen malloc
+===========================
+
+Updated the malloc and extmallc commands to fully test the new behavior. Found
+a bug where :extpage_d_pop was being called but the returned value on the heap
+was not being discarded.  This resulted in a heap violation which presumably was
+causing the issues before when integrating the new malloc.
+
+I also ran some tests to make sure the stack is working correctly when allocating
+extended memory pages.
+
+Everything checks out, looks like we're good to go for attempting to integrate the
+new malloc again.
+
+
 2025-06-01: next-gen malloc
 ===========================
 
