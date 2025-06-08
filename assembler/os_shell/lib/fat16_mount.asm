@@ -50,8 +50,6 @@ PUSH_CL
 PUSH_CH
 PUSH_DL
 PUSH_DH
-LD_CL %d_page%
-PUSH_CL
 
 # Pop arguments off the heap, except for the target memory address
 CALL :heap_pop_CL               # ATA ID
@@ -64,7 +62,8 @@ CALL :extmalloc
 CALL :heap_pop_AL
 ALUOP_FLAGS %A%+%AL%
 JZ .mount_abort_1               # Fail if we're out of memory
-ALUOP_ADDR %A%+%AL% %d_page%    # Our memory page is at 0xd000
+CALL :heap_push_AL
+CALL :extpage_d_push            # Make D page use the allocated page
 POP_AL                          # restore AL, so A+B are the start sector again
 
 # Reset the device before attempting to mount; this helps
@@ -436,6 +435,8 @@ STA_B_DL
 # Done, prepare to return
 LDI_CL 0x00
 CALL :heap_push_CL              # push OK status byte to heap
+CALL :extpage_d_pop             # Restore D page to previous value, old value is on heap
+CALL :extfree                   # free the page on the heap
 JMP .mount_done
 
 # abort vector if extmalloc failed
@@ -455,9 +456,8 @@ POP_TD
 POP_TD
 POP_TD
 CALL :heap_push_AL              # put the ATA error on the heap
-LD_AL %d_page%                  # free our extended memory allocation
-CALL :heap_push_AL
-CALL :extfree
+CALL :extpage_d_pop             # Restore D page to previous value, old value is on heap
+CALL :extfree                   # Free that page
 JMP .mount_done
 
 # abort vector if it doesn't look like a FAT16 filesystem
@@ -470,8 +470,7 @@ POP_TD
 POP_TD
 LDI_AL 0xfe
 CALL :heap_push_AL              # put the "not FAT16 filesystem" error on the heap
-LD_AL %d_page%                  # free our extended memory allocation
-CALL :heap_push_AL
+CALL :extpage_d_pop             # Restore D page to previous value, old value is on heap
 CALL :extfree
 JMP .mount_done
 
@@ -479,11 +478,11 @@ JMP .mount_done
 .mount_abort_4
 CALL :heap_pop_word             # discard memory address argument
 CALL :heap_push_AL              # Push non-zero status byte onto heap
+CALL :extpage_d_pop             # Restore D page to previous value, old value is on heap
+CALL :extfree                   # free the page on the heap
 JMP .mount_done
 
 .mount_done
-POP_CL
-ST_CL %d_page%
 POP_DH
 POP_DL
 POP_CH
