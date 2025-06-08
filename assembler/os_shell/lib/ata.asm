@@ -31,14 +31,14 @@ PUSH_DL
 CALL :heap_pop_AL                   # master/slave in AL
 ALUOP_PUSH %A%+%AL%                 # store on stack for now
 
-LDI_AL 0x03                         # size 3, 64 bytes
-CALL :calloc                        # address in A, this will be our output string
+LDI_AL 4                            # 4 blocks, 64 bytes
+CALL :calloc_blocks                 # address in A, this will be our output string
 ALUOP_DH %A%+%AH%
 ALUOP_DL %A%+%AL%                   # Copy destination address into D
 CALL :heap_push_D                   # Put our return string on the heap
 
-LDI_AL 0x19                         # size 0x19 (32 16-byte segments = 512 bytes)
-CALL :malloc                        # address in A, sector read buffer
+LDI_AL 4                            # 4 segments, 512 bytes
+CALL :malloc_segments               # address in A, sector read buffer
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%                   # Copy sector buffer address into C
 
@@ -142,7 +142,6 @@ POP_CH
 # Clean up sector buffer
 MOV_CH_AH                           # Put sector buffer addr into A
 MOV_CL_AL
-LDI_BL 0x19                         # size 0x19 (32 16-byte segments = 512 bytes)
 CALL :free                          # free the sector buffer
 
 # done
@@ -151,7 +150,6 @@ JMP .ata_identify_string_done
 .not_detected
 MOV_CH_AH                           # Put sector buffer addr into A
 MOV_CL_AL
-LDI_BL 0x19                         # size 19
 CALL :free                          # free the sector buffer
 LDI_C .not_detected_str             # string to return
 CALL :strcpy                        # copy string from C to D

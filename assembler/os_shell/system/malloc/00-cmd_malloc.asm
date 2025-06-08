@@ -62,7 +62,7 @@ JEQ .do_calloc_blocks
 JMP .usage
 
 .do_malloc_blocks
-CALL :new_malloc_blocks
+CALL :malloc_blocks
 CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .malloc_print
@@ -70,7 +70,7 @@ CALL :printf
 RET
 
 .do_calloc_blocks
-CALL :new_calloc_blocks
+CALL :calloc_blocks
 CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .calloc_print
@@ -78,7 +78,7 @@ CALL :printf
 RET
 
 .do_malloc_segments
-CALL :new_malloc_segments
+CALL :malloc_segments
 CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .malloc_print
@@ -86,7 +86,7 @@ CALL :printf
 RET
 
 .do_calloc_segments
-CALL :new_calloc_segments
+CALL :calloc_segments
 CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .calloc_print
@@ -109,7 +109,7 @@ ALUOP_FLAGS %B%+%BL%
 JNZ .usage
 
 # Address is in A
-CALL :new_free
+CALL :free
 CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .free_print

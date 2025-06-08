@@ -42,12 +42,10 @@ CALL :putchar                   # print a trailing newline
 ALUOP_PUSH %B%+%BL%             # save the low byte of the directory entry
 MOV_CH_AH
 MOV_CL_AL
-LDI_BL 2                        # size 2, 48 bytes
 CALL :free                      # Free the directory entry string
 # Free the directory entry
 ALUOP_AH %B%+%BH%
 POP_AL                          # from the push above
-LDI_BL 1                        # size 1, 32 bytes
 CALL :free                      # Free the directory entry
 RET
 

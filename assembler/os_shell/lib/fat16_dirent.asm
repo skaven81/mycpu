@@ -21,8 +21,8 @@ PUSH_DL
 
 CALL :heap_pop_C                # directory entry address in C
 
-LDI_AL 0                        # malloc size 0 = 16 bytes
-CALL :calloc                    # zeroed memory address in A
+LDI_AL 1                        # malloc 1 block = 16 bytes
+CALL :calloc_blocks             # zeroed memory address in A
 ALUOP_DH %A%+%AH%
 ALUOP_DL %A%+%AL%               # copy memory address into D
 CALL :heap_push_A               # push memory address because we need to return it
@@ -270,8 +270,8 @@ CALL :add16_to_a                # AH now has year
 CALL :heap_push_A
 
 # allocate memory for return string
-LDI_AL 1                        # malloc size 1 = 32 bytes
-CALL :calloc                    # zeroed memory address in A
+LDI_AL 2                        # malloc 2 blocks = 32 bytes
+CALL :calloc_blocks             # zeroed memory address in A
 ALUOP_DH %A%+%AH%
 ALUOP_DL %A%+%AL%               # copy memory address into D
 
@@ -298,7 +298,7 @@ RET
 #  1. Push the address word of a FAT16 directory entry
 #  2. Call the function
 #  3. Pop the address word of the string
-#  4. Call :free with size 2 (48 bytes) to release the memory allocated for the string
+#  4. Call :free to release the memory allocated for the string
 #
 # String will be formatted as such:
 #
@@ -326,8 +326,8 @@ CALL :heap_pop_C                # directory entry address in C
 MOV_CH_BH
 MOV_CL_BL                       # save directory entry address in B
 
-LDI_AL 2                        # malloc size 2 = 48 bytes
-CALL :calloc                    # zeroed memory address in A
+LDI_AL 3                        # malloc 3 blocks = 48 bytes
+CALL :calloc_blocks             # zeroed memory address in A
 ALUOP_DH %A%+%AH%
 ALUOP_DL %A%+%AL%               # copy memory address into D
 CALL :heap_push_A               # push memory address because we need to return it
@@ -360,10 +360,7 @@ CALL :heap_pop_C
 CALL :heap_push_C               # save copy of timestamp string address
 CALL :strcpy                    # copy string from C (timestamp) to destination string in D
 CALL :heap_pop_A                # restore timestamp string address to A
-ALUOP_PUSH %B%+%BL%
-LDI_BL 1
 CALL :free                      # free the timestamp string
-POP_BL
 
 # add a space to the target string
 LDI_AL ' '

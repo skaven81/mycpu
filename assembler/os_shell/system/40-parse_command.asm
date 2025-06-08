@@ -118,7 +118,6 @@ JEQ .tryfiles_failed_notfound
 CALL :heap_push_A               # directory entry
 CALL :run_ody
 # free the directory entry
-LDI_BL 1                        # size 1 = 32 bytes
 CALL :free
 JMP .cmd_return
 

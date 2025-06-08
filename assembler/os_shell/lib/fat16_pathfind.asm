@@ -84,8 +84,8 @@ INCR_C                              # move to the first char after the first /
 # Split up the path into parts using '/' as a separator.
 # Store the address of the resulting array in C
 .fat16_pathfind_splitpath
-LDI_AL 1                            # size 1, 32 bytes, enough for 16 substrings
-CALL :malloc                        # allocated address in A
+LDI_AL 2                            # 2 blocks, 32 bytes, enough for 16 substrings
+CALL :malloc_blocks                 # allocated address in A
 ALUOP_PUSH %A%+%AH%                 # save for later
 ALUOP_PUSH %A%+%AL%
 PUSH_DH
@@ -93,7 +93,7 @@ PUSH_DL
 ALUOP_DH %A%+%AH%
 ALUOP_DL %A%+%AL%                   # D = token array
 LDI_AH '/'                          # split character
-LDI_AL 0x00                         # substring alloc size 0 (16 bytes)
+LDI_AL 1                            # substring alloc 1 block (16 bytes)
                                     # C already points at the string to split
 CALL :strsplit
 POP_DL
@@ -188,7 +188,6 @@ JZ .next_token_null2
 # next token is not null, so extract directory cluster
 CALL :heap_push_A                   # directory entry
 CALL :fat16_dirent_cluster          # cluster number on heap
-LDI_BL 1                            # size 1, 32 bytes
 CALL :free                          # free the directory entry
 CALL :heap_pop_B                    # update current cluster
 JMP .fat16_pathfind_loop
@@ -227,14 +226,12 @@ LDA_D_AL
 INCR_D
 ALUOP_FLAGS %A%+%AH%
 JZ .pathfind_token_free_loop_done
-LDI_BL 0                            # size 0 = 16 bytes
 CALL :free
 JMP .pathfind_token_free_loop
 .pathfind_token_free_loop_done
 # free the main array
 POP_AH                              # restore base address from above
 POP_AL
-LDI_BL 1                            # size 1, 32 bytes
 CALL :free
 
 .fat16_pathfind_final

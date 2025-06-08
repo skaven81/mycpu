@@ -84,7 +84,6 @@ ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
 MOV_DL_AL                       # Copy D to A because we need to free the
 MOV_DH_AH                       #   memory when we're done comparing
-LDI_BL 0                        # size 0 = 16 bytes
 CALL :free                      # free the filename string
 CALL :strcmp                    # Compare strings in C and D, result in AL
 ALUOP_FLAGS %A%+%AL%            # is AL zero (strings matched)?
@@ -126,7 +125,6 @@ JNE .singledot_cd
 # characters from the CWD string up to the first slash.
 MOV_CH_AH                       # Copy filename string pointer to A
 MOV_CL_AL
-LDI_BL 0                        # size 0, 16 bytes
 CALL :free                      # Free the memory
 # load up the filesystem handle into D
 LD_DH $current_fs_handle_ptr
@@ -179,7 +177,7 @@ LDI_BL '/'                      # Append a slash to the dir name
 ALUOP_ADDR_D %B%+%BL%
 POP_AL
 POP_AH                          # Restore filename string address into A
-LDI_B 0                         # size 0, 16 bytes
+LDI_BH 0                        # old instruction was LDI_B 0, not sure if clearing BH was necessary, so kept it.
 CALL :free
 JMP .cd_done_match_finish
 

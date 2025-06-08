@@ -43,8 +43,8 @@ LDI_C .clock_prompt
 CALL :print
 CALL .printclock
 
-LDI_AL 0
-CALL :malloc                        # A has a pointer to a 16-byte bufer
+LDI_AL 1                            # 1 block, 16 bytes
+CALL :malloc_blocks                 # A has a pointer to a 16-byte bufer
 ALUOP_DH %A%+%AH%
 ALUOP_DL %A%+%AL%                   # copy memory address to D
 PUSH_DH
@@ -169,7 +169,6 @@ ALUOP_ADDR %A%+%AL% %tmr_clk_sec%   # set seconds
 .finish_set
 POP_AL                              # Retrieve malloc'd address
 POP_AH
-LDI_BL 0                            # one block
 CALL :free
 RET
 
@@ -180,7 +179,6 @@ LDI_C .set_error
 CALL :printf
 POP_AL                              # Retrieve malloc'd address
 POP_AH
-LDI_BL 0                            # one block
 CALL :free
 RET
 

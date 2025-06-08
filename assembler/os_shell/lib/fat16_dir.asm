@@ -31,7 +31,7 @@
 #     directory entry you were looking for.
 #     * If 0x0000, the file/dir was not found.
 #     * If 0x02nn, an ATA error occurred, and the error code is nn
-#  8. If found, be sure to :free (size 1, 32 bytes) the returned memory address
+#  8. If found, be sure to :free the returned memory address
 #
 # Note: these functions are not reentrant-safe due to the use of global vars
 # to store the directory entry data.
@@ -137,7 +137,6 @@ ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
 MOV_CL_AL                           # Copy C to A because we need to free the
 MOV_CH_AH                           #   memory when we're done comparing
-LDI_BL 0                            # size 0 = 16 bytes
 CALL :free                          # free the filename string
 CALL :strcmp                        # Compare strings in C and D, result in AL
 ALUOP_FLAGS %A%+%AL%                # is AL zero (strings matched)?
@@ -157,8 +156,8 @@ JMP .dir_find_done
 .dir_find_done_match
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%                   # Copy directory entry address to C (source address)
-LDI_AL 1                            # malloc size 1 = 32 bytes
-CALL :malloc                        # memory address in A
+LDI_AL 2                            # 2 blocks = 32 bytes
+CALL :malloc_blocks                 # memory address in A
 ALUOP_DH %A%+%AH%
 ALUOP_DL %A%+%AL%                   # destination address into D
 PUSH_DH
@@ -197,8 +196,8 @@ PUSH_DH
 PUSH_DL
 
 # Allocate 512 bytes of memory and store address in $dirwalk_current_sector_data
-LDI_AL 31                           # malloc size 31=512 bytes
-CALL :malloc                        # address in A
+LDI_AL 4                            # 4 128-byte segments = 512 bytes
+CALL :malloc_segments               # address in A
 ALUOP_ADDR %A%+%AH% $dirwalk_current_sector_data
 ALUOP_ADDR %A%+%AL% $dirwalk_current_sector_data+1
 
@@ -470,7 +469,6 @@ LDI_C $dirwalk_current_sector_data  # put address of sector data into A
 LDA_C_AH                            # |
 INCR_C                              # |
 LDA_C_AL                            # |
-LDI_BL 31                           # size 31=512 bytes
 CALL :free                          # Free the memory
 
 # Zero the sector data address for good measure

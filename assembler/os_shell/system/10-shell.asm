@@ -22,13 +22,11 @@ ALUOP_FLAGS %A%+%AL%
 JNZ .free_tokens_continue
 JMP .free_tokens_done           # If both AH and AL are zero, we are done freeing
 .free_tokens_continue
-LDI_BL 1                        # free 2 blocks, 32 bytes
 CALL :free
 JMP .free_tokens_loop
 .free_tokens_done
 
 LD16_A $user_input_buf          # Free the memory where we stored user input
-LDI_BL 7                        # |
 CALL :free                      # |
 JMP .command_loop
 

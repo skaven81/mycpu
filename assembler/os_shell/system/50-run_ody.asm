@@ -22,8 +22,8 @@ ALUOP_ADDR %B%+%BH% $shell_ody_fh # save filesystem handl
 ALUOP_ADDR %B%+%BL% $shell_ody_fh+1
 
 # Load the first sector of the binary into a temporary memory segment
-LDI_AL 31                       # allocate 512 bytes
-CALL :malloc                    # address in A
+LDI_AL 4                        # allocate 4 segments, 512 bytes
+CALL :malloc_segments           # address in A
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%               # save temp memory address for freeing later
 
@@ -60,7 +60,6 @@ JMP .run_ody_done
 # on the flag byte settings
 .allocate_ody_memory
 ALUOP_PUSH %A%+%AL%
-LDI_BL 31                       # 512 bytes to free
 MOV_CH_AH
 MOV_CL_AL
 CALL :free                      # free the temporary memory segment
@@ -151,17 +150,18 @@ ALUOP_AH %A>>1%+%AH%
 ALUOP_AH %A+1%+%AH%
 ALUOP_AH %A<<1%+%AH%
 ALUOP_AL %zero%
-# Shift right four positions to get the number of blocks we need to malloc
+# Shift right seven positions to get the number of segments we need to malloc
 CALL :shift16_a_right
 CALL :shift16_a_right
 CALL :shift16_a_right
 CALL :shift16_a_right
-# But this is the actual number of blocks; malloc expects that number, minus one.
-ALUOP_AL %A-1%+%AL%
+CALL :shift16_a_right
+CALL :shift16_a_right
+CALL :shift16_a_right
 
 ALUOP_BL %A%+%AL%               # save malloc size for freeing
 CALL :heap_push_AL              # DEBUG push malloc size for printf
-CALL :malloc
+CALL :malloc_segments
 CALL :heap_push_AL              # DEBUG push resulting addr for printf
 CALL :heap_push_AH              # DEBUG
 LDI_C .ody_malloc               # DEBUG
@@ -220,4 +220,4 @@ RET
 .ata_err1 "ATA error loading first sector of binary: 0x%x\n\0"
 .ata_err2 "ATA error loading binary: 0x%x\n\0"
 .ody_err1 "Error: file does not look like an ODY executable\n\0"
-.ody_malloc "ODY loaded at 0x%x%x size %u from filesize 0x%x%x\n\0"
+.ody_malloc "ODY loaded at 0x%x%x %u segments from filesize 0x%x%x\n\0"

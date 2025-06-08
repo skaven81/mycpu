@@ -161,7 +161,7 @@ RET
 #
 # Inputs:
 #  AH: character to split the string by
-#  AL: size of calloc allocation, as number of 16-byte blocks minus 1
+#  AL: size of calloc allocation, as number of 16-byte blocks
 #   C: address of null-terminated string to split
 #   D: address of array where token pointers will be stored
 #
@@ -186,7 +186,7 @@ LDI_BH 0                                # initialize token counter (BH)
 .strsplit_loop_newtoken
 # Start by allocating a new memory block for the next token
 CALL :heap_push_A                       # Save A as we're going to overwrite it when calling calloc
-CALL :calloc                            # A now contains a pointer to allocated memory
+CALL :calloc_blocks                     # A now contains a pointer to allocated memory
 ALUOP_ADDR_D %A%+%AH%                   # Save high byte of pointer to token array
 INCR_D
 ALUOP_ADDR_D %A%+%AL%                   # Save low byte of pointer to token array

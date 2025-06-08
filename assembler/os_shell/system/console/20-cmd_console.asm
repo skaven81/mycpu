@@ -21,8 +21,8 @@
 :cmd_console
 
 VAR global word $console_vars
-LDI_AL 0                # one block, 16 bytes
-CALL :malloc            # A contains our memory address
+LDI_AL 1                # one block, 16 bytes
+CALL :malloc_blocks     # A contains our memory address
 ALUOP_ADDR %A%+%AH% $console_vars
 ALUOP_ADDR %A%+%AL% $console_vars+1
 # $console_vars[0] - raw mode
@@ -149,7 +149,7 @@ ST_TD %IRQ5addr%+1      # restore IRQ5 lo from $console_vars[4]
 UMASKINT
 
 .exit
-# Free malloc'd memory
+# Free malloc'd memory, address was stored in $console_vars[0..1]
 LD_DH $console_vars
 LD_DL $console_vars+1
 LDI_AL 0x00

@@ -10,8 +10,7 @@ LDI_BL 0                                # primary master
 CALL :heap_push_BL
 LDI_C .ata_banner
 CALL :printf
-LDI_BL 3                                # free 64 bytes, A still contains addr
-CALL :free
+CALL :free                              # free the memory, A still contains addr
 
 LDI_BL 1                                # primary slave
 CALL :heap_push_BL
@@ -22,8 +21,7 @@ LDI_BL 1                                # primary master
 CALL :heap_push_BL
 LDI_C .ata_banner
 CALL :printf
-LDI_BL 3                                # free 64 bytes, A still contains addr
-CALL :free
+CALL :free                              # free the memory, A still contains addr
 RET
 
 .ata_banner "ATA%u: %s\n\0"

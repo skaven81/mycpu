@@ -22,8 +22,8 @@ LDI_AL '\n'
 CALL :putchar
 
 # Allocate memory for storing the user's input
-LDI_AL 7                        # allocate 8 blocks (128 bytes)
-CALL :calloc                    # for storing the user's empty input
+LDI_AL 1                        # 1 segment (128 bytes)
+CALL :calloc_segments           # for storing the user's empty input
 ALUOP_ADDR %A%+%AH% $user_input_buf
 ALUOP_ADDR %A%+%AL% $user_input_buf+1
 
@@ -58,7 +58,7 @@ POP_CL                          # |
 POP_CH                          # C now points at our input string
 LDI_D $user_input_tokens        # D now points at our token array
 LDI_AH ' '                      # split on spaces
-LDI_AL 1                        # allocate 2 blocks (32 bytes) for each token
+LDI_AL 2                        # allocate 2 blocks (32 bytes) for each token
 CALL :strsplit                  # AH=num tokens, D=null-terminated array of tokens
 #DEBUG CALL .print_deconstructed_command
 

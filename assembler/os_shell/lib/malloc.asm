@@ -6,102 +6,79 @@
 #  * range: the area of RAM set aside for the memory allocator
 #  * segment: 128 bytes, the smallest unit of range
 #  * block: 16 bytes, the smallest unit of allocation (1/8 of a segment)
-#  * ledger: bytes at the beginning of the range indicating free/allocated status
+#  * ledger: table recording which blocks are allocated, stored in extended memory
 #
-# Begin by initializing the range that will be used by the allocator by calling malloc_init.
-# Initialization happens in 128-byte segments.  Up to 256 segments (32KiB) may be allocated
-# into the memory manager (though in practice the range will likely be somewhere around
-# 20KiB).
 #
-# The beginning of the range is used for the ledger. Each bit in the ledger represents
-# a 16-byte block. So each 128-byte allocated segment is represented by one byte (16 x 8 = 128)
-# The ledger begins at the beginning of the range, so the blocks used by the ledger are marked
-# as "used" during initialization.
+### USAGE OVERVIEW
 #
-# So we initialize by noting:
-#   * address of the beginning of the range (ex. 0x6000)
-#   * number of 128-byte segments to allocate (ex. 0x40 (64) -> 8KiB allocation / 512 blocks)
+# Begin by initializing the ledger. The ledger is stored in extended memory to
+# ensure that main memory capacity is maximized. Every byte in the ledger
+# represents a block (16 bytes) of allocated memory.
 #
-# With this, we know how many bytes we need for the ledger (it's the same as the number of
-# 128-byte segments we allocated, in this case 0x40 (64).  The actual memory allocations start
-# immediately after the ledger.
+#  0x00 - unallocated block
+#  0x01..0xef - segment allocation size, 1 segment (128 bytes) to 239 segments (30592 bytes)
+#  0xf1..0xf7 - block allocation size, 1 block (16 bytes), to 7 blocks (112 bytes)
+#  0xf8..0xfe - unused, invalid
+#  0xff - part of previous allocation
 #
-# In our example, the ledger is initialized like so:
+# The ledger for a 32KiB allocatable range (maximum we will ever need) is 2048
+# bytes long.
 #
-# |0x6000  |0x6001  |0x6002  |0x6003  |0x6004  |...|0x603f  |0x6040  |
-# |11110000|00000000|00000000|00000000|00000000|...|00000000|????????|
-#  |--|-allocation-for-ledger-4-bits                       | \
-#  `------ledger-64-bytes----------------------------------'  `-first allocatable byte
+# Handling an allocation request starts with two sets of functions:
 #
-# So in our example, we have a base address of 0x6000, 64 bytes (0x40) of ledger, and
-# the allocatable memory runs from 0x6040 -> 0x7fff (8127 bytes).
+#  :malloc_blocks - small allocations by block. The AL register contains the
+#  number of blocks to allocate
 #
-# Bits in the ledger indicate whether the 16-byte block is allocated (1) or free (0).
+#  :malloc_segments - large allocations by segment. The AL register contains
+#  the number of segments to allocate
 #
-# The address represented by any given bit in the ledger is computed by:
+# These functions return the address of allocated memory in register A.
+# AH will be 0x00 if allocation failed. AL may contain a code that indicates
+# why the allocation failed (future work).
 #
-#  addr_of_ledger + (full_bytes<<7) + (zero_idx_bit_pos<<4)
+# Freeing memory requires placing an address in A then calling :free.
 #
-# This works out like so:
+# If upon consulting the ledger, the address maps to a byte with value
+# 0xff or 0x00, then :free fails, an error is printed to the console,
+# and the system halts.
 #
-# |block|ledger|bit_pos|   block   |note
-# |index|index |       |           |
-# | 0000|  0   |  0    |0x6000-600f|beginning of range, first block of ledger
-# | 0001|  0   |  1    |0x6010-601f|ledger
-# | 0002|  0   |  2    |0x6020-602f|ledger
-# | 0003|  0   |  3    |0x6020-602f|ledger
-# | 0004|  0   |  4    |0x6040-604f|first block of allocatable RAM
-# | 0005|  0   |  5    |0x6050-605f|allocatable RAM
-# | 0006|  0   |  6    |0x6060-606f|allocatable RAM
-# | 0007|  0   |  7    |0x6070-607f|allocatable RAM
-# | 0008|  1   |  0    |0x6080-608f|allocatable RAM
-# | 0009|  1   |  1    |0x6090-609f|allocatable RAM
-# | 000a|  1   |  2    |0x60a0-60af|allocatable RAM
-# | 000b|  1   |  3    |0x60b0-60bf|allocatable RAM
-# | 000c|  1   |  4    |0x60c0-60cf|allocatable RAM
-# | 000d|  1   |  5    |0x60d0-60df|allocatable RAM
-# | 000e|  1   |  6    |0x60e0-60ef|allocatable RAM
-# | 000f|  1   |  7    |0x60f0-60ff|allocatable RAM
-# | 01f0| 3e   |  0    |0x7f00-7f0f|allocatable RAM
-# | 01f1| 3e   |  1    |0x7f10-7f1f|allocatable RAM
-# | 01f2| 3e   |  2    |0x7f20-7f2f|allocatable RAM
-# | 01f3| 3e   |  3    |0x7f30-7f3f|allocatable RAM
-# | 01f4| 3e   |  4    |0x7f40-7f4f|allocatable RAM
-# | 01f5| 3e   |  5    |0x7f50-7f5f|allocatable RAM
-# | 01f6| 3e   |  6    |0x7f60-7f6f|allocatable RAM
-# | 01f7| 3e   |  7    |0x7f70-7f7f|allocatable RAM
-# | 01f8| 3f   |  0    |0x7f80-7f8f|allocatable RAM
-# | 01f9| 3f   |  1    |0x7f90-7f9f|allocatable RAM
-# | 01fa| 3f   |  2    |0x7fa0-7faf|allocatable RAM
-# | 01fb| 3f   |  3    |0x7fb0-7fbf|allocatable RAM
-# | 01fc| 3f   |  4    |0x7fc0-7fcf|allocatable RAM
-# | 01fd| 3f   |  5    |0x7fd0-7fdf|allocatable RAM
-# | 01fe| 3f   |  6    |0x7fe0-7fef|allocatable RAM
-# | 01ff| 3f   |  7    |0x7ff0-7fff|allocatable RAM
 #
-# bit_pos is the number of right-shifts to get the mask to the right bit.
-#   0 = 0b1000 0000
-#   1 = 0b0100 0000
-#   2 = 0b0010 0000
-#   3 = 0b0001 0000
-#   4 = 0b0000 1000
-#   5 = 0b0000 0100
-#   6 = 0b0000 0010
-#   7 = 0b0000 0001
+### MAPPING MEMORY ADDRESSES TO LEDGER ADDRESSES
 #
-# Allocating memory uses the first-fit algorithm because it's easy to implement. A new
-# malloc request simply walks through the ledger looking for the first 0 (unallocated)
-# bit.  It then starts counting until it locates enough contiguous 0's to fit the
-# request.  The address of the beginning of the sequence is returned and the ledger
-# sets the bits for the allocation to indicate they are now in use.
+# When :malloc_init is called, the base address of the allocatable range
+# is stored in a global variable. So all we need to do is deal with offsets,
+# which is easy since the ledger is stored in extended memory and thus always
+# starts at 0xd000 (or 0xe000).
 #
-# A faster first-fit can be done with allocations of multiples of 8 blocks (64 bytes)
-# as the allocator only has to look for full bytes of 0's in the ledger, not probe
-# the number of individual bits that are set.
+# Ledger address to memory address:
+#   1. Shift ledger byte address left four places
+#      * this multiplies by 16, and shifts out the top four bits
+#        so it doesn't matter if we're looking at 0xd000 or 0xe000
+#        for extended memory
+#   2. Add resulting value to allocatable range base address
 #
-# Freeing memory requires both the address being freed, and the number of 16-byte
-# blocks to free.  All the function does is reset the bits representing the address
-# and its length.
+#
+# Memory address to ledger address:
+#   1. Subtract allocatable range base address from memory address (offset)
+#   2. Shift offset right four places
+#      * note that an address that isn't on a block boundary will be normalized
+#        to the lowest nearby block boundary.
+#   3. Add 0xd000 (or 0xe000) to reference the ledger byte
+#
+#
+### ALLOCATION ALGORITHM
+#
+# Both small and large allocations use "first fit". Since the ledger contains
+# offset sizes, it's fast to search for allocatable memory:
+#
+#   1. Initialize ptr at first ledger byte
+#   2. count=0
+#   3. while *ptr == 0x00
+#      a. count++
+#      b. if count == needed_blocks: break and return ptr-count
+#      c. ptr++
+#   4. if *ptr == 0xff, ptr++ until *ptr == 0x00 then goto 2
+#   5. ptr + *ptr (advance past this allocated block) then goto 2
 
 #######
 # malloc_init - Initializes a range of RAM to be used for dynamic allocations
@@ -113,465 +90,423 @@
 #      likely the largest value that should be used.
 #
 # Output:
-#  none
+#  none; A and BL unchanged
 :malloc_init
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
 # Save initialization values in global vars
-VAR global word $malloc_range_start
-VAR global byte $malloc_segments
-ALUOP_ADDR %A%+%AH% $malloc_range_start
-ALUOP_ADDR %A%+%AL% $malloc_range_start+1
-ALUOP_ADDR %B%+%BL% $malloc_segments
+VAR global word $new_malloc_range_start
+VAR global byte $new_malloc_segments
+ALUOP_ADDR %A%+%AH% $new_malloc_range_start
+ALUOP_ADDR %A%+%AL% $new_malloc_range_start+1
+ALUOP_ADDR %B%+%BL% $new_malloc_segments
 
-# Write NULs to the ledger bytes - one byte for each segment we allocated
-.ledger_null_loop
-ALUOP_ADDR_A %zero%
-CALL :incr16_a
-ALUOP_BL %B-1%+%BL%
-JNZ .ledger_null_loop
+CALL :extpage_d_push_zero           # switch to the zero page at 0xd000
 
-# The ledger uses up RAM in the allocated space, so we have to mark those blocks as used.
-LD_BL $malloc_segments              # Restore BL to the number of 128-byte segments
+# Put the starting ledger address into C
+LDI_C 0xd000 
 
-# BL is the number of _bytes_ that the ledger uses.  This has to be
-# divided by 16 to get the number of _bits_ that need to be set in
-# the ledger to represent the ledger itself.
-LDI_AL 0x0f                         # We need to see if there are set bits in the lower nybble
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JZ .no_init_incr                    # if no bits set in lower nybble we can evenly divide the ledger bytes by 16
-ALUOP_BL %B>>1%+%BL%
-ALUOP_BL %B>>1%+%BL%
-ALUOP_BL %B>>1%+%BL%
-ALUOP_BL %B>>1%+%BL%
-ALUOP_BL %B+1%+%BL%
-JMP .do_mark_used
-.no_init_incr
-ALUOP_BL %B>>1%+%BL%
-ALUOP_BL %B>>1%+%BL%
-ALUOP_BL %B>>1%+%BL%
-ALUOP_BL %B>>1%+%BL%
-.do_mark_used                       # BL contains number of blocks to mark used
-LD16_A $malloc_range_start          # Restore A to beginning of range
-CALL .mark_used                     # Mark these blocks as used
+# Byte to fill into AH (0x00 = unallocated)
+LDI_AH 0x00
 
+# The number of ledger bytes will be 8x the value in BL, since BL is the number of 128-byte
+# segments to allocate, and each block (each byte in the ledger) is 16 bytes.
+# 128 / 16 = 8.  We can use :memfill_half_blocks to fill 8 bytes at a time.
+ALUOP_AL %B-1%+%BL%                 # AL = 8-byte half-blocks minus one
+
+# C = address to fill, AH = byte to fill, and
+# AL = number of 8-byte half-blocks to fill, minus one
+CALL :memfill_half_blocks
+
+CALL :extpage_d_pop                 # Switch d-page back to previous value
+CALL :heap_pop_byte                 # Discard previous d-page
+
+POP_CL
+POP_CH
+POP_BL
+POP_AL
+POP_AH
 RET
 
 #######
-# ledger_to_addr - takes a ledger address and bit mask, and returns the
-# real address of that value.
-#
-# Example:
-#  A: 0x6004, BL: 0b0010 0000 (with range starting at 0x6000)
-#     0x6004 - 0x6000 = 0x004 (number of segments)
-#     0x004 << 3 = 0x020 (block aligned offset)
-#     Each left-shift of mask, add 0x01 (one block) to offset
-#     0b0010 0000 << 1 = 0b0100 0000 ==> 0x021
-#     0b0100 0000 << 1 = 0b1000 0000 ==> 0x022 and stop
-#     0x022 << 4 = 0x220 (segment aligned offset)
-#     0x220+0x6000 = 0x6220 (real address of ledger bit)
-#
-#  A: 0x603f, BL: 0b0000 0100 (with range starting at 0x6000)
-#     0x603f - 0x6000 = 0x03f (number of segments)
-#     0x03f << 3 = 0x1f8 (block aligned offset)
-#     Each left-shift of mask, add 0x01 (one block) to offset
-#     0b0000 0100 << 1 = 0b0000 1000 ==> 0x1f9
-#     0b0000 1000 << 1 = 0b0001 0000 ==> 0x1fa
-#     0b0001 0000 << 1 = 0b0010 0000 ==> 0x1fb
-#     0b0010 0000 << 1 = 0b0100 0000 ==> 0x1fc
-#     0b0100 0000 << 1 = 0b1000 0000 ==> 0x1fd and stop
-#     0x1fd << 4 = 0x1fd0 (segment aligned offset)
-#     0x1fd0+0x6000 = 0x7fd0 (real address of ledger bit)
+# ledger_to_addr - takes a ledger address and returns the
+# memory address of that value.
 #
 # Input:
-#  A: memory address inside the ledger
-#  BL: bit mask of the byte inside the ledger
+#  A: memory offset inside the ledger (top four bits ignored)
 #
 # Output:
-#  A: real address
+#  A: real address (ledger_offset<<4)+$new_malloc_range_start
 .ledger_to_addr
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
-LD16_B $malloc_range_start
-CALL :sub16_a_minus_b                       # A = number of segments
+
+CALL :shift16_a_left                        # get number of bytes by
+CALL :shift16_a_left                        # multiplying ledger offset
+CALL :shift16_a_left                        # by 16
 CALL :shift16_a_left
-CALL :shift16_a_left
-CALL :shift16_a_left                        # A = block aligned offset
-POP_BL                                      # BL = position mask
-.ledger_to_addr_shift_loop
-ALUOP_BL %B<<1%+%BL%                        # shift mask left
-JO .ledger_to_addr_done_shifting            # if the shift resulted in a carryout, we are done
-CALL :incr16_a                              # add a block to the offset
-JMP .ledger_to_addr_shift_loop
-.ledger_to_addr_done_shifting
-CALL :shift16_a_left
-CALL :shift16_a_left
-CALL :shift16_a_left
-CALL :shift16_a_left                        # A = segment aligned offset
-LD16_B $malloc_range_start
-CALL :add16_to_a                            # A = real address
+
+LD16_B $new_malloc_range_start              # Load memory base address into B
+CALL :add16_to_a                            # A = A+B
+
+POP_BL
 POP_BH
 RET
 
 #######
-# addr_to_ledger - takes a memory address and returns the ledger address
-# and bit mask of that address.  Addresses are rounded down to the nearest block.
+# addr_to_ledger - takes a memory address and returns the ledger offset
+# of that address. Assumes 0xd000 base address - to use 0xe000 just replace
+# the top four bits of the returned value.
 #
-# Example:
-#  A: 0x7f00 (with range starting at 0x6000)
-#     0x7f00 - 0x6000 = 0x1f00 (offset)
-#     0x1f00 >> 4 = 0x1f0 (block index)
-#     Store last three bits (0)
-#     0x1f0 >> 3 = 0x3e (ledger index)
-#     last three bits=0 -> 0b10000000 mask
-#
-#  A: 0x7f10 (with range starting at 0x6000)
-#     0x7f10 - 0x6000 = 0x1f10 (offset)
-#     0x1f10 >> 4 = 0x1f1 (block index)
-#     Store last three bits (1)
-#     0x1f1 >> 3 = 0x3e (ledger index)
-#     last three bits=1 -> 0b01000000 mask
-#
-#  A: 0x7fd0 (with range starting at 0x6000)
-#     0x7fd0 - 0x6000 = 0x1fd0 (offset)
-#     0x1fd0 >> 4 = 0x1fd (block index)
-#     Store last three bits (5)
-#     0x1fd >> 3 = 0x3f (ledger index)
-#     last three bits=5 -> 0b00000100
-##
 # Inputs:
 #  A: memory address, generally an address returned by malloc.
 #     Last four bits will be discarded.
 #
-# Outputs:
-#  A: memory address of the ledger byte of this block
-#  BL: bit position in the byte, as a mask
+# Output:
+#  A: memory address of the ledger byte of this block assuming 0xd000 page
 .addr_to_ledger
 ALUOP_PUSH %B%+%BH%
-PUSH_CL
-
-# Subtract ledger addr from memory address, to get an offset
-LD16_B $malloc_range_start          # B contains the address of the ledger
-CALL :sub16_a_minus_b               # A is now the offset from the base address
-
-# Shift the offset right four bits to get the block index (the bit of the
-# the ledger representing this address)
-CALL :shift16_a_right
-CALL :shift16_a_right
-CALL :shift16_a_right
-CALL :shift16_a_right
-
-# Save the lowest three bits: this tells us the position
-# in the ledger byte of the bit we want
 ALUOP_PUSH %B%+%BL%
-LDI_BL 0x07
-ALUOP_CL %A&B%+%AL%+%BL%            # CL contains the bit_pos
+
+LD16_B $new_malloc_range_start              # Load memory base address into B
+
+CALL :sub16_a_minus_b                       # A = offset from base address
+
+# Shift the offset right four bits to get the block index (the byte
+# offset in the ledger representing this address)
+CALL :shift16_a_right
+CALL :shift16_a_right
+CALL :shift16_a_right
+CALL :shift16_a_right
+
+# Add the ledger index to the ledger base address
+LDI_B 0xd000                        # Add ledger base addr (B)
+CALL :add16_to_a                    # to ledger offset (A) and store in A
+
 POP_BL
-
-# Shift the offset right three bits to get ledger index
-CALL :shift16_a_right
-CALL :shift16_a_right
-CALL :shift16_a_right
-
-# Add the ledger index to the range base address
-CALL :add16_to_a                    # Add base addr (B) to ledger idx (A) and store in A
-ALUOP_PUSH %A%+%AL%                 # Save AL since we mangle it below
-
-# Construct a mask in BL from the bit_pos value in CL
-LDI_BL 0x80
-MOV_CL_AL
-.map_shift_loop
-ALUOP_FLAGS %A%+%AL%
-JZ .map_shift_loop_done             # Done looping if AL (bit_pos) is zero
-ALUOP_BL %B>>1%+%BL%                # shift BL right one
-ALUOP_AL %A-1%+%AL%                 # decrement AL (bit_pos)
-JMP .map_shift_loop
-.map_shift_loop_done
-
-POP_AL
-POP_CL
 POP_BH
 RET
 
 #######
-# malloc - Allocate a block of RAM and return its address
+# malloc_blocks - Allocate 16-byte blocks of ram. If AL is >7, the
+# value is divided by 8 (shifted right three places) and then
+# malloc_segments is called instead.  Therefore, it's recommended
+# to only use malloc_blocks with values 1-7.
 #
 # Inputs:
-#  AL: Size of desired allocation, 16*(AL+1) (0 = 16 bytes, 1 = 32 bytes, ... 255 = 4096 bytes)
-#     Values >= 7 (>= 128 bytes) will be shifted right three places and incremented to
-#     obtain the number of contiguous ledger bytes (segments) to locate.  Values
-#     <= 6 will be incremented to find the number of contiguous bits in
-#     a nybble to locate.
+#  AL: Size of allocation in blocks (1-7)
+#       1 block (16 bytes)
+#       2 blocks (32 bytes)
+#       ...
+#       7 blocks (112 bytes)
+#       8 blocks -> calls malloc_segments(1)
+#       9 blocks -> calls malloc_segments(2)
+#       ...
+#      15 blocks -> calls malloc_segments(2)
+#      16 blocks -> calls malloc_segments(2)
+#      17 blocks -> calls malloc_segments(3)
 #
 # Output:
-#  A:  Memory address of allocated memory (will be zero if allocation failed)
-:malloc
-CALL :heap_push_all
-LDI_BL 0x07
-ALUOP_FLAGS %A-B%+%AL%+%BL%                 # if AL-7 causes an overflow, then AL is <=6, use nybble allocator
-JO .malloc_blocks
-
-# otherwise, AL is >= 7 and we use segment-based allocation for 8/16/24/32/.../256 blocks
-.malloc_segments
-ALUOP_AL %A>>1%+%AL%
-ALUOP_AL %A>>1%+%AL%
-ALUOP_AL %A>>1%+%AL%                        # Shift AL right three bits to get the number of segments minus one
-ALUOP_BL %A+1%+%AL%                         # BL is now the number of full ledger bytes we need to find
-LD_CH $malloc_range_start
-LD_CL $malloc_range_start+1                 # C tracks our position in the ledger
-MOV_CH_AH
-MOV_CL_AL
-LD_BH $malloc_segments
-ALUOP_AL %A+B%+%AL%+%BH%
-JNO .malloc_segments_1
-ALUOP_AH %A+1%+%AH%
-.malloc_segments_1                          # A now contains the address of the first data byte (after the ledger)
-
-ALUOP_DH %A%+%AH%                           # D now contains the first invalid address in the ledger.
-ALUOP_DL %A%+%AL%                           # If our hunt for contiguous NULL runs lands us at this
-                                            # address, we abort with an invalid malloc.
-
-ALUOP_PUSH %B%+%BL%                         # Save our target segment count to the stack
-
-.malloc_segments_loop
+#  A: Memory address of allocated memory (zero if allocation failed)
+:malloc_blocks
 ALUOP_PUSH %B%+%BL%
-MOV_CH_AH
-MOV_CL_AL
-MOV_DH_BH
-MOV_DL_BL
-ALUOP_FLAGS %AxB%+%AL%+%BL%
-POP_BL                                      # ensure we don't destroy target segment counter
-JNE .malloc_segments_loop_2
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .malloc_segments_loop_2
-POP_TD                                      # If we get here, C (ledger pointer) and D (first invalid ledger addr)
-JMP .malloc_invalid                         # are equal, so return 0, no allocation done.
+LDI_BL 0x08
+ALUOP_FLAGS %B-A%+%AL%+%BL%     # if AL >= 8, zero or overflow bit will be set
+POP_BL
+JO .blocks_as_segments
+JZ .blocks_as_segments
 
-.malloc_segments_loop_2
-LDA_C_AL                                    # Load ledger byte into BH
-ALUOP_FLAGS %A%+%AL%                        # is the byte null?
-JNZ .malloc_segments_loop_notnull
-ALUOP_BL %B-1%+%BL%                         # yes, so decrement our null segment count
-INCR_C                                      # and move to the next ledger byte.  If our null
-JZ .malloc_segments_loop_done               # segment count goes to zero, break out of the loop.
-JMP .malloc_segments_loop                   # otherwise, continue looping to check for the next null byte
-
-.malloc_segments_loop_notnull               # found a non-null byte, so
-PEEK_BL                                     # BL = reset target segment count back to original value
-INCR_C                                      # move to next ledger byte
-JMP .malloc_segments_loop                   # try again for a null byte
-
-.malloc_segments_loop_done                  # success! our target segment counter is now zero. We now need to roll
-                                            # back to find the ledger address where the run of null bytes started.
-MOV_CH_AH
-MOV_CL_AL                                   # A = current ledger pointer
-PEEK_BL                                     # BL = number of null bytes we found
-ALUOP_AL %A-B%+%AL%-%BL%                    # subtract A-BL to get addr of first null byte
-JNO .malloc_segments_loop_3
-ALUOP_AH %A-1%+%AH%
-.malloc_segments_loop_3
-LDI_BL 0x80
-CALL .ledger_to_addr                        # A = real address
-POP_BL                                      # BL = number of segments
-ALUOP_BL %B<<1%+%BL%
-ALUOP_BL %B<<1%+%BL%
-ALUOP_BL %B<<1%+%BL%                        # BL = number of blocks
-CALL .mark_used
-ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %A%+%AH%                         # Save return value to stack
-CALL :heap_pop_all                          # Restore registers
-POP_AH
-POP_AL                                      # Put return value back into A
-RET
-
-########
-# block-based allocation for 1, 2, 3 ... 7 blocks
-########
-.malloc_blocks
-ALUOP_BL %A+1%+%AL%                         # BL is now the number of contiguous ledger bits we need to find
-
-LD_CH $malloc_range_start
-LD_CL $malloc_range_start+1                 # C tracks our position in the ledger
-MOV_CH_AH
-MOV_CL_AL
-LD_BH $malloc_segments
-ALUOP_AL %A+B%+%AL%+%BH%
-JNO .malloc_blocks_1
-ALUOP_AH %A+1%+%AH%
-.malloc_blocks_1                            # A now contains the address of the first data byte (after the ledger)
-ALUOP_DH %A%+%AH%                           # D now contains the first invalid address after the ledger.
-ALUOP_DL %A%+%AL%                           # If our hunt for free blocks encounters this address, we abort with an invalid malloc.
-
-ALUOP_PUSH %B%+%BL%                         # Save our target block count to the stack
-
-#####
-# Main malloc blocks loop
-.malloc_blocks_loop
-## Ensure we are not beyond the end of the ledger
-MOV_CH_AH
-MOV_CL_AL
-MOV_DH_BH
-MOV_DL_BL
-ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .malloc_blocks_loop_2
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .malloc_blocks_loop_2
-POP_TD                                      # If we get here, C (ledger pointer) and D (first invalid ledger addr)
-JMP .malloc_invalid                         # are equal, so return 0, no allocation done.
-
-## Load the current ledger byte and see if it has
-## sufficient zeroes to accommodate our request
-.malloc_blocks_loop_2
-PEEK_BL                                     # BL = target block count
-LDA_C_AL                                    # Load ledger byte into AL
-ALUOP_AH %A_popcount%+%AL%                  # AH = population count of AL by nybbles
-CALL :heap_push_AH
-CALL :merge_popcount
-CALL :heap_pop_AH                           # AH = population count of AL
-LDI_BH 0x08
-ALUOP_AH %B-A%+%BH%+%AH%                    # AH = inverse popcount (count of zeros)
-ALUOP_FLAGS %A-B%+%BL%+%AH%                 # num_zeros - needed_zeros
-JNO .malloc_blocks_loop_3                   # if no overflow, we have enough zeros
-INCR_C                                      # otherwise, move to the next byte in the ledger
-JMP .malloc_blocks_loop                     # and try again
-
-## Build a mask representing the desired allocation
-.malloc_blocks_loop_3                       # this ledger block has sufficient zeros, but
-                                            # we don't know if they are contiguous
-LDI_BH 0x00                                 # start with an empty mask in BH
-.malloc_blocks_loop_3a
-ALUOP_BH %B>>1%+%BH%+%Cin%                  # shift a new bit into AH
-ALUOP_BL %B-1%+%BL%                         # decrement our target block count
-JNZ .malloc_blocks_loop_3a                  # if BL==0 we are done building the mask
-
-## See if the mask fits in the ledger byte
-.malloc_blocks_loop_4                       # BH = mask, on MSB side
-PEEK_BL                                     # get our target block count back
-.malloc_blocks_loop_5
-ALUOP_FLAGS %A&B%+%AL%+%BH%                 # check if mask & ledger byte is zero
-JZ .malloc_blocks_loop_6                    # if zero, we found a place for our allocation
-ALUOP_BH %B>>1%+%BH%                        # shift the mask right one spot
-ALUOP_AH %B_popcount%+%BH%                  # get the popcount of the mask into AH
-CALL :heap_push_AH
-CALL :merge_popcount
-CALL :heap_pop_AH                           # merged popcount of mask in AH
-ALUOP_FLAGS %A&B%+%AH%+%BL%                 # ensure we still have the requisite number of bits in the mask
-JEQ .malloc_blocks_loop_5                   # if so, loop back and check again if this spot works
-INCR_C                                      # otherwise, move to next ledger byte
-JMP .malloc_blocks_loop                     # and try again
-
-## We found a spot for the allocation
-.malloc_blocks_loop_6                       # we found a place for the allocation, BH contains the mask
-                                            # and C contains the address of the ledger byte
-MOV_CH_AH                                   # Move C to A so we can call mark_used
-MOV_CL_AL
-ALUOP_BL %B%+%BH%                           # Put the mask into BL
-CALL .ledger_to_addr                        # A is now the real memory address
-POP_BL                                      # BL = number of blocks to allocate
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%                         # Save memory address as heap_pop_all will destroy it
-CALL .mark_used                             # ledger now marks these blocks as used
-CALL :heap_pop_all
-POP_AL
-POP_AH                                      # Return the real memory address of our allocation
-RET
-
-# Invalid value for number of blocks was given
-.malloc_invalid
-CALL :heap_pop_all
+# AL was < 8, so we perform allocation in 16-byte blocks
+PUSH_CH
+PUSH_CL
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AL%             # save ledger run length for later
+LDI_BH 0x00
+ALUOP_BL %A%+%AL%               # B = length of ledger run we need
+CALL .find_unused_run           # B will either be a ledger address or zero
+ALUOP_FLAGS %B%+%BH%
+JNZ .valid_block_allocation
+ALUOP_FLAGS %B%+%BL%
+JNZ .valid_block_allocation
+# if we get here, B was zero so allocation failed, and
+# we need to return zero
 LDI_A 0x0000
+JMP .new_malloc_blocks_done
+
+# If we get here, B contains a ledger address for the beginning of our run of zeroes.
+# We need to update the ledger to fill the run with 0xff's, then write the size of the
+# allocation in segments, to the first byte of the run.
+.valid_block_allocation
+CALL :extpage_d_push_zero       # switch to the zero page at 0xd000
+PEEK_AL                         # restore AL (number of blocks). For each count,
+                                # we need to write 1x 0xff's to the ledger.
+ALUOP_AL %A-1%+%AL%             # minus one since :memfill uses bytes minus one
+LDI_AH 0xff                     # byte to fill
+ALUOP_CH %B%+%BH%
+ALUOP_CL %B%+%BL%               # C = address to fill
+CALL :memfill
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0xf0
+ALUOP_AL %A|B%+%AL%+%BL%        # AL is now 0xfn with n = number of blocks
+POP_BL
+ALUOP_ADDR_B %A+1%+%AL%         # Write allocation length in blocks to start of ledger addr
+                                # Incrementing because we decremented before :memfill
+ALUOP_AL %B%+%BL%
+ALUOP_AH %B%+%BH%               # copy ledger address to A
+CALL .ledger_to_addr            # get memory address of allocation into A
+CALL :extpage_d_pop             # restore D page
+CALL :heap_pop_byte             # discard previous D page
+
+.new_malloc_blocks_done
+POP_TD                          # discard saved AL from before
+POP_BL
+POP_BH
+POP_CL
+POP_CH
+RET
+
+# AL was >= 8, so we will call :malloc_segments instead
+.blocks_as_segments
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0x07
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # check if any of the lowest three bits are set
+JNZ .blocks_as_segments_roundup
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%            # shift AL right three places to get number of segments
+JMP .do_blocks_as_segments
+.blocks_as_segments_roundup
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%            # shift AL right three places to get number of segments
+ALUOP_AL %A+1%+%AL%
+.do_blocks_as_segments
+CALL :malloc_segments
+POP_BL
 RET
 
 #######
-# mark_used - sets bits in the ledger indicating these blocks are in use
+# malloc_segments - Allocate a 128-byte segments of RAM and return its address
 #
 # Inputs:
-#  A:  real address of the beginning of the first block
-#  BL: number of 16-byte blocks to mark allocated (aka number of bits to set)
+#  AL: Size of desired allocation in segments (1-239, 0x01-0xef)
+#       1 segment (128 bytes) to 239 segments (30592 bytes)
 #
-# Outputs:
-#  none
-.mark_used
+# Output:
+#  A:  Memory address of allocated memory (zero if allocation failed)
+:malloc_segments
+PUSH_CH
+PUSH_CL
 ALUOP_PUSH %B%+%BH%
-LDI_BH 0x01
-CALL .mark
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AL%             # save number of segments that will be written to ledger
+
+ALUOP_BL %A%+%AL%               # number of segments into BL
+LDI_BH 0x00
+CALL :shift16_b_left            # multiply by 8 to get length of ledger run we need
+CALL :shift16_b_left            # ..
+CALL :shift16_b_left            # .
+CALL .find_unused_run           # B will either be a ledger address or zero
+ALUOP_FLAGS %B%+%BH%
+JNZ .valid_segment_allocation
+ALUOP_FLAGS %B%+%BL%
+JNZ .valid_segment_allocation
+# if we get here, B was zero so allocation failed, and
+# we need to return zero
+LDI_A 0x0000
+JMP .new_malloc_segments_done
+
+# If we get here, B contains a ledger address for the beginning of our run of zeroes.
+# We need to update the ledger to fill the run with 0xff's, then write the size of the
+# allocation in segments, to the first byte of the run.
+.valid_segment_allocation
+CALL :extpage_d_push_zero       # switch to the zero page at 0xd000
+PEEK_AL                         # restore AL (number of segments). For each count,
+                                # we need to write 8x 0xff's to the ledger.
+ALUOP_AL %A-1%+%AL%             # minus one since :memfill_half_blocks uses blocks minus one
+LDI_AH 0xff                     # byte to fill
+ALUOP_CH %B%+%BH%
+ALUOP_CL %B%+%BL%               # C = address to fill
+CALL :memfill_half_blocks
+ALUOP_ADDR_B %A+1%+%AL%         # Write allocation length in segments to start of ledger addr
+
+ALUOP_AL %B%+%BL%
+ALUOP_AH %B%+%BH%               # copy ledger address to A
+CALL .ledger_to_addr            # get memory address of allocation into A
+CALL :extpage_d_pop             # restore D page
+CALL :heap_pop_byte             # discard previous D page
+
+.new_malloc_segments_done
+POP_TD                          # discard saved AL from before
+POP_BL
 POP_BH
+POP_CL
+POP_CH
+RET
+
+
+#######
+# find_unused_run - Iterate through the ledger and return the
+# ledger address of the beginning of a run of 0x00 bytes, or
+# return 0x0000 if not found.
+#
+# Inputs:
+#  B: length of ledger run to find
+#
+# Output:
+#  B: 0x0000 if not found, else 0xdnnn representing ledger address
+#     of located run
+#
+# The algorithm works "backwards" to take advantage of some overflow
+# conditions and counting to zero.
+#
+# C contains the current ledger address.  Initialize at the last byte
+# in the ledger.  This way we can decrement it, and once it crosses
+# over to 0xcfff we know we've run out of ledger.
+#
+# Save the target count on the heap
+# Start looping through the ledger looking for zeroes:
+#  - if address is < 0xd000 then we failed allocation, return zero
+#  - if zero, decrement B.
+#    - if B == 0, we have found enough zeroes and C contains the beginning of the run, so return it
+#    - if B > 0, we need to find more zeroes, so go to the next ledger byte
+#  - else, restore B and go to next ledger byte
+.find_unused_run
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+PUSH_CL
+PUSH_CH
+CALL :extpage_d_push_zero           # switch to the zero page at 0xd000
+
+CALL :heap_push_B                   # save target count for later
+CALL :heap_push_B                   # save it again, this one will stay the original value
+
+# store the address of the last byte in the ledger into C
+LD_AL $new_malloc_segments          # there are 8x this many bytes in the ledger
+LDI_AH 0x00
+CALL :shift16_a_left
+CALL :shift16_a_left
+CALL :shift16_a_left                # A contains the number of ledger bytes
+LDI_B 0xd000
+CALL :add16_to_a                    # A contains the address of the last ledger byte, plus one
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%                   # C now contains the address of the last ledger byte, plus one
+                                    # the first thing the .find_unused_run_loop will do is decrement this.
+.find_unused_run_loop
+DECR_C
+MOV_CH_AL                           # check to see if we've left 0xd000 land
+LDI_BL 0xcf
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JEQ .find_unused_run_failed
+
+LDA_C_AL                            # load ledger byte into AL
+ALUOP_FLAGS %A%+%AL%
+JZ .find_unused_run_iszero
+
+.find_unused_run_isnotzero          # found a nonzero, so
+CALL :heap_pop_B                    # restore current count
+CALL :heap_pop_B                    # restore original count
+CALL :heap_push_B                   # save original count
+CALL :heap_push_B                   # save current count (which is now reset)
+JMP .find_unused_run_loop           # try next ledger byte
+
+.find_unused_run_iszero             # found a zero, so
+CALL :heap_pop_B                    # restore current count
+CALL :decr16_b                      # decrement counter
+CALL :heap_push_B                   # put it back on the heap
+ALUOP_FLAGS %B%+%BH%
+JNZ .find_unused_run_loop           # if current count isn't zero, keep going
+ALUOP_FLAGS %B%+%BL%
+JNZ .find_unused_run_loop           # if current count isn't zero, keep going
+
+.find_unused_run_success
+CALL :heap_pop_word                 # discard current count
+CALL :heap_pop_word                 # discard original count
+MOV_CH_BH
+MOV_CL_BL                           # copy current ledger address to B
+JMP .find_unused_run_done           # and return it
+
+.find_unused_run_failed
+CALL :heap_pop_word                 # discard current count
+CALL :heap_pop_word                 # discard original count
+LDI_B 0x0000                        # we'll return zero indicating allocation failure
+
+.find_unused_run_done
+CALL :extpage_d_pop                 # Switch d-page back to previous value
+CALL :heap_pop_byte                 # Discard previous d-page
+POP_CH
+POP_CL
+POP_AH
+POP_AL
 RET
 
 #######
-# free - Return a block of RAM back to the allocator
+# free - Return RAM back to the allocator
 #
 # Inputs:
 #  A:  real address to be freed
-#  BL: Size of allocation to return, blocks-1
 #
 # Output:
 #  none
 :free
-ALUOP_PUSH %B%+%BH%
-LDI_BH 0x00
-ALUOP_BL %B+1%+%BL%     # .mark expects BL to have the absolute number of bits,
-CALL .mark              # not an allocation (blocks minus 1)
-POP_BH
-RET
-
-#######
-# mark - general function that can mark blocks as
-# used (BH=1) or free (BH=0)
-#
-# Inputs:
-#  A:  real address to be marked
-#  BL: Size of allocation to mark, 16*(BL+1)
-#  BH: mark used (1) or free (0)
-#
-# Output:
-#  none
-.mark
-PUSH_CH
-PUSH_CL
-PUSH_DL
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+CALL :extpage_d_push_zero
 
-ALUOP_DL %B%+%BH%                   # Save our used/free flag in DL
-
-ALUOP_BH %B%+%BL%                   # BH=number of bits to set, minus 1
-
-# Get ledger address and bit position of address in A
-CALL .addr_to_ledger                # A=ledger byte addr, BL=bit in byte (as mask)
+# Convert real address to ledger address
+CALL .addr_to_ledger                    # A contains ledger address at 0xd000 base
 ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%                   # Move A to C (ledger byte address)
+ALUOP_CL %A%+%AL%                       # C contains ledger address
+INCR_C                                  # pre-increment before loop starts
 
-# Loop across each bit to mark, tracking progress in BH
-.mark_loop
-LDA_C_AL                            # AL=ledger byte
-ALUOP_PUSH %B%+%BH%                 # save BH
-MOV_DL_BH                           # retrieve our used/free flag
-ALUOP_FLAGS %B%+%BH%                # set or clear zero flag
-POP_BH                              # restore BH
-JZ .mark_free                       # If zero flag is set, we are marking free, otherwise
-ALUOP_ADDR_C %A|B%+%AL%+%BL%        # write updated ledger byte (used) to RAM
-JMP .mark_done
-.mark_free
-ALUOP_ADDR_C %A&~B%+%AL%+%BL%       # Write updated ledger byte (free) to RAM
-.mark_done
-ALUOP_FLAGS %B-1%+%BL%              # If mask is 0x01, B-1 will be 0
-JNZ .mark_shift_and_loop            # Jump if we still have bits left in the mask
-LDI_BL 0x80                         # otherwise, reset bit mask to first bit
-INCR_C                              # and move to next byte in the ledger
-JMP .mark_next_bit                  # and don't shift the mask
+# Walk backward until we reach a value <ff
+.free_loop
+DECR_C                                  # move to next byte in ledger
+LDA_C_AL                                # get ledger byte into AL
+ALUOP_FLAGS %A+1%+%AL%                  # if overflow, value was 0xff
+JO .free_loop                           # ... and we should keep looping
 
-.mark_shift_and_loop
-ALUOP_BL %B>>1%+%BL%                # shift mask one position right
+ALUOP_FLAGS %A%+%AL%                    # check AL
+JZ .free_done                           # if zero, we're in an unallocated zone already, nothing to do
 
-.mark_next_bit
-ALUOP_BH %B-1%+%BH%                 # decrement our bit counter
-JNZ .mark_loop                      # done if bit counter is zero
+# C points at the ledger address of the beginning of an allocation
+# AL contains the allocation size, 01-ef = segments, f1-f8 blocks
+LDI_BL 0xf0
+ALUOP_BL %A&B%+%AL%+%BL%                # BL will be 0xf0 if ledger byte was 0xfn
+LDI_AH 0xf0
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JEQ .free_blocks
 
-POP_AL
-POP_AH
-POP_DL
+.free_segments
+LDI_AH 0x00                             # byte to fill
+ALUOP_AL %A-1%+%AL%                     # minus one because :memfill_half_blocks takes blocks minus one
+CALL :memfill_half_blocks               # Write nulls to ledger address in C, in half blocks (8 bytes = one malloc segment)
+JMP .free_done
+
+.free_blocks
+LDI_AH 0x00                             # byte to fill
+LDI_BL 0x0f
+ALUOP_AL %A&B%+%AL%+%BL%                # strip top 0xfn to get number of blocks
+ALUOP_AL %A-1%+%AL%                     # minus one because :memfill takes bytes minus one
+CALL :memfill                           # Write nulls to ledger address in C, in bytes (1 byte = one malloc block)
+
+.free_done
+CALL :extpage_d_pop                     # reset D page
+CALL :heap_pop_byte                     # discard previous D page
 POP_CL
 POP_CH
+POP_BL
+POP_AL
+POP_AH
 RET
+
 
 #######
 # calloc - Allocate a block of RAM, initialize it with NULLs and return its address
@@ -579,45 +514,69 @@ RET
 # Inputs: same as malloc
 # Output: same as malloc
 #
-:calloc
-ALUOP_PUSH %A%+%AL%                     # save the request size
-CALL :malloc
+:calloc_blocks
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0x08
+ALUOP_FLAGS %B-A%+%AL%+%BL%     # if AL >= 8, zero or overflow bit will be set
+POP_BL
+JO .calloc_blocks_as_segments
+JZ .calloc_blocks_as_segments
 
-# Check if malloc succeeded
-ALUOP_FLAGS %A%+%AH%
-JNZ .calloc_continue
-ALUOP_FLAGS %A%+%AL%
-JNZ .calloc_continue
-POP_TD                                  # discard saved request size and
-RET                                     # return without doing anything if malloc returned zero
-
-.calloc_continue
-CALL :heap_push_all
-
-# copy allocated memory address into C
+# AL was < 8, so we perform allocation in 16-byte blocks
+PUSH_CH
+PUSH_CL
+ALUOP_PUSH %A%+%AL%             # save request size
+CALL :malloc_blocks             # address in A
 ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%
-# fill memory with NULLs
-LDI_AH 0x00
-
-# If request size was 0-6, use the block filler, otherwise
-# use the segment filler which is more efficient.
-POP_AL                                  # pop saved request size into AL
-LDI_BL 0x07
-ALUOP_FLAGS %A-B%+%AL%+%BL%             # if AL-7 causes an overflow, then AL is <=6, use block filler
-JO .calloc_fill_blocks
-
-.calloc_fill_segments
-ALUOP_AL %A>>1%+%AL%
-ALUOP_AL %A>>1%+%AL%
-ALUOP_AL %A>>1%+%AL%                    # divide AL by 8 to get the number of segments, then add one
-ALUOP_AL %A+1%+%AL%
-CALL :memfill_segments
-CALL :heap_pop_all
+ALUOP_CL %A%+%AL%               # Copy address to C
+POP_AL                          # restore request size in blocks
+ALUOP_AL %A-1%+%AL%             # memfill takes blocks minus one
+LDI_AH 0x00                     # fill value
+PUSH_CH
+PUSH_CL                         # save address since memfill_blocks will overwrite it
+CALL :memfill_blocks
+POP_AL
+POP_AH                          # restore address into A for return
+POP_CL
+POP_CH                          # restore C from above
 RET
 
-.calloc_fill_blocks
-CALL :memfill_blocks                    # AL already contains the number of blocks
-CALL :heap_pop_all
+.calloc_blocks_as_segments
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0x07
+ALUOP_FLAGS %A&B%+%AL%+%BL%     # check if any of the lowest three bits are set
+JNZ .calloc_blocks_as_segments_roundup
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%            # shift AL right three places to get number of segments
+JMP .do_calloc_blocks_as_segments
+.calloc_blocks_as_segments_roundup
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%            # shift AL right three places to get number of segments
+ALUOP_AL %A+1%+%AL%
+.do_calloc_blocks_as_segments
+CALL :calloc_segments
+POP_BL
+RET
+
+
+:calloc_segments
+PUSH_CH
+PUSH_CL
+ALUOP_PUSH %A%+%AL%             # save request size
+CALL :malloc_segments           # address in A
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # Copy address to C
+POP_AL                          # restore request size in blocks
+ALUOP_AL %A-1%+%AL%             # memfill takes segments minus one
+LDI_AH 0x00                     # fill value
+PUSH_CH
+PUSH_CL                         # save address since memfill_segments will overwrite it
+CALL :memfill_segments
+POP_AL
+POP_AH                          # restore address into A for return
+POP_CL
+POP_CH                          # restore C from above
 RET
 

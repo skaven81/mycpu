@@ -63,7 +63,6 @@ CALL :heap_pop_C                # address of rendered string
 MOV_CH_AH                       # Put address of dirent string into A
 MOV_CL_AL
 CALL :print
-LDI_BL 0x02                     # size 2 (48 bytes)
 CALL :free                      # free the string allocated by dirent
 LDI_AL '\n'
 CALL :putchar                   # print the newline after the directory entry
