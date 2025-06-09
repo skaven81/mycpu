@@ -1,3 +1,16 @@
+2025-06-08: next-gen malloc (done!)
+===================================
+
+Got the conversion to the new malloc routines completed.  Updated the malloc
+utility to include a list feature so memory leaks can be detected.
+
+Next up:
+  * tidy the boot sequence -- no need to examine the SYSTEM.ODY header to see
+    if it needs to load into main or extended memory.  It's always going to be
+    loaded into main memory.
+  * running ODYs seems to take longer than before ... too many I/Os maybe?
+
+
 2025-06-07: next-gen malloc
 ===========================
 
