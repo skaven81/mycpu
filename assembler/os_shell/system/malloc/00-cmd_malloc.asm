@@ -28,6 +28,9 @@ JEQ .get_size
 LDI_AL 'f'
 ALUOP_FLAGS %A&B%+%AL%+%BH%
 JEQ .do_free
+LDI_AL 'l'
+ALUOP_FLAGS %A&B%+%AL%+%BH%
+JEQ .do_stats
 LDI_C .error_command
 CALL :print
 JMP .usage
@@ -116,13 +119,146 @@ LDI_C .free_print
 CALL :printf
 RET
 
+##### User wants to get memory usage stats
+# First stats line, malloc address range
+.do_stats
+LD_AH $malloc_range_start
+LD_AL $malloc_range_start+1     # starting address in A
+LDI_BH 0x00
+LD_BL $malloc_segments          # number of segments in B
+CALL :shift16_b_left            # Shift left seven times to get total bytes
+CALL :shift16_b_left
+CALL :shift16_b_left
+CALL :shift16_b_left
+CALL :shift16_b_left
+CALL :shift16_b_left
+CALL :shift16_b_left
+CALL :decr16_b                  # subtract 1 to get the last byte in the range
+CALL :add16_to_b                # add total bytes to start address to get end address
+CALL :heap_push_BL
+CALL :heap_push_BH
+CALL :heap_push_AL
+CALL :heap_push_AH
+LDI_C .stats_1
+CALL :printf
+
+# Second stats line, total, free and used blocks
+
+# Count up the free and used memory blocks
+LD_BL $malloc_segments          # Get the allocated number of segments into BL
+LDI_BH 0x00                     # Clear BH so we can shift all of B
+CALL :shift16_b_left            # Shift left three times to get the number of
+CALL :shift16_b_left            # | blocks, which is also the number of ledger
+CALL :shift16_b_left            # | bytes we will be examining
+CALL :extpage_d_push_zero       # get the zero page set in D page
+LDI_C 0xd000                    # start at the beginning of the ledger
+LDI_D 0x0000                    # We'll count used blocks in D
+.count_loop
+LDA_C_AL                        # load the ledger byte into AL
+ALUOP_FLAGS %A%+%AL%
+JZ .free_byte
+INCR_D                          # count used block
+.free_byte
+INCR_C                          # move to next ledger byte
+CALL :decr16_b                  # decrement counter
+ALUOP_FLAGS %B%+%BH%
+JNZ .count_loop
+ALUOP_FLAGS %B%+%BL%
+JNZ .count_loop
+# D now contains count of allocated blocks
+CALL :heap_push_D               # push to heap for printf
+
+MOV_DH_BH                       # move to B for doing math
+MOV_DL_BL
+
+LD_AL $malloc_segments          # Get the allocated number of segments into BL
+LDI_AH 0x00                     # Clear BH so we can shift all of B
+CALL :shift16_a_left            # Shift left three times to get the total number of blocks
+CALL :shift16_a_left
+CALL :shift16_a_left
+
+CALL :sub16_a_minus_b           # A~free_blocks = total_blocks - allocated_blocks
+CALL :heap_push_A
+CALL :add16_to_a                # A~total_blocks = free_blocks + allocated_blocks
+CALL :heap_push_A
+
+LDI_C .stats_2
+CALL :printf
+
+# Remaining stats lines: list allocated ranges
+LD_BL $malloc_segments          # Get the allocated number of segments into BL
+LDI_BH 0x00                     # Clear BH so we can shift all of B
+CALL :shift16_b_left            # Shift left three times to get the number of
+CALL :shift16_b_left            # | blocks, which is also the number of ledger
+CALL :shift16_b_left            # | bytes we will be examining
+LDI_C 0xd000                    # start at the beginning of the ledger
+DECR_C                          # prepare for going into loop
+.list_loop
+INCR_C                          # move to next ledger byte
+LDA_C_AL                        # load the ledger byte into AL
+ALUOP_FLAGS %A%+%AL%
+JZ .list_ignore
+ALUOP_FLAGS %A+1%+%AL%
+JO .list_ignore
+
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0xf0
+ALUOP_BL %A&B%+%AL%+%BL%                # BL will be 0xf0 if ledger byte was 0xfn
+LDI_AH 0xf0
+ALUOP_FLAGS %A&B%+%AH%+%BL%             # equal bit will be set if this was a block allocation
+POP_BL
+JEQ .block_alloc
+
+.seg_alloc
+LDI_AH 0x00
+CALL :shift16_a_left
+CALL :shift16_a_left
+CALL :shift16_a_left
+CALL :heap_push_A
+JMP .push_addr
+
+.block_alloc
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0x0f
+ALUOP_AL %A&B%+%AL%+%BL%
+LDI_AH 0x00
+CALL :heap_push_A
+POP_BL
+
+.push_addr
+MOV_CH_AH
+MOV_CL_AL
+CALL :malloc_ledger_to_addr     # A contains real address of the memory
+CALL :heap_push_AL
+CALL :heap_push_AH
+PUSH_CH
+PUSH_CL
+LDI_C .stats_3
+CALL :printf
+POP_CL
+POP_CH
+
+.list_ignore
+CALL :decr16_b                  # decrement counter
+ALUOP_FLAGS %B%+%BH%
+JNZ .list_loop
+ALUOP_FLAGS %B%+%BL%
+JNZ .list_loop
+
+CALL :extpage_d_pop
+CALL :heap_pop_byte             # discard the zero page value
+RET
+
 .usage
 LDI_C .helpstr
 CALL :print
 RET
 
-.helpstr "Usage:\n  malloc [sS] size - malloc / calloc segments\n  malloc [bB] size - malloc / calloc blocks\n  malloc f addr - free memory\n\0"
+.helpstr "Usage:\n  malloc [sS] size - malloc / calloc segments\n  malloc [bB] size - malloc / calloc blocks\n  malloc f addr - free memory\n  malloc l - list allocations and memory stats\n\0"
 .error_command "ERR: invalid subcommand provided, expecting one of [sSbBf]\n\0"
 .malloc_print "Allocated memory at 0x%x%x\n\0"
 .calloc_print "Allocated and cleared memory at 0x%x%x\n\0"
 .free_print "Freed memory near 0x%x%x\n\0"
+.stats_1 "Malloc range 0x%x%x-0x%x%x\n\0"
+.stats_2 "%U total allocatable 16-byte blocks, %U free, %U allocated\n\0"
+.stats_3 "0x%x%x %U blocks\n\0"
