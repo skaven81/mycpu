@@ -98,11 +98,11 @@ ALUOP_PUSH %B%+%BL%
 PUSH_CH
 PUSH_CL
 # Save initialization values in global vars
-VAR global word $new_malloc_range_start
-VAR global byte $new_malloc_segments
-ALUOP_ADDR %A%+%AH% $new_malloc_range_start
-ALUOP_ADDR %A%+%AL% $new_malloc_range_start+1
-ALUOP_ADDR %B%+%BL% $new_malloc_segments
+VAR global word $malloc_range_start
+VAR global byte $malloc_segments
+ALUOP_ADDR %A%+%AH% $malloc_range_start
+ALUOP_ADDR %A%+%AL% $malloc_range_start+1
+ALUOP_ADDR %B%+%BL% $malloc_segments
 
 CALL :extpage_d_push_zero           # switch to the zero page at 0xd000
 
@@ -132,15 +132,15 @@ POP_AH
 RET
 
 #######
-# ledger_to_addr - takes a ledger address and returns the
+# malloc_ledger_to_addr - takes a ledger address and returns the
 # memory address of that value.
 #
 # Input:
 #  A: memory offset inside the ledger (top four bits ignored)
 #
 # Output:
-#  A: real address (ledger_offset<<4)+$new_malloc_range_start
-.ledger_to_addr
+#  A: real address (ledger_offset<<4)+$malloc_range_start
+:malloc_ledger_to_addr
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
 
@@ -149,7 +149,7 @@ CALL :shift16_a_left                        # multiplying ledger offset
 CALL :shift16_a_left                        # by 16
 CALL :shift16_a_left
 
-LD16_B $new_malloc_range_start              # Load memory base address into B
+LD16_B $malloc_range_start                  # Load memory base address into B
 CALL :add16_to_a                            # A = A+B
 
 POP_BL
@@ -157,7 +157,7 @@ POP_BH
 RET
 
 #######
-# addr_to_ledger - takes a memory address and returns the ledger offset
+# malloc_addr_to_ledger - takes a memory address and returns the ledger offset
 # of that address. Assumes 0xd000 base address - to use 0xe000 just replace
 # the top four bits of the returned value.
 #
@@ -167,11 +167,11 @@ RET
 #
 # Output:
 #  A: memory address of the ledger byte of this block assuming 0xd000 page
-.addr_to_ledger
+:malloc_addr_to_ledger
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
 
-LD16_B $new_malloc_range_start              # Load memory base address into B
+LD16_B $malloc_range_start                  # Load memory base address into B
 
 CALL :sub16_a_minus_b                       # A = offset from base address
 
@@ -257,7 +257,7 @@ ALUOP_ADDR_B %A+1%+%AL%         # Write allocation length in blocks to start of 
                                 # Incrementing because we decremented before :memfill
 ALUOP_AL %B%+%BL%
 ALUOP_AH %B%+%BH%               # copy ledger address to A
-CALL .ledger_to_addr            # get memory address of allocation into A
+CALL :malloc_ledger_to_addr            # get memory address of allocation into A
 CALL :extpage_d_pop             # restore D page
 CALL :heap_pop_byte             # discard previous D page
 
@@ -336,7 +336,7 @@ ALUOP_ADDR_B %A+1%+%AL%         # Write allocation length in segments to start o
 
 ALUOP_AL %B%+%BL%
 ALUOP_AH %B%+%BH%               # copy ledger address to A
-CALL .ledger_to_addr            # get memory address of allocation into A
+CALL :malloc_ledger_to_addr            # get memory address of allocation into A
 CALL :extpage_d_pop             # restore D page
 CALL :heap_pop_byte             # discard previous D page
 
@@ -386,7 +386,7 @@ CALL :heap_push_B                   # save target count for later
 CALL :heap_push_B                   # save it again, this one will stay the original value
 
 # store the address of the last byte in the ledger into C
-LD_AL $new_malloc_segments          # there are 8x this many bytes in the ledger
+LD_AL $malloc_segments              # there are 8x this many bytes in the ledger
 LDI_AH 0x00
 CALL :shift16_a_left
 CALL :shift16_a_left
@@ -461,7 +461,7 @@ PUSH_CL
 CALL :extpage_d_push_zero
 
 # Convert real address to ledger address
-CALL .addr_to_ledger                    # A contains ledger address at 0xd000 base
+CALL :malloc_addr_to_ledger                    # A contains ledger address at 0xd000 base
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%                       # C contains ledger address
 INCR_C                                  # pre-increment before loop starts
