@@ -86,42 +86,38 @@ JMP .run_ody_done               # should never happen but just in case
 # memory pages, assign them to D and E, and return 0xd000
 # TODO: test for filesize >8K and abort
 CALL :extmalloc
-CALL :heap_pop_AH
-ALUOP_ADDR %A%+%AH% %d_page%
+CALL :extpage_d_push
 CALL :extmalloc
-CALL :heap_pop_AL
-ALUOP_ADDR %A%+%AL% %e_page%
+CALL :extpage_e_push
 LDI_C 0xd000
 CALL .load_and_run
-CALL :heap_push_AL
+CALL :extpage_e_pop
 CALL :extfree
-CALL :heap_push_AH
+CALL :extpage_d_pop
 CALL :extfree
 JMP .run_ody_done
 
 .extmalloc_e
 # We don't care about the file size, just allocate one extended
 # memory page, assign to E, and return 0xe000
-# TODO: test for filesize >8K and abort
+# TODO: test for filesize >4K and abort
 CALL :extmalloc
-CALL :heap_pop_AL
-ALUOP_ADDR %A%+%AL% %e_page%
+CALL :extpage_e_push
 LDI_C 0xe000
 CALL .load_and_run
-CALL :heap_push_AL
+CALL :extpage_e_pop
 CALL :extfree
 JMP .run_ody_done
 
 .extmalloc_d
 # We don't care about the file size, just allocate one extended
 # memory page, assign to D, and return 0xd000
-# TODO: test for filesize >16K and abort
+# TODO: test for filesize >4K and abort
 CALL :extmalloc
-CALL :heap_pop_AL
-ALUOP_ADDR %A%+%AL% %d_page%
+CALL :extpage_d_push
 LDI_C 0xd000
 CALL .load_and_run
-CALL :heap_push_AL
+CALL :extpage_d_pop
 CALL :extfree
 JMP .run_ody_done
 
@@ -131,9 +127,6 @@ CALL :heap_push_D               # directory entry
 CALL :fat16_dirent_filesize
 CALL :heap_pop_A                # low word of file size
 CALL :heap_pop_word             # high word of file size (ignored)
-
-CALL :heap_push_AL              # DEBUG
-CALL :heap_push_AH              # DEBUG Push filesize for printf
 
 # Our goal is to take the 16-bit filesize and convert it to a malloc
 # number that is rounded up to the nearest 512 bytes.
@@ -160,12 +153,7 @@ CALL :shift16_a_right
 CALL :shift16_a_right
 
 ALUOP_BL %A%+%AL%               # save malloc size for freeing
-CALL :heap_push_AL              # DEBUG push malloc size for printf
 CALL :malloc_segments
-CALL :heap_push_AL              # DEBUG push resulting addr for printf
-CALL :heap_push_AH              # DEBUG
-LDI_C .ody_malloc               # DEBUG
-CALL :printf                    # DEBUG
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%               # copy address to C
 CALL .load_and_run
@@ -220,4 +208,3 @@ RET
 .ata_err1 "ATA error loading first sector of binary: 0x%x\n\0"
 .ata_err2 "ATA error loading binary: 0x%x\n\0"
 .ody_err1 "Error: file does not look like an ODY executable\n\0"
-.ody_malloc "ODY loaded at 0x%x%x %u segments from filesize 0x%x%x\n\0"
