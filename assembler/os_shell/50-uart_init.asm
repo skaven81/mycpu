@@ -9,8 +9,10 @@ CALL :uart_init_9600_8n1
 UMASKINT
 # Pause 0.5s for serial to flush
 LDI_AH 0x00 # bcd seconds
-LDI_AL 0x50 # bcd subseconds
-CALL :sleep
+CALL :heap_push_AH
+LDI_AH 0x50 # bcd subseconds
+CALL :heap_push_AL
+CALL :sleep # sleep for 0.5 sec
 MASKINT
 LDI_C .ok
 CALL :print

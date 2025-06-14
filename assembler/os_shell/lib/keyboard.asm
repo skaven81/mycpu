@@ -29,8 +29,10 @@ ST16    %IRQ1addr%  :kb_clear_irq
 
 # Pause for 0.75 sec
 LDI_AH  0x00    # BCD, seconds
-LDI_AL  0x75    # BCD, subseconds
-CALL :sleep
+CALL :heap_push_AH
+LDI_AH  0x75    # BCD, subseconds
+CALL :heap_push_AH
+CALL :sleep     # Sleep for 0.75 sec
 
 # Restore IRQ1 address
 POP_DL

@@ -47,6 +47,9 @@ CALL :putchar
 # Initialize malloc space 0x6000 .. 0xafff
 CALL :boot_malloc_init
 
+# Set up the timer in a known state
+CALL :timer_set_idle
+
 # Test extended RAM
 CALL :boot_extram_test
 

@@ -628,8 +628,11 @@ JNZ .ata_reset_timeout              # If timeout, abort
 ST_SLOW %ata_cmd_stat% %ata_cmd_reset%
 
 # Pause 100 milliseconds to give the drive a chance to begin reset
-LDI_A 0x0010                        # 00.10 seconds
-CALL :sleep
+LDI_AH 0x00     # seconds
+CALL :heap_push_AH
+LDI_AH 0x10     # subseconds
+CALL :heap_push_AH
+CALL :sleep     # sleep for 0.1 sec
 
 # Wait for drive to be ready
 CALL .ata_wait_drive_ready
