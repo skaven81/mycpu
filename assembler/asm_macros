@@ -83,9 +83,30 @@
 %display_color%   0x5000
 
 # Colors
+%dblue%     0x01
 %blue%      0x03
+%dgreen%    0x04
 %green%     0x0c
+%dred%      0x10
 %red%       0x30
+
+# ANSI colors
+%ansi_black%    0x00
+%ansi_red%      0x10    # dark red
+%ansi_green%    0x04    # dark green
+%ansi_yellow%   0x14    # dred + dgreen
+%ansi_blue%     0x01    # dark blue
+%ansi_magenta%  0x11    # dred + dblue
+%ansi_cyan%     0x05    # dgreen + dblue
+%ansi_gray%     0x15    # dred + dgreen + dblue
+%ansi_br_red%   0x30    # red
+%ansi_br_green% 0x0c    # green
+%ansi_br_yellow% 0x3c   # red + green
+%ansi_br_blue%  0x03    # blue
+%ansi_br_magenta% 0x33  # red + blue
+%ansi_br_cyan%  0x0f    # green + blue
+%ansi_br_white% 0x3f    # red + green + blue
+
 # yellow = red+green
 %yellow%    0x3c
 # cyan = green+blue
