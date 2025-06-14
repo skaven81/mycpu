@@ -1,3 +1,89 @@
+2025-06-14: Bad Apple progress
+==============================
+
+I wrote a `fps` test utility that confirmed that using the ultra-fast MEMFILL
+routine for filling display/color ranges with a single character (a la clear
+screen) is very fast (over 200fps!), things slow down quite a bit when copying
+data from memory (a bit over 60fps) and even more when the data is computed on
+the fly and no SIMD instructions are used at all (5fps).
+
+I have no idea if 10fps is achievable loading a file into memory and then
+copying that data to the framebuffer.  My guess is it'll be a bit less than
+that.  I can probably optimize a "video player" since I don't need to go
+through any of the print mechanism; I can just read the file directly into the
+character memory if the sector read intervals aren't too jarring.  Otherwise I
+can read the file into a buffer and then use MEMCPY to update the display
+quickly.
+
+The rendered frames are 60x48 so it may go a little quicker than using the
+entire display.
+
+The road to get there will take some work though.
+
+I'm starting with a `type` utility (aka `cat`) that reads a file and prints it
+to the display.  This in turn requires implementing a new way of reading files,
+:fat16_streamfile.  The existing :fat16_readfile can be updated to use
+:fat16_streamfile under the hood once complete.
+
+Once that's done, I can at least print out frame files to get some kind of idea
+of how they'll look.
+
+I can then implement a `vidplay` command that takes a directory as a parameter
+and iterates over all the files in that directory, loading each into character
+memory as fast as they can be read from disk (which should end up being
+somewhere between 5-10fps).
+
+I suspect that the slowest part of `vidplay` is going to be resolving the
+filename into a directory entry (:fat16_pathfind) and so I may need to preload
+the frame directory entries before starting to play the video.  At 10fps, the
+Bad Apple video has 1096 frames. That's 35K of memory, which will fit just fine
+into extended memory with some effort.  That way the player loop would have the
+directory entry ready to go for each frame that needs to be loaded, and can
+call the loader routine directly, skipping the pathfind step.
+
+In the meantime, there's some low-level troubleshooting to do:
+ * the `pathfind` system utility has broken, it no longer looks up paths,
+   and it leaks a 32-byte memory range each time it runs. This is possibly
+   why it's taking so long to run commands ...
+
+ * when issuing `dir` under the BADAPPLE directory, it fails to enumerate all
+   of the files -- it gets to 01FD.TXT and goes off the rails after that.
+   This is probably due to the directory sectors consuming more than a single
+   cluster, and so it gets to the end of the cluster and loses its mind.
+   This also seems to cause other functions to go out of whack.  This will
+   need to be fixed in order to play videos with >500 frames.
+
+ * possibly related, booting up with the hard drive plugged in, I've had it
+   return gibberish when running `1:` then `dir` on a fresh boot.
+
+
+2025-06-09: Bad Apple idea
+==========================
+
+Checked the two items from yesterday.
+  * boot sequence already is tidy -- nothing to do here.
+  * reviewed the ODY execution sequence and it looks sane, nothing to edit
+
+I did update the ODY executor so that it uses the extended memory page push
+and pop routines.
+
+Thinking about the Bad Apple demo.  There is a utility for converting
+images into ASCII art: https://github.com/TheZoraiz/ascii-image-converter?tab=readme-ov-file#linux
+
+And there is a repo with all the Bad Apple frames:
+https://github.com/pikapower9080/bad-apple-frames
+
+This can be used to generate a bunch of files (one per frame) or one giant
+file with all the frames strung together.
+
+If separate files I'd have a pretty slow frame rate but the code would be easy
+to write.  If one big file I'd have to write a whole new file reading routine
+that can stream data.
+
+Either way, this is probably worth looking into.  If nothing else, to see
+how fast I can read files and display them.
+
+
 2025-06-08: next-gen malloc (done!)
 ===================================
 
