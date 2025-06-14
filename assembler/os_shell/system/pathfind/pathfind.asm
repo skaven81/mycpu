@@ -22,7 +22,7 @@ JEQ .ataerr
 
 # If here, entry was found, and B contains the address
 # of the directory entry. The address of the filesystem handle
-# is still on the stack.
+# is still on the heap.
 CALL :fat16_handle_get_ataid    # ATA ID read from FS handle, ID on stack
 LDI_C .found_preamble
 CALL :printf
