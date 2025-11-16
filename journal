@@ -1,3 +1,83 @@
+2025-11-15: C compiler musing
+=============================
+
+I worked with Claude AI to brainstorm how I might develop a C compiler for
+the Odyssey. The biggest revelation was the existence of the pycparser
+library: https://github.com/eliben/pycparser which slots in perfectly in
+such a way that I can write my own C compiler without needing to actually
+lex and parse the C code itself, just provide assembly language implementations
+of the various nodes in the AST (abstract syntax tree).  Claude provided
+a prototype implementation that shows how to iterate through the AST
+generating assembly code along the way.
+
+That out of the way, the most important thing to consider is how to
+handle function calls, and specifically how to handle local variables
+ensuring that functions are reentrant safe.  This has been a lingering problem
+with the Odyssey assembly library for quite some time.  Claude suggested a
+model that mimics how typical C compilers do this, using a concept known
+as a "stack frame". The key insight I had missed for all this time is
+that the software stack (what I've been calling the "heap") is actually
+where local variables go.  The proposed implementation, which seems most
+reasonable, is to modify the heap functionality to give it access to more
+memory (currently limited to 768 bytes) and add some functions for moving
+the $heap_ptr in arbitrary steps.  The resulting sequence for a function
+call looks like this:
+
+1. Caller uses heap_push_* calls to add parameters to the stack, in reverse
+   order (this is the same as I typically do today)
+2. Caller executes CALL to jump into the function
+3. Function saves register state and then writes $heap_ptr to D. D is the
+   function's _frame pointer_, which gives it an "anchor" in its stack
+   frame.
+4. Function issues :heap_advance to increment $heap_ptr sufficiently
+   forward to accommodate the local variables.  Thus any function
+   call within this function will push data on top of the stack
+   frame without clobbering the local variables.
+5. The function addresses parameters and local variables directly, NOT
+   by issuing :heap_pop_* commands.  This will require some new utility
+   functions, such as :frame_(load|store)_byte and :frame_(load|store)_word,
+   each able to reference an _offset_ (positive for local vars, negative
+   for parameters)
+6. Before returning from the function, it must unroll the heap, using
+   a new :heap_retreat function that simply decrements $heap_ptr by a
+   given number of bytes, equal to the local variables plus parameters.
+   This is equivalent to a bunch of :heap_pop commands but is faster
+   since the compiler knows exactly how many bytes were consumed by
+   the local variables and parameters.
+7. The function then pushes the return value onto the heap (or not,
+   for a void function)
+8. Last step before returning is to restore the register state from the
+   hardware stack.
+9. Function calls RET
+10. The caller uses :heap_pop to retreive the return value.
+
+This model allows for interoperability with existing functions, provided
+they leave the register state intact after execution.  For those that
+do not, there is a `special_functions` dict that allow for use of non-
+compliant functions to be used.
+
+Claude generated a reasonably complete stub that appears to be able
+to generate sane assembly code, but I have yet to actually assemble and
+test it.  There's also a lot more work to do before the compiler can
+properly handle pointers, arrays, etc.
+
+TODO items:
+* Test basic functionality - can I compile some C code into a function
+  that can actually be executed and does the right thing?
+* Extend the Makefile ecosystem - have the Makefile(s) recognize .c
+  files and call the compiler before assembling.  Consider where .h files
+  should live that can be included by the .c files. The compiler calls
+  `cpp` to pre-process the files, which means #include and #define type
+  stuff should work.
+* Implement an independent ODY executable in C
+* Convert a library function (or a whole library) to C
+* Start a new OS from scratch written in C? Reimplement all library code?
+
+At each stage, the compiler will likely need more work. But the structure
+appears to be extensible: just trap cases of new keywords and operators
+and have it generate the right assembly sequence.
+
+
 2025-06-14: Bad Apple progress
 ==============================
 
