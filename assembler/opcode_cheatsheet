@@ -155,8 +155,8 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 0x5f00 - 0x5f0f interrupt addresses
 0x5f10 - 0x5fff hidden framebuffer (global asm vars)
 0x6000 - 0xafff ~20k RAM (see lib/malloc.asm)
-0xb000 - 0xb9ff 2.5k global asm arrays
-0xba00 - 0xbcff 768b heap (lib/heap.asm)
+0xb000 - 0xb9ff 2.5k heap (lib/heap.asm) for parameters and local vars
+0xba00 - 0xbcff 768b global asm arrays
 0xbd00 - 0xbdff 256b UART buffer (lib/uart.asm)
 0xbe00 - 0xbeff 256b keyboard buffer (lib/keyboard.asm)
 0xbf00 - 0xbfff 256b CPU stack

@@ -9,7 +9,7 @@ VAR global word $heap_ptr
 ######
 # Initialize the heap
 :heap_init
-ST16 $heap_ptr 0xba00
+ST16 $heap_ptr 0xb000
 RET
 
 ######
