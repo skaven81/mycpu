@@ -4,6 +4,8 @@ Handles storage location and code generation for variable access
 Enhanced with typedef, struct, and array support
 """
 
+import math
+
 # Global context for registries - set this once at the start of compilation
 _global_typedef_registry = None
 _global_struct_registry = None
@@ -473,6 +475,7 @@ class Variable:
             emitter: Function that takes assembly code strings
             index_expr: For arrays, the index expression (already in A)
         """
+        self.emit("# begin emit_load for {self.name}")
         # Arrays decay to pointers - load address instead
         if self.is_array and index_expr is None:
             self.emit_address(emitter)
@@ -505,20 +508,28 @@ class Variable:
                 raise NotImplementedError(f"Cannot load {base_size}-byte type")
         else:
             raise ValueError(f"Unknown scope: {self.scope}")
+        self.emit("# {self.name} is now in A")
     
     def _emit_indexed_load(self, emitter):
         """Load array element - index is already in A"""
         element_size = self.type_spec.element_type.size
         
+        self.emit("# begin _emit_indexed_load for {self.name}")
         # Scale index by element size if needed
         if element_size > 1:
             emitter(f"# Scale index by element size {element_size}")
-            emitter("CALL :heap_push_A")
-            emitter(f"LDI_A {element_size}")
-            emitter("CALL :heap_push_A")
-            emitter("CALL :mul16")  # Result on heap
-            emitter("CALL :heap_pop_A", "Scaled index in A")
-            emitter("CALL :heap_pop_word", "Discard high word of multiplication")
+            num_shifts = math.log(element_size, 2)
+            if int(num_shifts) == num_shifts:
+                for idx in range(int(num_shifts)):
+                    emitter("CALL :shift16_a_left")
+            else:
+                # Use :mul16 for anything where we can't do a simple shift
+                emitter("CALL :heap_push_A")
+                emitter(f"LDI_A {element_size}")
+                emitter("CALL :heap_push_A")
+                emitter("CALL :mul16")  # Result on heap
+                emitter("CALL :heap_pop_A", "Scaled index in A")
+                emitter("CALL :heap_pop_word", "Discard high word of multiplication")
         
         # Add to base address
         emitter("ALUOP_PUSH %A%+%AH%", "Save scaled index")
@@ -526,7 +537,7 @@ class Variable:
         self.emit_address(emitter)  # Get base address in A
         emitter("POP_BL", "Restore index to B")
         emitter("POP_BH")
-        emitter("CALL :add16_to_a")  # A = base + index
+        emitter("CALL :add16_to_a", "# A = base + index")
         
         # Load from computed address (A now points to element)
         element_size = self.type_spec.element_type.size
@@ -542,11 +553,13 @@ class Variable:
             emitter("MOV_CL_AL")
         else:
             raise NotImplementedError(f"Cannot load {element_size}-byte array element")
+        self.emit("# end _emit_indexed_load for {self.name}")
     
     def emit_store(self, emitter):
         """Generate assembly to store A register to this variable"""
         base_size = self.type_spec._get_base_size() if not self.is_pointer else 2
         
+        self.emit("# begin emit_store for {self.name}")
         if self.is_static:
             if base_size == 2:
                 emitter(f"ST_AH {self.asm_name}")
@@ -565,6 +578,7 @@ class Variable:
                 raise NotImplementedError(f"Cannot store {base_size}-byte type")
         else:
             raise ValueError(f"Unknown scope: {self.scope}")
+        self.emit("# end emit_store for {self.name}")
     
     def _emit_extend(self, to_size, emitter):
         """Emit code to extend value in A to larger size"""
@@ -585,16 +599,17 @@ class Variable:
     
     def emit_address(self, emitter):
         """Generate assembly to load the address of this variable into A"""
+        emitter(f"# begin emit_address of {self.scope} variable {self.name} into A")
         if self.scope == 'global':
             emitter(f"LDI_A {self.asm_name}")
         elif self.scope in ('local', 'param'):
-            emitter(f"# Load address of {self.scope} variable {self.name}")
             emitter("MOV_DH_AH")
             emitter("MOV_DL_AL")
             emitter(f"LDI_B {self.offset}")
             emitter("CALL :add16_to_a")
         else:
             raise ValueError(f"Unknown scope: {self.scope}")
+        emitter("# end emit_address")
     
     def emit_member_access(self, member_name, emitter):
         """
@@ -606,16 +621,19 @@ class Variable:
         
         struct_def = self.type_spec.struct_def
         member_offset = struct_def.get_member_offset(member_name)
+
+        emitter(f"# begin emit_member_access of {self.name} member {member_name} into A")
         
         # Get base address of struct
         self.emit_address(emitter)
         
         # Add member offset
         if member_offset > 0:
-            emitter(f"LDI_B {member_offset}")
+            emitter(f"LDI_B {member_offset}", "Add member offset")
             emitter("CALL :add16_to_a")
         
         # Now A points to the member - caller can load/store as needed
+        emitter(f"# end emit_member_access of {self.name} member {member_name} into A")
 
     @staticmethod
     def promote(var1, var2):
