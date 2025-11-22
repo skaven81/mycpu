@@ -34,6 +34,17 @@ class Variable:
     #   not need to be mapped to a memory location. Dereferencing a register
     #   var (e.g. &varname) is illegal.
     STORAGE_CLASS = {'typedef', 'extern', 'static', 'auto', 'register'}
+
+    # Built-in typedefs
+    BUILT_IN_TYPEDEFS = {
+        'uint8_t':  ['unsigned', 'char'],
+        'int8_t':   ['signed', 'char'],
+        'uint16_t': ['unsigned', 'short'],
+        'int16_t':  ['signed', 'short'],
+        'size_t':   ['unsigned', 'short'],
+        'byte':     ['signed', 'char'],
+        'word':     ['signed', 'short'],
+    }
      
     def __init__(self, name, type_names, scope, offset=None, static_type='inline', is_pointer=False):
         """
@@ -51,6 +62,7 @@ class Variable:
         self.offset = offset
         self.static_type = static_type
         self.is_pointer = is_pointer
+        self.orig_type_names = type_names
 
         # Filter out qualifiers and storage class
         self.qualifiers = set()
@@ -64,6 +76,8 @@ class Variable:
                 self.storage_class = t
             elif t in self.TYPE_SPECIFIERS:
                 specs.append(t)
+            elif t in self.BUILT_IN_TYPEDEFS:
+                specs = self.BUILT_IN_TYPEDEFS[t]
             else:
                 # Unknown type
                 raise ValueError(f"Unknown type name: {name}")
@@ -118,18 +132,28 @@ class Variable:
         self.asm_name = None
         if self.is_static:
             if self.static_type == 'inline':
-                self.asm_name = f".{self.name}"
+                self.asm_name = f".{self.name}_{id(self)}"
             elif self.static_type == 'asm_var':
-                self.asm_name = f"${self.name}"
+                self.asm_name = f"${self.name}_{id(self)}"
             else:
                 raise ValueError("static_type must be inline or asm_var")
  
     def __repr__(self):
-        type_str = f"{'unsigned ' if not self.signed else ''}{self.type}"
-        if self.scope == 'global':
-            return f"Variable({self.name}, {type_str}, global)"
+        ret = f"Variable('{self.name}', {self.orig_type_names}, '{self.scope}'"
+        if not self.is_static:
+            ret += f", offset={self.offset}"
+        if self.static_type != 'inline':
+            ret += f", static_type='{self.static_type}'"
+        if self.is_pointer:
+            ret += f", is_pointer='{self.is_pointer}'"
+        ret += ")"
+        return ret
+
+    def __str__(self):
+        if self.is_static:
+            return f"Cvar[{self.name}] {self.orig_type_names} size={self.size} scope={self.scope} label={self.asm_name}"
         else:
-            return f"Variable({self.name}, {type_str}, {self.scope}, D+{self.offset})"
+            return f"Cvar[{self.name}] {self.orig_type_names} size={self.size} scope={self.scope} frame_offset={self.offset}"
     
     @property
     def is_static(self):
@@ -188,9 +212,9 @@ class Variable:
         """
         if self.is_static:
             if self.size == 2:
-                emitter(f"LD16_A ${self.asm_name}")
+                emitter(f"LD16_A {self.asm_name}")
             elif self.size == 1:
-                emitter(f"LD_AL ${self.asm_name}")
+                emitter(f"LD_AL {self.asm_name}")
                 self._emit_extend(2, emitter)
             else:
                 raise NotImplementedError(f"Cannot load {self.size}-byte global")
@@ -215,10 +239,10 @@ class Variable:
         """
         if self.is_static:
             if self.size == 2:
-                emitter(f"ST_AH ${self.asm_name}")
-                emitter(f"ST_AL ${self.asm_name}+1")
+                emitter(f"ST_AH {self.asm_name}")
+                emitter(f"ST_AL {self.asm_name}+1")
             elif self.size == 1:
-                emitter(f"ST_AL ${self.asm_name}")
+                emitter(f"ST_AL {self.asm_name}")
             else:
                 raise NotImplementedError(f"Cannot store {self.size}-byte global")
         elif self.scope in ('local', 'param'):

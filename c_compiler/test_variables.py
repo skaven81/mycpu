@@ -5,6 +5,7 @@ Validates variable creation, type parsing, and code generation
 """
 
 import sys
+import traceback
 from variables import Variable, VariableTable
 
 class TestEmitter:
@@ -40,13 +41,17 @@ class TestRunner:
             return True
         except AssertionError as e:
             self.failed += 1
+            tb = e.__traceback__
+            tb = tb.tb_next
+            filename = tb.tb_frame.f_code.co_filename
+            lineno = tb.tb_lineno
             print(f"✗ {name}")
-            print(f"  {e}")
+            print(f"  {type(e).__name__}: {e} in {filename} on line {lineno}")
             return False
         except Exception as e:
             self.failed += 1
             print(f"✗ {name} (EXCEPTION)")
-            print(f"  {type(e).__name__}: {e}")
+            print(f"  {type(e).__name__}: {e} in {filename} on line {lineno}")
             return False
     
     def summary(self):
@@ -103,6 +108,36 @@ def test_basic_types():
     assert var.type == 'int'
     assert var.size == 2
     assert var.signed == False
+
+    # built-in typedefs
+    var = Variable('t', ['uint8_t'], 'global')
+    assert var.type == 'char'
+    assert var.size == 1
+    assert var.signed == False
+    var = Variable('t', ['int8_t'], 'global')
+    assert var.type == 'char'
+    assert var.size == 1
+    assert var.signed == True
+    var = Variable('t', ['uint16_t'], 'global')
+    assert var.type == 'short'
+    assert var.size == 2
+    assert var.signed == False
+    var = Variable('t', ['int16_t'], 'global')
+    assert var.type == 'short'
+    assert var.size == 2
+    assert var.signed == True
+    var = Variable('t', ['size_t'], 'global')
+    assert var.type == 'short'
+    assert var.size == 2
+    assert var.signed == False
+    var = Variable('t', ['byte'], 'global')
+    assert var.type == 'char'
+    assert var.size == 1
+    assert var.signed == True
+    var = Variable('t', ['word'], 'global')
+    assert var.type == 'short'
+    assert var.size == 2
+    assert var.signed == True
 
 def test_pointer_types():
     """Test pointer type handling"""
@@ -276,8 +311,8 @@ def test_store_global():
     var = Variable('global_int', ['int'], 'global')
     var.emit_store(emitter)
     output = emitter.get_output()
-    assert 'ST_AH $global_int' in output
-    assert 'ST_AL $global_int+1' in output
+    assert 'ST_AH .global_int' in output
+    assert 'ST_AL .global_int+1' in output
     
     emitter.clear()
     
@@ -285,7 +320,7 @@ def test_store_global():
     var = Variable('global_char', ['char'], 'global')
     var.emit_store(emitter)
     output = emitter.get_output()
-    assert 'ST_AL $global_char' in output
+    assert 'ST_AL .global_char' in output
 
 def test_store_local():
     """Test emit_store for local/param variables"""
@@ -317,7 +352,7 @@ def test_emit_address():
     var = Variable('global_int', ['int'], 'global')
     var.emit_address(emitter)
     output = emitter.get_output()
-    assert 'LDI_A $global_int' in output
+    assert 'LDI_A .global_int' in output
     
     emitter.clear()
     
@@ -467,16 +502,11 @@ def test_repr():
     
     var = Variable('test', ['int'], 'global')
     repr_str = repr(var)
-    assert 'test' in repr_str
-    assert 'int' in repr_str
-    assert 'global' in repr_str
-    
+    assert repr_str == "Variable('test', ['int'], 'global')"
+
     var = Variable('local', ['unsigned', 'char'], 'local', offset=4)
     repr_str = repr(var)
-    assert 'local' in repr_str
-    assert 'unsigned' in repr_str
-    assert 'char' in repr_str
-    assert 'D+4' in repr_str
+    assert repr_str == "Variable('local', ['unsigned', 'char'], 'local', offset=4)"
 
 def main():
     """Run all tests"""
