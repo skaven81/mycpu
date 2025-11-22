@@ -513,22 +513,33 @@ class Variable:
         # Scale index by element size if needed
         if element_size > 1:
             emitter(f"# Scale index by element size {element_size}")
-            emitter(f"LDI_B {element_size}")
-            emitter("CALL :mul16")  # Result in A
+            emitter("CALL :heap_push_A")
+            emitter(f"LDI_A {element_size}")
+            emitter("CALL :heap_push_A")
+            emitter("CALL :mul16")  # Result on heap
+            emitter("CALL :heap_pop_A", "Scaled index in A")
+            emitter("CALL :heap_pop_word", "Discard high word of multiplication")
         
         # Add to base address
-        emitter("PUSH_A", "Save scaled index")
+        emitter("ALUOP_PUSH %A%+%AH%", "Save scaled index")
+        emitter("ALUOP_PUSH %A%+%AL%")
         self.emit_address(emitter)  # Get base address in A
-        emitter("POP_B", "Restore index to B")
+        emitter("POP_BL", "Restore index to B")
+        emitter("POP_BH")
         emitter("CALL :add16_to_a")  # A = base + index
         
         # Load from computed address (A now points to element)
         element_size = self.type_spec.element_type.size
         if element_size == 1:
-            emitter("CALL :load_byte_from_A")
+            emitter("LDA_A_CL")
+            emitter("MOV_CL_AL")
             self._emit_extend(2, emitter)
         elif element_size == 2:
-            emitter("CALL :load_word_from_A")
+            emitter("LDA_A_CH")
+            emitter("CALL :incr16_a")
+            emitter("LDA_A_CL")
+            emitter("MOV_CH_AH")
+            emitter("MOV_CL_AL")
         else:
             raise NotImplementedError(f"Cannot load {element_size}-byte array element")
     
@@ -578,8 +589,8 @@ class Variable:
             emitter(f"LDI_A {self.asm_name}")
         elif self.scope in ('local', 'param'):
             emitter(f"# Load address of {self.scope} variable {self.name}")
-            emitter("ALUOP_AH %A%+%DH%")
-            emitter("ALUOP_AL %A%+%DL%")
+            emitter("MOV_DH_AH")
+            emitter("MOV_DL_AL")
             emitter(f"LDI_B {self.offset}")
             emitter("CALL :add16_to_a")
         else:
