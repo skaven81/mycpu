@@ -228,6 +228,111 @@ type_spec = TypeSpec('char', array_dims=[8, 16])
 # type_spec.size == 128 (8 × 16 = 128 bytes)
 ```
 
+#### Example 5: Unsized Array with Initializer
+
+**C Code:**
+```c
+char foo[] = "Some string";
+```
+
+**pycparser AST:**
+```
+Decl: foo
+ ├── ArrayDecl
+ │    ├── dim: None  ← NOTE: pycparser sets this to None!
+ │    └── TypeDecl
+ │         └── IdentifierType: ['char']
+ └── init: Constant('string', '"Some string"')
+```
+
+**Important:** pycparser does NOT calculate the size for you. The `dim` field will be `None`, and you must compute the size from the initializer.
+
+**Processing:**
+```python
+def calculate_array_size_from_init(init_node, element_type):
+    """
+    Calculate array size from initializer expression.
+    
+    Args:
+        init_node: The init field from the Decl node
+        element_type: TypeSpec for array element type
+    
+    Returns:
+        Size in number of elements
+    """
+    if isinstance(init_node, c_ast.Constant):
+        if init_node.type == 'string':
+            # String literal - parse the string value
+            string_value = init_node.value
+            # Remove quotes and unescape
+            string_value = string_value.strip('"')
+            # Count characters + 1 for null terminator
+            # Note: This is simplified - proper implementation needs
+            # to handle escape sequences like \n, \t, \0, etc.
+            return len(string_value) + 1
+    elif isinstance(init_node, c_ast.InitList):
+        # Array initializer like {1, 2, 3}
+        return len(init_node.exprs)
+    
+    raise ValueError("Cannot determine array size from initializer")
+
+def visit_Decl(self, node):
+    var_name = node.name
+    type_names, pointer_level, array_dims = extract_type_info(node.type)
+    
+    # Check for unsized arrays (dim is None)
+    if array_dims and array_dims[0] == 0:
+        if node.init:
+            # Calculate size from initializer
+            element_type = TypeSpec(type_names, pointer_level=pointer_level)
+            calculated_size = calculate_array_size_from_init(node.init, element_type)
+            array_dims[0] = calculated_size
+        else:
+            raise ValueError(f"Unsized array '{var_name}' without initializer")
+    
+    type_spec = TypeSpec(type_names,
+                        pointer_level=pointer_level,
+                        array_dims=array_dims)
+    
+    var = Variable(var_name, type_spec, 'global')
+    var_table.add_global(var)
+```
+
+**String Parsing Details:**
+
+For proper string literal parsing, you need to handle C escape sequences:
+
+```python
+def parse_c_string_literal(literal):
+    """
+    Parse a C string literal and return its actual length.
+    
+    Args:
+        literal: String like '"hello\\nworld"'
+    
+    Returns:
+        Actual character count (not including quotes, handling escapes)
+    """
+    # Remove surrounding quotes
+    if literal.startswith('"') and literal.endswith('"'):
+        literal = literal[1:-1]
+    
+    # Simple escape sequence handling
+    # For production code, use a proper parser or regex
+    import codecs
+    try:
+        decoded = codecs.decode(literal, 'unicode_escape')
+        return len(decoded)
+    except:
+        # Fallback for complex cases
+        return len(literal)
+
+# Usage:
+# char foo[] = "hello\nworld";  // actual length: 11 + 1 = 12
+length = parse_c_string_literal('"hello\\nworld"')  # 11
+array_size = length + 1  # +1 for null terminator
+```
+
 ## Type System
 
 ### Creating TypeSpec Objects
@@ -754,6 +859,7 @@ def extract_type_info(type_node):
     
     Returns:
         tuple: (type_names, pointer_level, array_dims)
+               array_dims will contain 0 for unsized arrays
     """
     pointer_level = 0
     array_dims = []
@@ -771,7 +877,8 @@ def extract_type_info(type_node):
                     # Complex expression - need to evaluate
                     dim = 0  # Placeholder
             else:
-                dim = 0  # Unsized array
+                # Unsized array - dim is None
+                dim = 0  # Mark as unsized, caller must calculate from init
             array_dims.append(dim)
             current = current.type
         elif isinstance(current, c_ast.TypeDecl):
@@ -787,5 +894,59 @@ def extract_type_info(type_node):
         raise ValueError(f"Unknown type node: {type(current).__name__}")
     
     return type_names, pointer_level, array_dims
+
+
+def parse_c_string_literal(literal):
+    """
+    Parse a C string literal and return its actual character count.
+    
+    Args:
+        literal: String like '"hello\\nworld"' (with quotes)
+    
+    Returns:
+        Number of actual characters (not including quotes, with escapes processed)
+    """
+    # Remove surrounding quotes
+    if literal.startswith('"') and literal.endswith('"'):
+        literal = literal[1:-1]
+    
+    # Handle C escape sequences
+    # This is a simplified version - production code needs more robust handling
+    import codecs
+    try:
+        # Decode escape sequences
+        decoded = codecs.decode(literal, 'unicode_escape')
+        return len(decoded)
+    except:
+        # Fallback: just count raw characters
+        return len(literal)
+
+
+def calculate_array_size_from_init(init_node, element_type):
+    """
+    Calculate array size from initializer expression.
+    
+    Args:
+        init_node: The Decl.init field from pycparser
+        element_type: TypeSpec for the array element type
+    
+    Returns:
+        Size in number of elements (includes null terminator for strings)
+    """
+    if isinstance(init_node, c_ast.Constant):
+        if init_node.type == 'string':
+            # String literal: "hello" → 6 elements (5 chars + null)
+            char_count = parse_c_string_literal(init_node.value)
+            return char_count + 1  # +1 for null terminator
+        else:
+            # Single constant initializing an array? Unusual but handle it
+            return 1
+    
+    elif isinstance(init_node, c_ast.InitList):
+        # Array initializer: {1, 2, 3, 4}
+        return len(init_node.exprs)
+    
+    else:
+        raise ValueError(f"Cannot determine array size from initializer type: {type(init_node).__name__}")
 ```
 
