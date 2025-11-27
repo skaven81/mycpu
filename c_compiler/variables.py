@@ -32,16 +32,7 @@ class TypedefRegistry:
     """Manages user-defined type aliases"""
     
     def __init__(self):
-        # Built-in typedefs
-        self.typedefs = {
-            'uint8_t':  ['unsigned', 'char'],
-            'int8_t':   ['signed', 'char'],
-            'uint16_t': ['unsigned', 'short'],
-            'int16_t':  ['signed', 'short'],
-            'size_t':   ['unsigned', 'short'],
-            'byte':     ['signed', 'char'],
-            'word':     ['signed', 'short'],
-        }
+        self.typedefs = { }
     
     def add_typedef(self, alias, type_spec):
         """
@@ -368,7 +359,7 @@ class Variable:
         Args:
             name: Variable name as used in C code
             type_spec: TypeSpec object describing the type
-            scope: 'global', 'local', or 'param'
+            scope: 'global', 'function', 'local', or 'param'
             offset: stack frame offset (for local/param vars)
             static_type: 'inline' or 'asm_var'
             storage_class: Storage class specifier ('static', 'extern', etc.)
@@ -383,12 +374,17 @@ class Variable:
         # Validate scope
         if self.scope in ('local', 'param') and self.offset is None:
             raise ValueError(f"{scope} variable requires offset")
-        if self.scope == 'global' and self.offset is not None:
+        if self.scope in ('global', 'function') and self.offset is not None:
             raise ValueError(f"global variable should not have offset")
 
         # For static vars, define assembly name
         self.asm_name = None
-        if self.is_static:
+        if self.scope == 'function':
+            if self.is_static:
+                self.asm_name = f".{self.name}"
+            else:
+                self.asm_name = f":{self.name}"
+        elif self.is_static:
             if self.static_type == 'inline':
                 self.asm_name = f".{self.name}_{id(self)}"
             elif self.static_type == 'asm_var':
@@ -658,6 +654,7 @@ class VariableTable:
     
     def __init__(self):
         self.globals = {}
+        self.functions = {}
         self.scopes = []
     
     def push_scope(self):
@@ -677,6 +674,14 @@ class VariableTable:
         if variable.scope != 'global':
             raise ValueError(f"Variable marked as {variable.scope} but added as global")
         self.globals[variable.name] = variable
+
+    def add_function(self, variable):
+        """Add a function"""
+        if variable.name in self.functions:
+            raise ValueError(f"Function already defined: {variable.name}")
+        if variable.scope != 'function':
+            raise ValueError(f"Variable marked as {variable.scope} but added as function")
+        self.functions[variable.name] = variable
     
     def add_local(self, variable):
         """Add a variable to current scope"""
@@ -688,7 +693,7 @@ class VariableTable:
         if variable.name in scope:
             raise ValueError(f"Variable already defined in scope: {variable.name}")
         scope[variable.name] = variable
-    
+
     def lookup(self, name):
         """Look up a variable by name"""
         for scope in reversed(self.scopes):
@@ -703,6 +708,10 @@ class VariableTable:
     def get_all_globals(self):
         """Get all global variables"""
         return list(self.globals.values())
+
+    def get_all_functions(self):
+        """Get all functions"""
+        return list(self.functions.values())
     
     def get_current_scope_vars(self):
         """Get variables in current scope"""
