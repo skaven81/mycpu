@@ -1,9 +1,11 @@
 from pycparser import c_ast
 from variables import *
+from functions import Function
 from debug_mixin import DebugMixin
+from extract_type import ExtractTypeMixin
 import sys
 
-class SymbolCollector(DebugMixin, c_ast.NodeVisitor):
+class SymbolCollector(DebugMixin, ExtractTypeMixin, c_ast.NodeVisitor):
     """
     NodeVisitor that collects all the symbols (variables, typedefs, functions) and registers them
     """
@@ -56,7 +58,8 @@ class SymbolCollector(DebugMixin, c_ast.NodeVisitor):
             typespec = self._extract_type(node.type)
         var = Variable(node.name, typespec, 'global',
                         static_type=self.context.static_type,
-                        storage_class=node.funcspec[0] if node.funcspec else None)
+                        storage_class=node.funcspec[0] if node.funcspec else None,
+                        initializer=node.init if isinstance(node.init, c_ast.Constant) else None)
         self.context.variable_table.add_global(var)
         if self.context.debug:
             print(f"Registered global variable {node.name}: {var.__dict__}", file=sys.stderr)
@@ -65,55 +68,11 @@ class SymbolCollector(DebugMixin, c_ast.NodeVisitor):
         if self.context.debug:
             print(self.get_debug(node), file=sys.stderr)
 
-        func_type = self._extract_type(node.decl.type)
-        var = Variable(node.decl.name, func_type, 'function',
-                        static_type=self.context.static_type,
-                        storage_class=node.decl.storage[0] if node.decl.storage else None)
-        self.context.variable_table.add_function(var)
+        func = Function(node.decl.name, node)
+        self.context.function_table.add_function(func)
         if self.context.debug:
-            print(f"Registered function {node.decl.name}: {var.__dict__}", file=sys.stderr)
-
+            print(f"Registered function {node.decl.name}: {func}", file=sys.stderr)
 
     def generic_visit(self, node):
         raise NotImplementedError(f"Symbol collection for {node.__class__.__name__} is not implemented")
-
-    def _extract_type(self, type_node, array_dims=None, pointer_level=0):
-        """
-        Recursively extract type information from any type node.
-        Returns a TypeSpec or similar unified representation.
-        """
-        if isinstance(type_node, c_ast.TypeDecl):
-            return self._extract_type(type_node.type, array_dims=array_dims, pointer_level=pointer_level)
-        
-        elif isinstance(type_node, c_ast.IdentifierType):
-            return TypeSpec(type_node.names, array_dims=array_dims, pointer_level=pointer_level)
-        
-        elif isinstance(type_node, c_ast.Struct):
-            # For struct references (not definitions), just return the type
-            # Don't register here - let visit_Typedef or visit_Decl handle registration
-            if type_node.name:
-                return TypeSpec(['struct', type_node.name], array_dims=array_dims, pointer_level=pointer_level)
-            else:
-                raise ValueError("Anonymous struct encountered outside of typedef")
-        
-        elif isinstance(type_node, c_ast.ArrayDecl):
-            # Handle arrays
-            arr_dim = None
-            if not type_node.dim:
-                return self._extract_type(type_node.type, array_dims=array_dims, pointer_level=pointer_level)
-            elif array_dims:
-                return self._extract_type(type_node.type, array_dims=[*array_dims, int(type_node.dim.value)], pointer_level=pointer_level)
-            else:
-                return self._extract_type(type_node.type, array_dims=[int(type_node.dim.value)], pointer_level=pointer_level)
-        
-        elif isinstance(type_node, c_ast.PtrDecl):
-            # Handle pointers
-            return self._extract_type(type_node.type, array_dims=array_dims, pointer_level=pointer_level+1)
-        
-        elif isinstance(type_node, c_ast.FuncDecl):
-            # Handle function types
-            return self._extract_type(type_node.type, array_dims=array_dims, pointer_level=pointer_level)
-        
-        else:
-            raise NotImplementedError(f"Type extraction for {type_node.__class__.__name__}")
 

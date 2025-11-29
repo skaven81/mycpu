@@ -354,15 +354,16 @@ class Variable:
 
     STORAGE_CLASS = {'typedef', 'extern', 'static', 'auto', 'register'}
      
-    def __init__(self, name, type_spec, scope, offset=None, static_type='inline', storage_class=None):
+    def __init__(self, name, type_spec, scope, offset=None, static_type='inline', storage_class=None, initializer=None):
         """
         Args:
             name: Variable name as used in C code
             type_spec: TypeSpec object describing the type
-            scope: 'global', 'function', 'local', or 'param'
+            scope: 'global', 'local', or 'param'
             offset: stack frame offset (for local/param vars)
             static_type: 'inline' or 'asm_var'
             storage_class: Storage class specifier ('static', 'extern', etc.)
+            initializer: AST Constant node that gives the assigned value at program start
         """
         self.name = name
         self.type_spec = type_spec
@@ -370,27 +371,35 @@ class Variable:
         self.offset = offset
         self.static_type = static_type
         self.storage_class = storage_class
+        self.initializer = initializer
+        self.const_asm_name = None
         
         # Validate scope
         if self.scope in ('local', 'param') and self.offset is None:
             raise ValueError(f"{scope} variable requires offset")
-        if self.scope in ('global', 'function') and self.offset is not None:
-            raise ValueError(f"global variable should not have offset")
 
         # For static vars, define assembly name
         self.asm_name = None
-        if self.scope == 'function':
-            if self.is_static:
-                self.asm_name = f".{self.name}"
-            else:
-                self.asm_name = f":{self.name}"
-        elif self.is_static:
+        if self.is_static:
             if self.static_type == 'inline':
-                self.asm_name = f".{self.name}_{id(self)}"
+                if self.scope == 'global':
+                    self.asm_name = f".var_{self.name}"
+                else:
+                    self.asm_name = f".var_{self.name}_{id(self)}"
             elif self.static_type == 'asm_var':
-                self.asm_name = f"${self.name}_{id(self)}"
+                if self.scope == 'global':
+                    self.asm_name = f"${self.name}"
+                else:
+                    self.asm_name = f"${self.name}_{id(self)}"
             else:
                 raise ValueError("static_type must be inline or asm_var")
+
+        # If an initializer was given and it's not a string, assign an
+        # asm name for the constant
+        if self.initializer:
+            if self.initializer.type == 'string':
+                self.const_asm_name = f".const_{self.name}"
+
  
     @property
     def size(self):
@@ -462,6 +471,18 @@ class Variable:
                 emitter(f'VAR global word {self.asm_name}')
             else:
                 emitter(f'VAR global {self.size} {self.asm_name}')
+
+    def emit_const(self, emitter):
+        """Generate assembly that defines the constant initializer"""
+        if not self.const_asm_name:
+            return
+        
+        if self.initializer.type == 'string':
+            if self.initializer.value[-1] == '\0':
+                emitter(f'{self.const_asm_name} {self.initializer.value}')
+            else:
+                emitter(f'{self.const_asm_name} {self.initializer.value[:-1] + "\\0" + '"'}')
+
 
     def emit_load(self, emitter, index_expr=None):
         """
@@ -654,7 +675,6 @@ class VariableTable:
     
     def __init__(self):
         self.globals = {}
-        self.functions = {}
         self.scopes = []
     
     def push_scope(self):
@@ -675,14 +695,6 @@ class VariableTable:
             raise ValueError(f"Variable marked as {variable.scope} but added as global")
         self.globals[variable.name] = variable
 
-    def add_function(self, variable):
-        """Add a function"""
-        if variable.name in self.functions:
-            raise ValueError(f"Function already defined: {variable.name}")
-        if variable.scope != 'function':
-            raise ValueError(f"Variable marked as {variable.scope} but added as function")
-        self.functions[variable.name] = variable
-    
     def add_local(self, variable):
         """Add a variable to current scope"""
         if not self.scopes:
@@ -704,15 +716,11 @@ class VariableTable:
             return self.globals[name]
         
         return None
-    
+
     def get_all_globals(self):
         """Get all global variables"""
         return list(self.globals.values())
 
-    def get_all_functions(self):
-        """Get all functions"""
-        return list(self.functions.values())
-    
     def get_current_scope_vars(self):
         """Get variables in current scope"""
         if not self.scopes:

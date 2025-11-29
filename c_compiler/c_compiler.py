@@ -7,6 +7,7 @@ import sys
 import argparse
 from pycparser import parse_file
 from variables import TypedefRegistry, StructRegistry, VariableTable
+from functions import FunctionTable
 from symbols import SymbolCollector
 from typecheck import TypeChecker
 from codegen import CodeGenerator
@@ -20,6 +21,7 @@ class CompilerContext():
         self.typedef_reg = TypedefRegistry()
         self.struct_reg = StructRegistry()
         self.variable_table = VariableTable()
+        self.function_table = FunctionTable()
 
 def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=True, debug=False):
     """
@@ -61,14 +63,14 @@ def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=Tr
         print("Global Variables:", file=sys.stderr)
         pprint(context.variable_table.get_all_globals(), stream=sys.stderr)
         print("Functions:", file=sys.stderr)
-        pprint(context.variable_table.get_all_functions(), stream=sys.stderr)
+        pprint(context.function_table.get_all_functions(), stream=sys.stderr)
 
     # Pass 2: Type checks
     type_checker = TypeChecker(context)
     type_checker.visit(ast)
     
     # Pass 3: Generate code
-    code_generator = CodeGenerator(context)
+    code_generator = CodeGenerator(context, output=output)
     code_generator.visit(ast)
         
 def main():
