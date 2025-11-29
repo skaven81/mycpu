@@ -53,35 +53,43 @@ def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=Tr
         verbose=verbose)
 
     # Pass 1: Type collection
-    if verbose > 1:
+    if verbose >= 2:
         print("Starting type collection", file=sys.stderr)
     type_collector = TypeCollector(context.typereg)
     type_collector.visit(ast)
-    if verbose > 2:
+    if verbose >= 1:
         print("Collected types:", file=sys.stderr)
-        pprint(context.typereg.__dict__, stream=sys.stderr)
+        if verbose >= 2:
+            pprint(context.typereg.__dict__, stream=sys.stderr)
+        else:
+            print([*context.typereg.keys()], file=sys.stderr)
 
     # Pass 2: Literal collection
-    if verbose > 1:
+    if verbose >= 2:
         print("Starting literal collection", file=sys.stderr)
     literal_collector = LiteralCollector(context.literalreg)
     literal_collector.visit(ast)
-    if verbose > 2:
+    if verbose >= 1:
         print("Collected literals:", file=sys.stderr)
-        pprint(context.literalreg.__dict__, stream=sys.stderr)
+        if verbose >= 2:
+            pprint(context.literalreg.__dict__, stream=sys.stderr)
+        else:
+            print([*context.literalreg.keys()], file=sys.stderr)
 
     # Pass 3: Function collection
-    if verbose > 1:
+    if verbose >= 2:
         print("Starting function collection", file=sys.stderr)
     function_collector = FunctionCollector(context.funcreg, context.typereg)
     function_collector.visit(ast)
-    if verbose > 2:
+    if verbose >= 1:
         print("Collected functions:", file=sys.stderr)
-        pprint(context.funcreg.__dict__, stream=sys.stderr)
+        if verbose >= 2:
+            pprint(context.funcreg.__dict__, stream=sys.stderr)
+        else:
+            print([*context.funcreg.keys()], file=sys.stderr)
 
-     
     # Pass 4: Generate code
-    if verbose > 1:
+    if verbose >= 1:
         print("Starting code generation", file=sys.stderr)
     #code_generator = CodeGenerator(context, output=output)
     #code_generator.visit(ast)
@@ -129,7 +137,7 @@ def main():
         static_type = 'asm_var'
     jmp_to_main = not args.ignore_main
 
-    compile(args.filename, output=output, use_cpp=use_cpp, static_type=static_type, jmp_to_main=jmp_to_main, verbose=args.verbose+1 if args.verbose else 0)
+    compile(args.filename, output=output, use_cpp=use_cpp, static_type=static_type, jmp_to_main=jmp_to_main, verbose=args.verbose if args.verbose else 0)
 
 if __name__ == "__main__":
     main()

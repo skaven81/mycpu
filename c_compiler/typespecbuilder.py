@@ -1,4 +1,4 @@
-from typecollection import TypeSpec
+from typespec import TypeSpec
 from pycparser import c_ast
 
 class TypeSpecBuilder:
@@ -24,8 +24,19 @@ class TypeSpecBuilder:
             return self._build_typespec(name, type_node.type, spec.qualifiers)
         
         elif isinstance(type_node, c_ast.IdentifierType):
-            # Simple type like 'int', 'char', etc.
-            spec.base_type = ' '.join(type_node.names)
+            # Simple type like 'int', 'char', etc., or a typedef name
+            type_name = ' '.join(type_node.names)
+            spec.base_type = type_name
+            
+            # Check if this is a typedef'd struct
+            if type_registry:
+                resolved = type_registry.lookup(type_name)
+                if resolved and resolved.is_struct:
+                    # This is a typedef to a struct, propagate struct info
+                    spec.is_struct = True
+                    spec.struct_name = resolved.struct_name
+                    spec.struct_members = resolved.struct_members
+            
             return spec
         
         elif isinstance(type_node, c_ast.PtrDecl):
@@ -93,7 +104,7 @@ class TypeSpecBuilder:
         elif isinstance(type_node, c_ast.Struct):
             # Struct type
             spec.is_struct = True
-            spec.struct_name = type_node.name
+            spec.struct_name = type_node.name  # May be None for anonymous structs
             
             # Process struct members if present
             if type_node.decls:
@@ -109,5 +120,3 @@ class TypeSpecBuilder:
             return spec
         
         return spec
-
-
