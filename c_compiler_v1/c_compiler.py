@@ -6,23 +6,24 @@ C compiler using pycparser for Wire Wrap Odyssey ISA
 import sys
 import argparse
 from pycparser import parse_file
+from variables import TypedefRegistry, StructRegistry, VariableTable
+from functions import FunctionTable
+from symbols import SymbolCollector
+from typecheck import TypeChecker
+from codegen import CodeGenerator
 from pprint import pprint
-from dataclasses import dataclass
-from typecollection import TypeRegistry, TypeCollector
-from functioncollection import FunctionRegistry, FunctionCollector
-from literalcollection import LiteralRegistry, LiteralCollector
 
-@dataclass
-class CompilerContext:
-    typereg: TypeRegistry
-    literalreg: LiteralRegistry
-    funcreg: FunctionRegistry
-    source_lines: list
-    static_type: str
-    jmp_to_main: bool
-    verbose: int
+class CompilerContext():
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        self.indent_level = 0
+        self.typedef_reg = TypedefRegistry()
+        self.struct_reg = StructRegistry()
+        self.variable_table = VariableTable()
+        self.function_table = FunctionTable()
 
-def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=True, verbose=0):
+def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=True, debug=False):
     """
     Comple a C file and output Odyssey assembly
     
@@ -30,9 +31,9 @@ def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=Tr
         filename: Path to the C source file
         output: Output file (can be sys.stdout to write to the console)
         use_cpp: Whether to use C preprocessor (default: True)
-        static_type: inline (ODY executables) or asm_var (ROM library code)
+        static_type: inline or asm_var
         jmp_to_main: Whether to add a JMP to the main function as the first instruction, if main function exists
-        verbose: verbosity level
+        debug: Whether to include debug comments in the assembly output
     """
     # Read in the source file so we can emit debug output as we compile
     with open(filename, 'r') as f:
@@ -44,47 +45,33 @@ def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=Tr
 
     # Establish compiler context for AST visitors
     context = CompilerContext(
-        typereg=TypeRegistry(),
-        literalreg=LiteralRegistry(),
-        funcreg=FunctionRegistry(),
         source_lines=source_lines,
         static_type=static_type,
         jmp_to_main=jmp_to_main,
-        verbose=verbose)
+        debug=debug)
 
-    # Pass 1: Type collection
-    if verbose > 1:
-        print("Starting type collection", file=sys.stderr)
-    type_collector = TypeCollector(context.typereg)
-    type_collector.visit(ast)
-    if verbose > 2:
-        print("Collected types:", file=sys.stderr)
-        pprint(context.typereg.__dict__, stream=sys.stderr)
+    # Pass 1: Collect symbols
+    print("Starting symbol collection", file=sys.stderr)
+    symbol_collector = SymbolCollector(context)
+    symbol_collector.visit(ast)
+    print("Done with symbol collection", file=sys.stderr)
+    if context.debug:
+        print("Typedefs:", file=sys.stderr)
+        pprint(context.typedef_reg.typedefs, stream=sys.stderr)
+        print("Structs:", file=sys.stderr)
+        pprint(context.struct_reg.structs, stream=sys.stderr)
+        print("Global Variables:", file=sys.stderr)
+        pprint(context.variable_table.get_all_globals(), stream=sys.stderr)
+        print("Functions:", file=sys.stderr)
+        pprint(context.function_table.get_all_functions(), stream=sys.stderr)
 
-    # Pass 2: Literal collection
-    if verbose > 1:
-        print("Starting literal collection", file=sys.stderr)
-    literal_collector = LiteralCollector(context.literalreg)
-    literal_collector.visit(ast)
-    if verbose > 2:
-        print("Collected literals:", file=sys.stderr)
-        pprint(context.literalreg.__dict__, stream=sys.stderr)
-
-    # Pass 3: Function collection
-    if verbose > 1:
-        print("Starting function collection", file=sys.stderr)
-    function_collector = FunctionCollector(context.funcreg, context.typereg)
-    function_collector.visit(ast)
-    if verbose > 2:
-        print("Collected functions:", file=sys.stderr)
-        pprint(context.funcreg.__dict__, stream=sys.stderr)
-
-     
-    # Pass 4: Generate code
-    if verbose > 1:
-        print("Starting code generation", file=sys.stderr)
-    #code_generator = CodeGenerator(context, output=output)
-    #code_generator.visit(ast)
+    # Pass 2: Type checks
+    type_checker = TypeChecker(context)
+    type_checker.visit(ast)
+    
+    # Pass 3: Generate code
+    code_generator = CodeGenerator(context, output=output)
+    code_generator.visit(ast)
         
 def main():
     """Main function to handle command-line execution"""
@@ -110,9 +97,9 @@ def main():
                        action='store_true',
                        help='Default behavior is that the first assembly instruction will be a JMP to the main function, if it exists. Set this to suppress that JMP instruction, even if a main function is found')
 
-    parser.add_argument('-v', '--verbose',
-                       action='count',
-                       help='Verbosity, add multiple times to increase verbosity')
+    parser.add_argument('--debug',
+                       action='store_true',
+                       help='Emit debug comments into the assembly output')
 
     args = parser.parse_args()
 
@@ -129,7 +116,7 @@ def main():
         static_type = 'asm_var'
     jmp_to_main = not args.ignore_main
 
-    compile(args.filename, output=output, use_cpp=use_cpp, static_type=static_type, jmp_to_main=jmp_to_main, verbose=args.verbose+1 if args.verbose else 0)
+    compile(args.filename, output=output, use_cpp=use_cpp, static_type=static_type, jmp_to_main=jmp_to_main, debug=args.debug)
 
 if __name__ == "__main__":
     main()
