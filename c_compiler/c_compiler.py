@@ -11,12 +11,15 @@ from dataclasses import dataclass
 from typecollection import TypeRegistry, TypeCollector
 from functioncollection import FunctionRegistry, FunctionCollector
 from literalcollection import LiteralRegistry, LiteralCollector
+from codegen import CodeGenerator
+from variables import VariableTable
 
 @dataclass
 class CompilerContext:
     typereg: TypeRegistry
     literalreg: LiteralRegistry
     funcreg: FunctionRegistry
+    vartable: VariableTable
     source_lines: list
     static_type: str
     jmp_to_main: bool
@@ -47,6 +50,7 @@ def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=Tr
         typereg=TypeRegistry(),
         literalreg=LiteralRegistry(),
         funcreg=FunctionRegistry(),
+        vartable=VariableTable(),
         source_lines=source_lines,
         static_type=static_type,
         jmp_to_main=jmp_to_main,
@@ -91,8 +95,8 @@ def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=Tr
     # Pass 4: Generate code
     if verbose >= 1:
         print("Starting code generation", file=sys.stderr)
-    #code_generator = CodeGenerator(context, output=output)
-    #code_generator.visit(ast)
+    code_generator = CodeGenerator(context, output=output)
+    code_generator.visit(ast)
         
 def main():
     """Main function to handle command-line execution"""

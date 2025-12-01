@@ -50,21 +50,24 @@ class FunctionCollector(c_ast.NodeVisitor, TypeSpecBuilder):
     def __init__(self, function_registry: FunctionRegistry, type_registry: TypeRegistry):
         self.function_registry = function_registry
         self.type_registry = type_registry
-    
-    def visit_FuncDef(self, node: c_ast.FuncDef) -> None:
+
+    def visit_Decl(self, node):
         """Visit a function definition node and create a Function."""
-        # The function declaration is in node.decl
-        if not isinstance(node.decl, c_ast.Decl):
+        # Skip non-function declarations
+        if not isinstance(node.type, c_ast.FuncDecl):
             return
         
-        func_name = node.decl.name
-        func_decl = node.decl.type
-        
-        if not isinstance(func_decl, c_ast.FuncDecl):
-            return
+        func_name = node.name
+        func_decl = node.type
         
         # Build the Function object
-        function = Function(name=func_name, _type_registry=self.type_registry)
+        function = Function(name=func_name, type_registry=self.type_registry)
+
+        # Set the storage type
+        if 'static' in node.storage:
+            function.storage = 'static'
+        if 'extern' in node.storage:
+            function.storage = 'extern'
         
         # Get return type
         function.return_type = self._build_typespec('', func_decl.type)

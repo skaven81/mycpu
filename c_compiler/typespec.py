@@ -19,9 +19,17 @@ class TypeSpec:
     # Reference to registry for looking up dependent types
     _registry: Optional['TypeRegistry'] = field(default=None, repr=False)
     
+    def is_signed(self) -> bool:
+        if self.is_struct:
+            return False
+        if self.is_pointer:
+            return False
+        if 'signed' in self.base_type and 'unsigned' not in self.base_type:
+            return True
+        return False
+
     def sizeof(self) -> int:
-        """Calculate the size of this type in bytes.
-        """
+        """Calculate the size of this type in bytes."""
         # Pointer size
         if self.is_pointer:
             return 2
@@ -67,20 +75,19 @@ class TypeSpec:
                 'unsigned int': 2,
                 'void': 0,
             }
-            if self.base_type not in base_sizes:
-                raise NotImplementedError(f"Base type {self.base_type} is not supported on the Odyssey platform")
-            return base_sizes[self.base_type]
+            if self.base_type in base_sizes:
+                return base_sizes[self.base_type]
         
         # If we have a registry, try to look up the type
-        if self._registry and self.name:
+        if self._registry:
             try:
-                resolved = self._registry.lookup(self.name)
+                resolved = self._registry.lookup(self.base_type)
                 if resolved and resolved != self:
                     return resolved.sizeof()
             except KeyError:
                 pass
-        
-        raise ValueError("Unable to compute size of this type")
+
+        raise NotImplementedError(f"Unable to compute size of {self.base_type}{' (with type registry)' if self._registry else ' (no type registry present)'}")
     
     def _sizeof_element(self) -> int:
         """Helper to calculate size of array element."""
@@ -103,4 +110,6 @@ class TypeSpec:
             ).sizeof()
         return 2
 
+    def c_str(self) -> str:
+        return f"{self.base_type} {'*'*self.pointer_depth}{self.name}"
 
