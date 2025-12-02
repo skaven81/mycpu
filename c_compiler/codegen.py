@@ -82,7 +82,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 name = node.name
                 if hasattr(name, 'name') and name.name:
                     name = name.name
-            self.emit(f"# ⚠⚠ TODO {node.__class__.__name__} {name} ⚠⚠")
+            self.emit(f"# \033[33m ⚠⚠ !!!!!!!! TODO {node.__class__.__name__} {name} !!!!!!!!  ⚠⚠\033[0m")
         for c in node:
             self.visit(c)
 
