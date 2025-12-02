@@ -5,6 +5,7 @@ from typespec import TypeSpec
 from variables import Variable
 from function import Function
 from pprint import pprint
+from contextlib import contextmanager
 
 from dataclasses import dataclass
 from typing import Optional
@@ -56,6 +57,17 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         if not self.expr_stack:
             return None
         return self.expr_stack[-1]
+
+    @contextmanager
+    def _debug_block(self, name: str, min_verbose: int = 1):
+        """Emit debug comments for begin/end of operation block"""
+        if self.context.verbose >= min_verbose:
+            self.emit(f"# Begin {name}")
+        try:
+            yield
+        finally:
+            if self.context.verbose >= min_verbose:
+                self.emit(f"# End {name}")
 
     def emit(self, asm, comment=None):
         if comment:
@@ -274,108 +286,82 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             return
 
     def _initialize_var(self, node, var):
+        """
+        Initialize a variable with a value from an expression.
+        
+        REGISTER STATE:
+        - Entry: (none)
+        - Exit: A/AL may be clobbered
+        
+        STACK EFFECT: Pops 1 ExprContext (initializer expression)
+        """
         # get the initializer value into A register
         self.emit("")
-        if self.context.verbose >= 1:
-            if var.kind == 'global' or var.storage_class == 'static':
-                self.emit(f"# Begin initialize {var.kind} {var.storage_class} variable {var.name}")
-            else:
-                self.emit(f"# Begin initialize {var.kind} variable {var.name} at offset {var.offset}")
-        self.visit(node)  # A/AL now contains the value we need to store in the variable
-        expr_ctx = self._pop_expr()
-        
-        if var.kind == 'global' or (var.kind == 'local' and var.storage_class == 'static'):
-            prefix = '.'
-            if self.context.static_type == 'asm_var':
-                prefix = '$'
-            if var.typespec.sizeof() == 1:
-                self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.name}")
-            if var.typespec.sizeof() == 2:
-                self.emit(f"ALUOP_ADDR %A%+%AH% {prefix}{var.name}")
-                self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.name}+1")
-        else:
-            self.emit(f"PUSH_CH")
-            self.emit(f"PUSH_CL")
-            self.emit(f"ALUOP_CH %A%+%AH%", "Value to store now in C")
-            self.emit(f"ALUOP_CL %A%+%AL%")
-            self.emit(f"MOV_DH_AH")
-            self.emit(f"MOV_DL_AL")
-            self.emit(f"LDI_B {var.offset}", f"{var.kind} {var.name} offset")
-            self.emit(f"CALL :add16_to_a", f"A contains address of {var.kind} {var.name}")
-            if var.typespec.sizeof() == 1:
-                self.emit(f"STA_A_CL", f"Store in {var.kind} {var.name}")
-            elif var.typespec.sizeof() == 2:
-                self.emit(f"STA_A_CH", f"Store in {var.kind} {var.name}")
-                self.emit(f"CALL :incr16_a", f"Store in {var.kind} {var.name}")
-                self.emit(f"STA_A_CL", f"Store in {var.kind} {var.name}")
-            else:
-                raise NotImplementedError("Unable to initialize >16 bit values")
-            self.emit(f"POP_CL")
-            self.emit(f"POP_CH")
-        if self.context.verbose >= 1:
-            self.emit(f"# End initialize {var.kind} variable {var.name}")
+        with self._debug_block(f"initialize {var.kind} variable {var.name}" + 
+                              (f" at offset {var.offset}" if var.kind not in ('global',) and var.storage_class != 'static' else "")):
+            self.visit(node)  # A/AL now contains the value we need to store in the variable
+            expr_ctx = self._pop_expr()
+            self._store_a_to_var(var)
 
     def visit_ArrayRef(self, node):
-        # Start by computing the subscript as an offset, stored in A
-        if self.context.verbose >= 1:
-            self.emit("# Begin compute ArrayRef subscript")
-        self.visit(node.subscript)
-        subscript_ctx = self._pop_expr()
+        """
+        Generate code for array indexing (e.g., arr[i]).
         
-        assert isinstance(node.name, c_ast.ID)
-        var = self.context.vartable.lookup(node.name.name)
+        REGISTER STATE:
+        - Entry: (none)
+        - Exit: A/AL = element value
+                B = address of element (lvalue_in_b=True)
         
-        # Scale the index by element size
-        if var.typespec.sizeof() == 1:
-            if self.context.verbose >= 1:
-                self.emit(f"# ArrayRef offset no change, {var.name} sizeof==1")
-        elif var.typespec.sizeof() == 2:
-            self.emit("CALL :shift16_a_left", f"ArrayRef offset doubles, {var.name} sizeof==2")
-        else:
-            raise NotImplementedError("Indexing into arrays of types > 2 bytes is not yet supported")
-        if self.context.verbose >= 1:
-            self.emit("# End compute ArrayRef subscript, offset in A")
+        STACK EFFECT: Pops 1 ExprContext (subscript), pushes 1 (element)
+        """
+        with self._debug_block("ArrayRef"):
+            # Start by computing the subscript as an offset, stored in A
+            with self._debug_block("compute ArrayRef subscript"):
+                self.visit(node.subscript)
+                subscript_ctx = self._pop_expr()
+            
+            assert isinstance(node.name, c_ast.ID)
+            var = self.context.vartable.lookup(node.name.name)
+            
+            # Scale the index by element size
+            if var.typespec.sizeof() == 1:
+                if self.context.verbose >= 1:
+                    self.emit(f"# ArrayRef offset no change, {var.name} sizeof==1")
+            elif var.typespec.sizeof() == 2:
+                self.emit("CALL :shift16_a_left", f"ArrayRef offset doubles, {var.name} sizeof==2")
+            else:
+                raise NotImplementedError("Indexing into arrays of types > 2 bytes is not yet supported")
 
-        # Get the base address 
-        if self.context.verbose >= 1:
-            self.emit("# Begin get indexed value address")
-        if var.kind == 'global' or var.storage_class == 'static':
-            prefix = '.'
-            if self.context.static_type == 'asm_var':
-                prefix = '$'
-            self.emit(f"LD16_B {prefix}{var.name}", f"Address of {var.name} into B")
-        else:
-            # save A (the index offset)
-            self.emit("ALUOP_PUSH %A%+%AH%", f"Save index offset")
-            self.emit("ALUOP_PUSH %A%+%AL%", f"Save index offset")
-            # put the stack frame offset into B
-            self.emit(f"LDI_B {var.offset}", f"Stack frame offset for {var.name}")
-            # stack frame pointer into A
-            self.emit("MOV_DH_AH", f"Frame pointer to A")
-            self.emit("MOV_DL_AL", f"Frame pointer to A")
-            # compute base address, store in B
-            self.emit("CALL :add16_to_b", f"B = base address of {var.name}")
-            # restore A (the index offset)
-            self.emit("POP_AL", f"Restore index offset")
-            self.emit("POP_AH", f"Restore index offset")
+            # Get the base address 
+            with self._debug_block("get indexed value address"):
+                if var.kind == 'global' or var.storage_class == 'static':
+                    prefix = self._get_static_prefix()
+                    self.emit(f"LD16_B {prefix}{var.name}", f"Address of {var.name} into B")
+                else:
+                    # save A (the index offset)
+                    self.emit("ALUOP_PUSH %A%+%AH%", f"Save index offset")
+                    self.emit("ALUOP_PUSH %A%+%AL%", f"Save index offset")
+                    # Compute base address into B
+                    self._compute_local_address_to_b(var, f"Base address of {var.name}")
+                    # restore A (the index offset)
+                    self.emit("POP_AL", f"Restore index offset")
+                    self.emit("POP_AH", f"Restore index offset")
 
-        # Now add A (index offset) and B (base address) to get the final address in B
-        self.emit("CALL :add16_to_b", f"B contains indexed address into {var.name}")
+                # Now add A (index offset) and B (base address) to get the final address in B
+                self.emit("CALL :add16_to_b", f"B contains indexed address into {var.name}")
 
-        # Load the value into A/AL
-        if var.typespec.sizeof() == 2:
-            self.emit("LDA_B_AH", f"Load {var.name}[index] into A")
-            self.emit("CALL :incr16_b")
-            self.emit("LDA_B_AL", f"Load {var.name}[index] into A")
-        elif var.typespec.sizeof() == 1:
-            self.emit("LDA_B_AL", f"Load {var.name}[index] into AL")
-        else:
-            raise NotImplementedError("Can't load datatypes > 2 bytes yet")
-        if self.context.verbose >= 1:
-            self.emit("# End get indexed value, value in A, address in B")
-        
-        # Push result: value in A, address still in B
-        self._push_expr(var.typespec, LValueInfo(var, 'array', lvalue_in_b=True))
+                # Load the value into A/AL
+                if var.typespec.sizeof() == 2:
+                    self.emit("LDA_B_AH", f"Load {var.name}[index] into A")
+                    self.emit("CALL :incr16_b")
+                    self.emit("LDA_B_AL", f"Load {var.name}[index] into A")
+                elif var.typespec.sizeof() == 1:
+                    self.emit("LDA_B_AL", f"Load {var.name}[index] into AL")
+                else:
+                    raise NotImplementedError("Can't load datatypes > 2 bytes yet")
+            
+            # Push result: value in A, address still in B
+            self._push_expr(var.typespec, LValueInfo(var, 'array', lvalue_in_b=True))
 
     def visit_StructRef(self, node):
         # TODO: be sure to self._push_expr member typespec
@@ -386,6 +372,15 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         self.generic_visit(node)
 
     def visit_Constant(self, node):
+        """
+        Generate code for constants (integers, strings).
+        
+        REGISTER STATE:
+        - Entry: (none)
+        - Exit: A/AL = constant value
+        
+        STACK EFFECT: Pushes 1 ExprContext (constant, no lvalue)
+        """
         if node.type == 'int':
             typespec = TypeSpec('int', 'int')
         elif node.type == 'string':
@@ -412,6 +407,16 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         self._push_expr(typespec, None)
 
     def visit_Return(self, node):
+        """
+        Generate code for return statement.
+        
+        REGISTER STATE:
+        - Entry: (none)
+        - Exit: A/AL = return value (if any)
+                Jumps to function epilogue
+        
+        STACK EFFECT: Pops 1 ExprContext (if return has expression)
+        """
         # Ensure that the value we're returning is in A/AL by generating
         # any child code, otherwise we assume the value is already in A/AL.
         # then jump to the end of the function.
@@ -487,9 +492,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 # Compute address for simple variables
                 var = lvalue.var
                 if var.kind == 'global' or var.storage_class == 'static':
-                    prefix = '.'
-                    if self.context.static_type == 'asm_var':
-                        prefix = '$'
+                    prefix = self._get_static_prefix()
                     self.emit(f"LDI_A {prefix}{var.name}", f"Address-of {var.name}")
                 else:
                     # Local/param: frame pointer + offset
@@ -622,9 +625,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         else:
             # Simple variable: use var.name or var.offset
             if var.kind == 'global' or var.storage_class == 'static':
-                prefix = '.'
-                if self.context.static_type == 'asm_var':
-                    prefix = '$'
+                prefix = self._get_static_prefix()
                 if expr_ctx.typespec.sizeof() == 1:
                     self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.name}", "Store to global/static")
                 elif expr_ctx.typespec.sizeof() == 2:
@@ -652,159 +653,167 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 self.emit("POP_CH")
 
     def visit_BinaryOp(self, node):
-        if self.context.verbose >= 1:
-            self.emit(f"# Begin BinaryOp {node.op}")
+        """
+        Generate code for binary operations.
         
-        self.visit(node.right)  # RHS in A
-        right_ctx = self._pop_expr()
+        REGISTER STATE:
+        - Entry: (none)
+        - Exit: A/AL = result value
         
-        if right_ctx.typespec.sizeof() == 2:
-            self.emit("ALUOP_PUSH %A%+%AH%", "Preserve RHS of binary op")
-        if right_ctx.typespec.sizeof() >= 1:
-            self.emit("ALUOP_PUSH %A%+%AL%", "Preserve RHS of binary op")
+        STACK EFFECT: Pops 2 ExprContext (left, right), pushes 1 (result)
         
-        self.visit(node.left)  # LHS in A
-        left_ctx = self._pop_expr()
-        
-        if right_ctx.typespec.sizeof() >= 1:
-            self.emit("POP_BL", "Set RHS of binary op")
-        if right_ctx.typespec.sizeof() == 2:
-            self.emit("POP_BH", "Set RHS of binary op")
-        
-        # Sign extend if there is a size mismatch
-        op_size = 1
-        result_type = left_ctx.typespec
-        if left_ctx.typespec.sizeof() != right_ctx.typespec.sizeof():
-            if left_ctx.typespec.sizeof() == 1:
-                self.emit_sign_extend("A", left_ctx.typespec)
-                result_type = right_ctx.typespec
-            if right_ctx.typespec.sizeof() == 1:
-                self.emit_sign_extend("B", right_ctx.typespec)
-                result_type = left_ctx.typespec
-        elif left_ctx.typespec.sizeof() == 2:
-            op_size = 2
+        Supported operators:
+        - Arithmetic: +, -, &, |, ^
+        - Comparison: <, <=, >, >=
+        """
+        with self._debug_block(f"BinaryOp {node.op}"):
+            self.visit(node.right)  # RHS in A
+            right_ctx = self._pop_expr()
+            
+            if right_ctx.typespec.sizeof() == 2:
+                self.emit("ALUOP_PUSH %A%+%AH%", "Preserve RHS of binary op")
+            if right_ctx.typespec.sizeof() >= 1:
+                self.emit("ALUOP_PUSH %A%+%AL%", "Preserve RHS of binary op")
+            
+            self.visit(node.left)  # LHS in A
+            left_ctx = self._pop_expr()
+            
+            if right_ctx.typespec.sizeof() >= 1:
+                self.emit("POP_BL", "Set RHS of binary op")
+            if right_ctx.typespec.sizeof() == 2:
+                self.emit("POP_BH", "Set RHS of binary op")
+            
+            # Sign extend if there is a size mismatch
+            op_size = 1
+            result_type = left_ctx.typespec
+            if left_ctx.typespec.sizeof() != right_ctx.typespec.sizeof():
+                if left_ctx.typespec.sizeof() == 1:
+                    self.emit_sign_extend("A", left_ctx.typespec)
+                    result_type = right_ctx.typespec
+                if right_ctx.typespec.sizeof() == 1:
+                    self.emit_sign_extend("B", right_ctx.typespec)
+                    result_type = left_ctx.typespec
+            elif left_ctx.typespec.sizeof() == 2:
+                op_size = 2
 
-        # generate op code
-        if node.op in ('+', '-', '&', '|', '^'):
-            asm_op = node.op
-            if node.op == '^':
-                asm_op = 'x'
-            if op_size == 1:
-                self.emit(f"ALUOP_AL %A{asm_op}B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-            else:
-                if asm_op == '+':
-                    self.emit("CALL :add16_to_a", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-                elif asm_op == '-':
-                    self.emit("CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-                else:
+            # generate op code
+            if node.op in ('+', '-', '&', '|', '^'):
+                asm_op = node.op
+                if node.op == '^':
+                    asm_op = 'x'
+                if op_size == 1:
                     self.emit(f"ALUOP_AL %A{asm_op}B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-                    self.emit(f"ALUOP_AH %A{asm_op}B%+%AH%+%BH%", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-        elif node.op == '<':
-            # A < B -> B - A = ?  OEZ result
-            # 1 < 1 -> 1 - 1 = 0  011 false
-            # 1 < 2 -> 2 - 1 = 1  000 true
-            # 2 < 1 -> 1 - 2 = -1 100 false
-            if op_size == 1:
-                self.emit(f"ALUOP_FLAGS %B-A%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                self.emit(f"LDI_AL 0")
-                self.emit(f"JO .less_than_false_{self.label_num}")
-                self.emit(f"JZ .less_than_false_{self.label_num}")
-                self.emit(f"LDI_AL 1")
-                self.emit(f".less_than_false_{self.label_num}")
-                self.label_num += 1
+                else:
+                    if asm_op == '+':
+                        self.emit("CALL :add16_to_a", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
+                    elif asm_op == '-':
+                        self.emit("CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
+                    else:
+                        self.emit(f"ALUOP_AL %A{asm_op}B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
+                        self.emit(f"ALUOP_AH %A{asm_op}B%+%AH%+%BH%", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
+            elif node.op == '<':
+                # A < B -> B - A = ?  OEZ result
+                # 1 < 1 -> 1 - 1 = 0  011 false
+                # 1 < 2 -> 2 - 1 = 1  000 true
+                # 2 < 1 -> 1 - 2 = -1 100 false
+                if op_size == 1:
+                    self.emit(f"ALUOP_FLAGS %B-A%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    self.emit(f"LDI_AL 0")
+                    self.emit(f"JO .less_than_false_{self.label_num}")
+                    self.emit(f"JZ .less_than_false_{self.label_num}")
+                    self.emit(f"LDI_AL 1")
+                    self.emit(f".less_than_false_{self.label_num}")
+                    self.label_num += 1
+                else:
+                    # Note that :sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
+                    self.emit(f"CALL :sub16_b_minus_a", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    self.emit(f"LDI_AL 0")
+                    self.emit(f"JO .less_than_false_{self.label_num}")
+                    self.emit(f"ALUOP_FLAGS %B%+%BL%")  # if BL is nonzero then true (since there was no overflow)
+                    self.emit(f"JNZ .less_than_true_{self.label_num}")
+                    self.emit(f"ALUOP_FLAGS %B%+%BH%")  # if BH is nonzero then true (since there was no overflow)
+                    self.emit(f"JNZ .less_than_true_{self.label_num}")
+                    self.emit(f"JMP .less_than_false_{self.label_num}")  # otherwise false, since both BH and BL were zero
+                    self.emit(f".less_than_true_{self.label_num}")
+                    self.emit(f"LDI_AL 1")
+                    self.emit(f".less_than_false_{self.label_num}")
+                    self.label_num += 1
+                result_type = TypeSpec('int', 'int')
+            elif node.op == '<=':
+                # A <= B -> B - A = ?  OEZ result
+                # 1 <= 1 -> 1 - 1 = 0  011 true
+                # 1 <= 2 -> 2 - 1 = 1  000 true
+                # 2 <= 1 -> 1 - 2 = -1 100 false
+                if op_size == 1:
+                    self.emit(f"ALUOP_FLAGS %B-A%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    self.emit(f"LDI_AL 0")
+                    self.emit(f"JO .less_than_equal_false_{self.label_num}")
+                    self.emit(f"LDI_AL 1")
+                    self.emit(f".less_than_equal_false_{self.label_num}")
+                    self.label_num += 1
+                else:
+                    # Note that :sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
+                    self.emit(f"CALL :sub16_b_minus_a", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    self.emit(f"LDI_AL 0")
+                    self.emit(f"JO .less_than_equal_false_{self.label_num}")
+                    self.emit(f"LDI_AL 1")
+                    self.emit(f".less_than_equal_false_{self.label_num}")
+                    self.label_num += 1
+                result_type = TypeSpec('int', 'int')
+            elif node.op == '>':
+                # A > B -> A - B = ?  OEZ result
+                # 1 > 1 -> 1 - 1 = 0  011 false
+                # 1 > 2 -> 1 - 2 = -1 100 false
+                # 2 > 1 -> 2 - 1 = 1  000 true
+                if op_size == 1:
+                    self.emit(f"ALUOP_FLAGS %A-B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    self.emit(f"LDI_AL 0")
+                    self.emit(f"JO .greater_than_false_{self.label_num}")
+                    self.emit(f"JZ .greater_than_false_{self.label_num}")
+                    self.emit(f"LDI_AL 1")
+                    self.emit(f".greater_than_false_{self.label_num}")
+                    self.label_num += 1
+                else:
+                    # Note that :sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
+                    self.emit(f"CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    self.emit(f"LDI_AL 0")
+                    self.emit(f"JO .greater_than_false_{self.label_num}")
+                    self.emit(f"ALUOP_FLAGS %A%+%AL%")  # if AL is nonzero then true (since there was no overflow)
+                    self.emit(f"JNZ .greater_than_true_{self.label_num}")
+                    self.emit(f"ALUOP_FLAGS %A%+%AH%")  # if AH is nonzero then true (since there was no overflow)
+                    self.emit(f"JNZ .greater_than_true_{self.label_num}")
+                    self.emit(f"JMP .greater_than_false_{self.label_num}")  # otherwise false, since both AH and AL were zero
+                    self.emit(f".greater_than_true_{self.label_num}")
+                    self.emit(f"LDI_AL 1")
+                    self.emit(f".greater_than_false_{self.label_num}")
+                    self.label_num += 1
+                result_type = TypeSpec('int', 'int')
+            elif node.op == '>=':
+                # A >= B -> A - B = ?  OEZ result
+                # 1 >= 1 -> 1 - 1 = 0  011 true
+                # 1 >= 2 -> 1 - 2 = -1 100 false
+                # 2 >= 1 -> 2 - 1 = 1  000 true
+                if op_size == 1:
+                    self.emit(f"ALUOP_FLAGS %A-B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    self.emit(f"LDI_AL 0")
+                    self.emit(f"JO .greater_than_equal_false_{self.label_num}")
+                    self.emit(f"LDI_AL 1")
+                    self.emit(f".greater_than_equal_false_{self.label_num}")
+                    self.label_num += 1
+                else:
+                    # Note that :sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
+                    self.emit(f"CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    self.emit(f"LDI_AL 0")
+                    self.emit(f"JO .greater_than_equal_false_{self.label_num}")
+                    self.emit(f"LDI_AL 1")
+                    self.emit(f".greater_than_equal_false_{self.label_num}")
+                    self.label_num += 1
+                result_type = TypeSpec('int', 'int')
             else:
-                # Note that :sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
-                self.emit(f"CALL :sub16_b_minus_a", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                self.emit(f"LDI_AL 0")
-                self.emit(f"JO .less_than_false_{self.label_num}")
-                self.emit(f"ALUOP_FLAGS %B%+%BL%")  # if BL is nonzero then true (since there was no overflow)
-                self.emit(f"JNZ .less_than_true_{self.label_num}")
-                self.emit(f"ALUOP_FLAGS %B%+%BH%")  # if BH is nonzero then true (since there was no overflow)
-                self.emit(f"JNZ .less_than_true_{self.label_num}")
-                self.emit(f"JMP .less_than_false_{self.label_num}")  # otherwise false, since both BH and BL were zero
-                self.emit(f".less_than_true_{self.label_num}")
-                self.emit(f"LDI_AL 1")
-                self.emit(f".less_than_false_{self.label_num}")
-                self.label_num += 1
-            result_type = TypeSpec('int', 'int')
-        elif node.op == '<=':
-            # A <= B -> B - A = ?  OEZ result
-            # 1 <= 1 -> 1 - 1 = 0  011 true
-            # 1 <= 2 -> 2 - 1 = 1  000 true
-            # 2 <= 1 -> 1 - 2 = -1 100 false
-            if op_size == 1:
-                self.emit(f"ALUOP_FLAGS %B-A%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                self.emit(f"LDI_AL 0")
-                self.emit(f"JO .less_than_equal_false_{self.label_num}")
-                self.emit(f"LDI_AL 1")
-                self.emit(f".less_than_equal_false_{self.label_num}")
-                self.label_num += 1
-            else:
-                # Note that :sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
-                self.emit(f"CALL :sub16_b_minus_a", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                self.emit(f"LDI_AL 0")
-                self.emit(f"JO .less_than_equal_false_{self.label_num}")
-                self.emit(f"LDI_AL 1")
-                self.emit(f".less_than_equal_false_{self.label_num}")
-                self.label_num += 1
-            result_type = TypeSpec('int', 'int')
-        elif node.op == '>':
-            # A > B -> A - B = ?  OEZ result
-            # 1 > 1 -> 1 - 1 = 0  011 false
-            # 1 > 2 -> 1 - 2 = -1 100 false
-            # 2 > 1 -> 2 - 1 = 1  000 true
-            if op_size == 1:
-                self.emit(f"ALUOP_FLAGS %A-B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                self.emit(f"LDI_AL 0")
-                self.emit(f"JO .greater_than_false_{self.label_num}")
-                self.emit(f"JZ .greater_than_false_{self.label_num}")
-                self.emit(f"LDI_AL 1")
-                self.emit(f".greater_than_false_{self.label_num}")
-                self.label_num += 1
-            else:
-                # Note that :sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
-                self.emit(f"CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                self.emit(f"LDI_AL 0")
-                self.emit(f"JO .greater_than_false_{self.label_num}")
-                self.emit(f"ALUOP_FLAGS %A%+%AL%")  # if AL is nonzero then true (since there was no overflow)
-                self.emit(f"JNZ .greater_than_true_{self.label_num}")
-                self.emit(f"ALUOP_FLAGS %A%+%AH%")  # if AH is nonzero then true (since there was no overflow)
-                self.emit(f"JNZ .greater_than_true_{self.label_num}")
-                self.emit(f"JMP .greater_than_false_{self.label_num}")  # otherwise false, since both AH and AL were zero
-                self.emit(f".greater_than_true_{self.label_num}")
-                self.emit(f"LDI_AL 1")
-                self.emit(f".greater_than_false_{self.label_num}")
-                self.label_num += 1
-            result_type = TypeSpec('int', 'int')
-        elif node.op == '>=':
-            # A >= B -> A - B = ?  OEZ result
-            # 1 >= 1 -> 1 - 1 = 0  011 true
-            # 1 >= 2 -> 1 - 2 = -1 100 false
-            # 2 >= 1 -> 2 - 1 = 1  000 true
-            if op_size == 1:
-                self.emit(f"ALUOP_FLAGS %A-B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                self.emit(f"LDI_AL 0")
-                self.emit(f"JO .greater_than_equal_false_{self.label_num}")
-                self.emit(f"LDI_AL 1")
-                self.emit(f".greater_than_equal_false_{self.label_num}")
-                self.label_num += 1
-            else:
-                # Note that :sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
-                self.emit(f"CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                self.emit(f"LDI_AL 0")
-                self.emit(f"JO .greater_than_equal_false_{self.label_num}")
-                self.emit(f"LDI_AL 1")
-                self.emit(f".greater_than_equal_false_{self.label_num}")
-                self.label_num += 1
-            result_type = TypeSpec('int', 'int')
-        else:
-            raise NotImplementedError(f"BinaryOp {node.op} not implemented")
-        
-        if self.context.verbose >= 1:
-            self.emit(f"# End BinaryOp {node.op}")
-        
-        # Result is in A, no lvalue
-        self._push_expr(result_type, None)
+                raise NotImplementedError(f"BinaryOp {node.op} not implemented")
+            
+            # Result is in A, no lvalue
+            self._push_expr(result_type, None)
 
     def visit_TernaryOp(self, node):
         # TODO be sure to self._push_expr(result typespec)
@@ -818,9 +827,8 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             raise ValueError(f"Unable to find var {node.name} in variable table")
         
         if var.kind == 'global' or var.storage_class == 'static':
-            prefix = '.'
-            if self.context.static_type == 'asm_var':
-                prefix = '$'
+            prefix = self._get_static_prefix()
+            self.emit(f"LDI_B {prefix}{var.name}", f"Set up address (lvalue) for {var.storage_class} {var.typespec.base_type} {var.name}")
             if var.typespec.sizeof() == 2:
                 self.emit(f"LD16_A {prefix}{var.name}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}")
             elif var.typespec.sizeof() == 1:
@@ -838,7 +846,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self.emit("LDA_B_AL", f"Load var {var.name} at offset {var.offset}")
         
         # Value in A, lvalue info for simple variable (address not in B)
-        self._push_expr(var.typespec, LValueInfo(var, 'simple', lvalue_in_b=False))
+        self._push_expr(var.typespec, LValueInfo(var, 'simple', lvalue_in_b=True))
 
     def _total_localvar_size(self, node) -> int:
         """
@@ -887,6 +895,86 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self.emit(f"LDI_{reg}H 0xff", f"Sign extend {reg}L: sign bit was set")
             self.emit(f".sign_extend_{self.label_num}", f"Sign extend {reg}L")
             self.label_num += 1
+
+    def _get_static_prefix(self):
+        """Get the assembly prefix for static/global variables"""
+        return '$' if self.context.static_type == 'asm_var' else '.'
+
+    def _compute_local_address_to_b(self, var: Variable, comment: str = ""):
+        """
+        Compute address of local/param variable into B register.
+        Frame pointer (D) + var.offset -> B
+        Clobbers A register temporarily.
+        """
+        if not comment:
+            comment = f"Compute address of {var.name} into B"
+        self.emit("MOV_DH_AH", comment)
+        self.emit("MOV_DL_AL", comment)
+        self.emit(f"LDI_B {var.offset}", comment)
+        self.emit("CALL :add16_to_b", comment)
+
+    def _load_var_value_to_a(self, var: Variable):
+        """
+        Load variable value into A/AL register.
+        
+        REGISTER STATE:
+        - Entry: (none)
+        - Exit: A/AL = variable value
+        """
+        if var.kind == 'global' or var.storage_class == 'static':
+            prefix = self._get_static_prefix()
+            if var.typespec.sizeof() == 2:
+                self.emit(f"LD16_A {prefix}{var.name}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}")
+            elif var.typespec.sizeof() == 1:
+                self.emit(f"LD_AL {prefix}{var.name}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}")
+            else:
+                raise ValueError(f"Unable to load var {var.name} as it's not 1 or 2 bytes")
+        else:
+            # Local/param variable: compute address and load
+            self.emit(f"LDI_B {var.offset}", f"Load var {var.name} at offset {var.offset}")
+            self.emit("MOV_DH_AH", f"Load var {var.name} at offset {var.offset}")
+            self.emit("MOV_DL_AL", f"Load var {var.name} at offset {var.offset}")
+            self.emit("CALL :add16_to_b", f"Load var {var.name} at offset {var.offset}")
+            if var.typespec.sizeof() == 2:
+                self.emit("LDA_B_AH", f"Load var {var.name} at offset {var.offset}")
+                self.emit("CALL :incr16_b", f"Load var {var.name} at offset {var.offset}")
+            self.emit("LDA_B_AL", f"Load var {var.name} at offset {var.offset}")
+
+    def _store_a_to_var(self, var: Variable):
+        """
+        Store value in A/AL to variable (global, static, or local).
+        
+        REGISTER STATE:
+        - Entry: A/AL = value to store
+        - Exit: A/AL preserved, C register used as scratch
+        """
+        if var.kind == 'global' or var.storage_class == 'static':
+            prefix = self._get_static_prefix()
+            if var.typespec.sizeof() == 1:
+                self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.name}", f"Store to {var.name}")
+            elif var.typespec.sizeof() == 2:
+                self.emit(f"ALUOP_ADDR %A%+%AH% {prefix}{var.name}", f"Store to {var.name}")
+                self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.name}+1", f"Store to {var.name}")
+        else:
+            # Local/param: need to compute address
+            self.emit("PUSH_CH", "Store: save C")
+            self.emit("PUSH_CL")
+            self.emit("ALUOP_CH %A%+%AH%", "Store: value to C")
+            self.emit("ALUOP_CL %A%+%AL%")
+            self.emit("MOV_DH_AH", "Store: frame pointer to A")
+            self.emit("MOV_DL_AL")
+            self.emit(f"LDI_B {var.offset}", f"Store: offset for {var.name}")
+            self.emit("CALL :add16_to_a", f"Store: address in A")
+            if var.typespec.sizeof() == 1:
+                self.emit("STA_A_CL", f"Store to {var.name}")
+            elif var.typespec.sizeof() == 2:
+                self.emit("STA_A_CH", f"Store to {var.name}")
+                self.emit("CALL :incr16_a")
+                self.emit("STA_A_CL", f"Store to {var.name}")
+            else:
+                raise NotImplementedError("Cannot store types > 2 bytes")
+            self.emit("POP_CL", "Store: restore C")
+            self.emit("POP_CH")
 
     def generate_FuncCall_printf(self, node: c_ast.FuncCall, func: Function):
         """
