@@ -92,11 +92,12 @@ comment = Regex('#.*')
 #  :label - exported/global label
 #  OPCODE .label - .label gets turned into the corresponding address
 #  OPCODE :label+4 - same, but with an offset
-labelprefix = oneOf(': .')
-label = Combine(labelprefix + Word(alphanums+"_"))
-label.setName('label')
-labeloffset = Combine(labelprefix + Word(':', alphanums+"_-+"))
+labelprefix = Literal(':') | Literal('.')
+labelname = Word(alphanums+"_", min=4)
+labeloffset = Combine((Literal('+')|Literal('-')) + Word(nums))
 labeloffset.setName('labeloffset')
+label = Combine(labelprefix + labelname + Optional(labeloffset))
+label.setName('label')
 # Variable declarations. `global` assigns a permanent address from the variable
 # pool, and the name will be valid across all assembler files. Both `byte` and
 # `word` return a single 16-bit address, but `word` also marks the following
@@ -174,9 +175,9 @@ for opcode in opcodes.values():
                 arg_grammar = byte
         elif arg.startswith('@'):
             if arg_grammar:
-                arg_grammar = arg_grammar + word
+                arg_grammar = arg_grammar + (word | label)
             else:
-                arg_grammar = word
+                arg_grammar = word | label
         else:
             raise SyntaxError("Argument with unknown sigil: {}".format(arg))
     if arg_grammar:
