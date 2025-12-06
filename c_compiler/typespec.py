@@ -24,9 +24,21 @@ class TypeSpec:
             return False
         if self.is_pointer:
             return False
-        if 'signed' in self.base_type and 'unsigned' not in self.base_type:
-            return True
-        return False
+
+        # If we have a registry, try to look up the type
+        if self._registry:
+            try:
+                resolved = self._registry.lookup(self.base_type)
+                if resolved and resolved != self:
+                    return resolved.is_signed()
+            except KeyError:
+                pass
+
+        if 'unsigned' in self.base_type:
+            return False
+        if 'void' in self.base_type:
+            return False
+        return True
 
     def sizeof(self) -> int:
         """Calculate the size of this type in bytes."""
