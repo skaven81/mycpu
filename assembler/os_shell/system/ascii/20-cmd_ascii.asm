@@ -10,7 +10,7 @@ LDI_C .header2
 CALL :print
 
 LDI_AL 0x00             # AL will be our character to print in the grid
-LDI_C .hex              # easier way to iterate through all 16 hex chars
+LDI_C .hex_str          # easier way to iterate through all 16 hex chars
 .ascii_row_loop
 # Print the row header on the left
 ALUOP_PUSH %A%+%AL%     # save AL (current char
@@ -52,4 +52,4 @@ RET
 
 .header  "  0 1 2 3 4 5 6 7 8 9 a b c d e f\n\0"
 .header2 "  -------------------------------\n\0"
-.hex "0123456789abcdef\0"
+.hex_str "0123456789abcdef\0"

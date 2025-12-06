@@ -14,9 +14,9 @@ LDI_AH 0x50 # bcd subseconds
 CALL :heap_push_AL
 CALL :sleep # sleep for 0.5 sec
 MASKINT
-LDI_C .ok
+LDI_C .ok_str
 CALL :print
 RET
 
 .uart_init_banner "UART init 9600,8n1 \0"
-.ok "OK\n\0"
+.ok_str "OK\n\0"

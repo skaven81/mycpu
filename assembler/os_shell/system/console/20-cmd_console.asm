@@ -40,7 +40,7 @@ LDA_D_AL                        # put low byte of first arg pointer into AL
 INCR_D
 ALUOP_FLAGS %A%+%AH%            # check if first arg pointer is null
 JZ .no_arg
-LDI_C .raw                      # store ptr to 'raw' in C
+LDI_C .raw_str                  # store ptr to 'raw' in C
 ALUOP_DH %A%+%AH%               # store ptr to first argument in D
 ALUOP_DL %A%+%AL%
 CALL :strcmp                    # result in AL
@@ -354,5 +354,5 @@ RET
 .start_vt220 "Starting serial console in VT220 mode, press CTRL+ESC to exit\n\0"
 .start_raw "Starting serial console in raw mode, press CTRL+ESC to exit\n\0"
 .done "^ESC\nBreak, exiting\n\0"
-.raw "raw\0"
+.raw_str "raw\0"
 .usage_str "Usage: console [raw]\n\0"

@@ -51,9 +51,9 @@ LDI_AL '0'
 .cts_done
 CALL :heap_push_AL # put CTS value on heap
 
-LDI_C .out
+LDI_C .out_str
 CALL :printf
 
 RET
 
-.out "/CTS(i):%c /RTS(o):%c /DSR(i):%c /DTR(o):%c\n\0"
+.out_str "/CTS(i):%c /RTS(o):%c /DSR(i):%c /DTR(o):%c\n\0"

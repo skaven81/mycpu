@@ -109,7 +109,7 @@ CALL :printf
 JMP .mount_drives_loop_end
 
 .mount_drives_ok
-LDI_C .ok
+LDI_C .ok_str
 CALL :print
 JMP .mount_drives_loop_end
 
@@ -122,7 +122,7 @@ JMP .mount_drives_loop
 .mount_drives_done
 RET
 
-.ok "OK\n\0"
+.ok_str "OK\n\0"
 .mount_filehandle "Filesystem handle address for drive %c: 0x%x%x\n\0"
 .mount_0_str "Mounting drive %u...\0"
 .mount_1_str "FAILED: \0"
