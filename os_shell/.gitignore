@@ -2,4 +2,4 @@
 **/*.log
 **/*.hex
 **/*.sym
-
+opcodes.out
