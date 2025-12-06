@@ -14,7 +14,7 @@ all: $(FILENAME)
 
 $(FILENAME): $(ASM_FILES) ../../os.sym ../../opcodes.out
 	@[ $$(echo -n $(DIRNAME) | wc -c) -le 8 ] # command names cannot be more than 8 characters
-	../../../assembl../assembler/assembler.py $(VERBOSE_FLAG) --opcodes ../../opcodes.out --symbols ../../os.sym $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) --odyssey --odyssey-target $(MEM_TARGET) --output $(FILENAME) $(ASM_FILES) 2>&1 | tee assembler.log
+	../../../assembler/assembler.py $(VERBOSE_FLAG) --opcodes ../../opcodes.out --symbols ../../os.sym $(foreach asm_macro, $(MACROS), --macros $(asm_macro)) --odyssey --odyssey-target $(MEM_TARGET) --output $(FILENAME) $(ASM_FILES) 2>&1 | tee assembler.log
 
 .PHONY: sdcard
 sdcard: $(FILENAME)
