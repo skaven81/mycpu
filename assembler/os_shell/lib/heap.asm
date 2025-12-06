@@ -13,6 +13,72 @@ ST16 $heap_ptr 0xb000
 RET
 
 ######
+# Initialize a stack frame. The value in AL (or BL) is the number
+# of bytes to allocate for local variables.
+:heap_advance_AL
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+LD_BH $heap_ptr
+LD_BL $heap_ptr+1
+LDI_AH 0x00                         # so we can do 16-bit addition
+CALL :add16_to_b                    # advance the heap pointer
+ALUOP_ADDR %B%+%BH% $heap_ptr       
+ALUOP_ADDR %B%+%BL% $heap_ptr+1     # Save advanced heap pointer
+POP_BL
+POP_BH
+POP_AH
+RET
+
+:heap_advance_BL
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+LD_AH $heap_ptr
+LD_AL $heap_ptr+1
+LDI_BH 0x00                         # so we can do 16-bit addition
+CALL :add16_to_a                    # advance the heap pointer
+ALUOP_ADDR %A%+%AH% $heap_ptr       
+ALUOP_ADDR %A%+%AL% $heap_ptr+1     # Save advanced heap pointer
+POP_BH
+POP_AL
+POP_AH
+RET
+
+######
+# Destroy a stack frame. The value in AL (or BL) is the number
+# of bytes to deallocate for local variables.
+:heap_retreat_AL
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+LD_BH $heap_ptr
+LD_BL $heap_ptr+1
+LDI_AH 0x00                         # so we can do 16-bit subtraction
+CALL :sub16_b_minus_a               # advance the heap pointer
+ALUOP_ADDR %B%+%BH% $heap_ptr       
+ALUOP_ADDR %B%+%BL% $heap_ptr+1     # Save retreated heap pointer
+POP_BL
+POP_BH
+POP_AH
+RET
+
+:heap_retreat_BL
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+LD_AH $heap_ptr
+LD_AL $heap_ptr+1
+LDI_BH 0x00                         # so we can do 16-bit subtraction
+CALL :sub16_a_minus_b               # advance the heap pointer
+ALUOP_ADDR %A%+%AH% $heap_ptr       
+ALUOP_ADDR %A%+%AL% $heap_ptr+1     # Save retreated heap pointer
+POP_BH
+POP_AL
+POP_AH
+RET
+
+######
 # Push a byte onto the heap
 :heap_push_AH
 ALUOP_PUSH %A%+%AH%
