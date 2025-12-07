@@ -442,6 +442,16 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         else:
             self.emit(f"# Above value in A is cast from {from_context.typespec.name}/{from_context.typespec.base_type} to {to_typespec.name}/{to_typespec.base_type}")
 
+    def visit_Assignment(self, node):
+        with self._debug_block(f"Assignment {node.op} to {node.lvalue.name}"):
+            # generate rvalue, result will be in A/AL
+            with self._debug_block(f"Generate rvalue for assignment"):
+                self.visit(node.rvalue)
+            rvalue_context = self._pop_expr()
+            var = self.context.vartable.lookup(node.lvalue.name)
+            with self._debug_block(f"Assign to {var.name} at offset {var.offset}"):
+                self._store_a_to_var(var)
+
     def visit_Constant(self, node):
         """
         Generate code for constants (integers, strings).
