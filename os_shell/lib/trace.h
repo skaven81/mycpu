@@ -1,0 +1,11 @@
+extern void trace();
+extern void trace_begin();
+extern void trace_end();
+extern void trace_0();
+extern void trace_1();
+extern void trace_2();
+extern void trace_3();
+extern void trace_4();
+extern void trace_5();
+extern void trace_6();
+extern void trace_7();
