@@ -25,7 +25,7 @@ class CompilerContext:
     jmp_to_main: bool
     verbose: int
 
-def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=True, verbose=0):
+def compile(filename, output, use_cpp=True, cpp_args="", static_type='inline', jmp_to_main=True, verbose=0):
     """
     Comple a C file and output Odyssey assembly
     
@@ -43,7 +43,7 @@ def compile(filename, output, use_cpp=True, static_type='inline', jmp_to_main=Tr
     
     # Parse the C file
     # use_cpp=True runs the C preprocessor first (handles #include, #define, etc.)
-    ast = parse_file(filename, use_cpp=use_cpp)
+    ast = parse_file(filename, use_cpp=use_cpp, cpp_args=cpp_args)
 
     # Establish compiler context for AST visitors
     context = CompilerContext(
@@ -114,6 +114,9 @@ def main():
                        action='store_true',
                        help='Disable C preprocessor (default: enabled)')
 
+    parser.add_argument('--cpp-args',
+                       help='Extra arguments to pass to the C preparser')
+
     parser.add_argument('--target-rom',
                        action='store_true',
                        help='Store global and static vars using VAR statements instead of in-program labels')
@@ -141,7 +144,7 @@ def main():
         static_type = 'asm_var'
     jmp_to_main = not args.ignore_main
 
-    compile(args.filename, output=output, use_cpp=use_cpp, static_type=static_type, jmp_to_main=jmp_to_main, verbose=args.verbose if args.verbose else 0)
+    compile(args.filename, output=output, use_cpp=use_cpp, cpp_args=args.cpp_args, static_type=static_type, jmp_to_main=jmp_to_main, verbose=args.verbose if args.verbose else 0)
 
 if __name__ == "__main__":
     main()
