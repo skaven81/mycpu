@@ -474,7 +474,6 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             else:
                 raise NotImplementedError("Can't load constants > 16 bit")
         elif node.type == 'char':
-            print(f"node value is {node.value}")
             const_int = ord(ast.literal_eval(node.value))
             self.emit(f"LDI_AL {const_int}", f"Constant assignment ord({node.value}): {const_int}")
         elif node.type == 'string':
