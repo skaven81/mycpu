@@ -25,6 +25,7 @@ class ExprContext:
     """Result of evaluating an expression"""
     typespec: Optional[TypeSpec] = None
     lvalue_info: Optional[LValueInfo] = None
+    const_int: Optional[int] = None
     # Value is always in A/AL register after expression evaluation
     # If lvalue_info is not None and lvalue_in_b=True, address is in B register
 
@@ -46,8 +47,8 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         # required for TypeSpecBuilder to ensure TypeSpec objects have a reference to the registry
         self.type_registry = self.context.typereg
 
-    def _push_expr(self, typespec, lvalue_info=None):
-        self.expr_stack.append(ExprContext(typespec, lvalue_info))
+    def _push_expr(self, typespec, lvalue_info=None, const_int=None):
+        self.expr_stack.append(ExprContext(typespec, lvalue_info, const_int=const_int))
 
     def _pop_expr(self) -> ExprContext:
         if not self.expr_stack:
@@ -219,13 +220,14 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         # current scope, noting their offset in the stack frame
         if self.param_offset is None:
             raise ValueError("Unexpected entry into FuncDecl without param_offset set")
-        for param_node in node.args:
-            param_typespec = self._build_typespec(param_node.name, param_node.type)
-            param_var = Variable(param_node.name, param_typespec, param_node.storage[0] if param_node.storage else '', offset=self.param_offset, kind='param')
-            self.context.vartable.add_local(param_var)
-            if self.context.verbose >= 1:
-                self.emit(f"# Registered param var {param_var} at offset {self.param_offset}")
-            self.param_offset -= param_typespec.sizeof()
+        if node.args:
+            for param_node in node.args:
+                param_typespec = self._build_typespec(param_node.name, param_node.type)
+                param_var = Variable(param_node.name, param_typespec, param_node.storage[0] if param_node.storage else '', offset=self.param_offset, kind='param')
+                self.context.vartable.add_local(param_var)
+                if self.context.verbose >= 1:
+                    self.emit(f"# Registered param var {param_var} at offset {self.param_offset}")
+                self.param_offset -= param_typespec.sizeof()
 
     def visit_FuncCall(self, node):
         func = self.context.funcreg.lookup(node.name.name)
@@ -418,7 +420,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         from_context = self._pop_expr()
         to_typespec = self._build_typespec(from_context.typespec.name, node.to_type.type)
         to_lvalue = from_context.lvalue_info
-        self._push_expr(to_typespec, to_lvalue)
+        self._push_expr(to_typespec, to_lvalue, const_int=from_context.const_int)
         if from_context.typespec.sizeof() == 1 and to_typespec.sizeof() == 2:
             self.emit(f"# Above value in A is cast from {from_context.typespec.name}/{from_context.typespec.base_type} to {to_typespec.name}/{to_typespec.base_type}, requiring sign extension")
             self.emit_sign_extend("A", to_typespec)
@@ -438,6 +440,8 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         """
         if node.type == 'int':
             typespec = TypeSpec('int', 'int')
+        elif node.type == 'char':
+            typespec = TypeSpec('char', 'char')
         elif node.type == 'string':
             typespec = TypeSpec('string', 'char', pointer_depth=1)
         else:
@@ -445,13 +449,19 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         
         const_size = typespec.sizeof()
 
+        const_int=None
         if node.type == 'int':
             if const_size == 1:
                 self.emit(f"LDI_AL {node.value}", "Constant assignment")
+                const_int = int(node.value)
             elif const_size == 2:
                 self.emit(f"LDI_A {node.value}", "Constant assignment")
+                const_int = int(node.value)
             else:
                 raise NotImplementedError("Can't load constants > 16 bit")
+        elif node.type == 'char':
+            const_int = ord(str(node.value))
+            self.emit(f"LDI_AL {const_int}", "Constant assignment ord({node.value}): {const_int}")
         elif node.type == 'string':
             literal = self.context.literalreg.lookup_by_content(node.value, node.type)
             if not literal:
@@ -459,7 +469,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self.emit(f"LDI_A {literal.label}", literal.content)
         
         # Constants don't have lvalues
-        self._push_expr(typespec, None)
+        self._push_expr(typespec, None, const_int=const_int)
 
     def visit_Return(self, node):
         """
@@ -508,9 +518,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             # Increment/decrement
             if expr_ctx.typespec.sizeof() == 1:
                 if is_increment:
-                    self.emit("ALUOP_AL %A%+%AL%+1", f"UnaryOp {node.op}")
+                    self.emit("ALUOP_AL %A+1%+%AL%", f"UnaryOp {node.op}")
                 else:
-                    self.emit("ALUOP_AL %A%+%AL%-1", f"UnaryOp {node.op}")
+                    self.emit("ALUOP_AL %A-1%+%AL%", f"UnaryOp {node.op}")
             else:
                 if is_increment:
                     self.emit("CALL :incr16_a", f"UnaryOp {node.op}")
@@ -605,9 +615,12 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             expr_ctx = self._pop_expr()
             
             if expr_ctx.typespec.sizeof() == 1:
-                self.emit("ALUOP_AL %0-A%+%AL%", "Unary negation")
+                self.emit("ALUOP_AL %~A%+%AL%", "Unary negation")
+                self.emit("ALUOP_AL %A+1%+%AL%", "Unary negation")
             else:
-                self.emit("CALL :negate16_a", "Unary negation")
+                self.emit("ALUOP_AL %~A%+%AL%", "Unary negation")
+                self.emit("ALUOP_AH %~A%+%AH%", "Unary negation")
+                self.emit("CALL :incr16_a", "Unary negation")
             
             self._push_expr(expr_ctx.typespec, None)  # Result has no lvalue
             
@@ -630,20 +643,14 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             expr_ctx = self._pop_expr()
             
             # Check if value is zero
-            if expr_ctx.typespec.sizeof() == 1:
-                self.emit("ALUOP_FLAGS %A%+%AL%", "Logical NOT: check zero")
-            else:
-                self.emit("ALUOP_FLAGS %A%+%AL%", "Logical NOT: check low byte")
-                self.emit(f"JNZ .logical_not_false_{self.label_num}")
-                self.emit("ALUOP_FLAGS %A%+%AH%", "Logical NOT: check high byte")
-            
+            self.emit(f"ALUOP_FLAGS %A%+%AL%", "Logical NOT: check zero in low byte")
             self.emit(f"LDI_AL 0", "Logical NOT: assume false")
             self.emit(f"JNZ .logical_not_false_{self.label_num}")
             self.emit(f"LDI_AL 1", "Logical NOT: was zero, now true")
             self.emit(f".logical_not_false_{self.label_num}")
             self.label_num += 1
             
-            result_type = TypeSpec('int', 'int')
+            result_type = TypeSpec('bool', 'bool')
             self._push_expr(result_type, None)  # Result has no lvalue
         else:
             raise NotImplementedError(f"UnaryOp {node.op} not implemented")
@@ -838,6 +845,27 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     self.emit(f".binop_false_{self.label_num}")
                     self.label_num += 1
                 result_type = TypeSpec('binop_result', 'bool')
+            elif node.op in ('<<', '>>'):
+                if right_ctx.const_int is not None:
+                    for _ in range(right_ctx.const_int):
+                        if op_size == 1:
+                            if left_ctx.typespec.is_signed():
+                                if node.op == '<<':
+                                    self.emit(f"ALUOP_AL %A*2%+%AL%", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                                elif node.op == '>>':
+                                    self.emit(f"ALUOP_AL %A/2%+%AL%", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                            else:
+                                self.emit(f"ALUOP_AL %A{node.op}1%+%AL%", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                        else:
+                            if left_ctx.typespec.is_signed():
+                                raise NotImplementedError("Unable to shift signed 16-bit integers")
+                            else:
+                                if node.op == '<<':
+                                    self.emit(f"CALL :shift16_a_left", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                                elif node.op == '>>':
+                                    self.emit(f"CALL :shift16_a_right", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                else:
+                    raise NotImplementedError("Unable to shift by variable amounts")
             else:
                 raise NotImplementedError(f"BinaryOp {node.op} not implemented")
             
