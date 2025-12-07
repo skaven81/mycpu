@@ -48,7 +48,7 @@ class TypeSpec:
         
         # Array size
         if self.is_array:
-            element_size = self._sizeof_element()
+            element_size = self.sizeof_element()
             total_size = element_size
             for dim in self.array_dims:
                 if dim is not None:
@@ -101,15 +101,13 @@ class TypeSpec:
 
         raise NotImplementedError(f"Unable to compute size of {self.base_type}{' (with type registry)' if self._registry else ' (no type registry present)'}")
     
-    def _sizeof_element(self) -> int:
+    def sizeof_element(self) -> int:
         """Helper to calculate size of array element."""
         # Create a temporary non-array version to calculate element size
-        if not self.is_array:
+        if not self.is_array and not self.is_pointer:
             return self.sizeof()
         
         # Build element type
-        if self.is_pointer:
-            return 2
         if self.base_type:
             return TypeSpec(name='', base_type=self.base_type, _registry=self._registry).sizeof()
         if self.is_struct:

@@ -7,6 +7,7 @@ from function import Function
 from pprint import pprint
 from contextlib import contextmanager
 from copy import deepcopy
+import ast
 
 from dataclasses import dataclass
 from typing import Optional
@@ -235,7 +236,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             raise ValueError(f"FuncCall to function {node.name.name} that does not exist in function registry")
 
         if func.storage == 'extern':
-            if hasattr(self, f"generate_FuncCall_{func.name}"):
+            if func.name.startswith('trace'):
+                pass
+            elif hasattr(self, f"generate_FuncCall_{func.name}"):
                 getattr(self, f"generate_FuncCall_{func.name}")(node, func)
                 return
             else:
@@ -243,7 +246,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
 
         if self.context.verbose >= 1:
             self.emit(f"# Begin function call {func.c_str()}")
-        arg_nodes = reversed(node.args.exprs)
+        arg_nodes = reversed(node.args.exprs) if node.args else []
         param_types = reversed(func.parameters.values())
         for arg_node, param_type in zip(arg_nodes, param_types):
             if self.context.verbose >= 1:
@@ -319,8 +322,8 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         if self.local_offset is not None:
             var.kind = 'local'
             if var.storage_class != 'static':
+                var.offset = self.local_offset+1
                 self.local_offset += var.typespec.sizeof()
-                var.offset = self.local_offset
             self.context.vartable.add_local(var)
             if node.init:
                 self._initialize_var(node.init, var)
@@ -357,19 +360,24 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         """
         with self._debug_block("ArrayRef"):
             # Start by computing the subscript as an offset, stored in A
+            subscript_ctx = None
             with self._debug_block("compute ArrayRef subscript"):
                 self.visit(node.subscript)
                 subscript_ctx = self._pop_expr()
+                if subscript_ctx.typespec.sizeof() == 1:
+                    self.emit_sign_extend("A", TypeSpec('int', 'int'))
             
+            # var is the pointer variable, not the datatype being pointed to.
             assert isinstance(node.name, c_ast.ID)
             var = self.context.vartable.lookup(node.name.name)
-            
+            assert var.typespec.is_pointer
+
             # Scale the index by element size
-            if var.typespec.sizeof() == 1:
+            if var.typespec.sizeof_element() == 1:
                 if self.context.verbose >= 1:
-                    self.emit(f"# ArrayRef offset no change, {var.name} sizeof==1")
-            elif var.typespec.sizeof() == 2:
-                self.emit("CALL :shift16_a_left", f"ArrayRef offset doubles, {var.padded_name()} sizeof==2")
+                    self.emit(f"# ArrayRef offset no change, {var.name} element size==1")
+            elif var.typespec.sizeof_element() == 2:
+                self.emit("CALL :shift16_a_left", f"ArrayRef offset doubles, {var.name} element size==2")
             else:
                 raise NotImplementedError("Indexing into arrays of types > 2 bytes is not yet supported")
 
@@ -377,32 +385,38 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             with self._debug_block("get indexed value address"):
                 if var.kind == 'global' or var.storage_class == 'static':
                     prefix = self._get_static_prefix()
-                    self.emit(f"LD16_B {prefix}{var.padded_name()}", f"Address of {var.name} into B")
+                    self.emit(f"LD16_B {prefix}{var.padded_name()}", f"Contents of {var.name} into B")
                 else:
                     # save A (the index offset)
                     self.emit("ALUOP_PUSH %A%+%AH%", f"Save index offset")
                     self.emit("ALUOP_PUSH %A%+%AL%", f"Save index offset")
-                    # Compute base address into B
-                    self._compute_local_address_to_b(var, f"Base address of {var.name}")
+                    # Compute base address into C
+                    self._compute_local_address_to_b(var)
+                    # B now contains the address of the pointer. We need to dereference the pointer to get the base address of the array
+                    self.emit("ALUOP_CH %B%+%BH%", f"Copy address of {var.name} to C")
+                    self.emit("ALUOP_CL %B%+%BL%", f"Copy address of {var.name} to C")
+                    self.emit("LDA_C_BH", f"Dereference {var.name} into B")
+                    self.emit("INCR_C", f"Dereference {var.name} into B")
+                    self.emit("LDA_C_BL", f"Dereference {var.name} into B")
                     # restore A (the index offset)
-                    self.emit("POP_AL", f"Restore index offset")
-                    self.emit("POP_AH", f"Restore index offset")
+                    self.emit("POP_AL", f"Restore index offset into A")
+                    self.emit("POP_AH", f"Restore index offset into A")
 
                 # Now add A (index offset) and B (base address) to get the final address in B
                 self.emit("CALL :add16_to_b", f"B contains indexed address into {var.name}")
 
                 # Load the value into A/AL
-                if var.typespec.sizeof() == 2:
+                if var.typespec.sizeof_element() == 2:
                     self.emit("LDA_B_AH", f"Load {var.name}[index] into A")
                     self.emit("CALL :incr16_b")
                     self.emit("LDA_B_AL", f"Load {var.name}[index] into A")
-                elif var.typespec.sizeof() == 1:
+                elif var.typespec.sizeof_element() == 1:
                     self.emit("LDA_B_AL", f"Load {var.name}[index] into AL")
                 else:
                     raise NotImplementedError("Can't load datatypes > 2 bytes yet")
             
-            # Push result: value in A, address still in B
-            self._push_expr(var.typespec, LValueInfo(var, 'array', lvalue_in_b=True))
+            # Push result: value in A/AL, address still in B
+            self._push_expr(TypeSpec('arr_element', var.typespec.base_type), LValueInfo(var, 'array', lvalue_in_b=True))
 
     def visit_StructRef(self, node):
         # TODO: be sure to self._push_expr member typespec
@@ -460,8 +474,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             else:
                 raise NotImplementedError("Can't load constants > 16 bit")
         elif node.type == 'char':
-            const_int = ord(str(node.value))
-            self.emit(f"LDI_AL {const_int}", "Constant assignment ord({node.value}): {const_int}")
+            print(f"node value is {node.value}")
+            const_int = ord(ast.literal_eval(node.value))
+            self.emit(f"LDI_AL {const_int}", f"Constant assignment ord({node.value}): {const_int}")
         elif node.type == 'string':
             literal = self.context.literalreg.lookup_by_content(node.value, node.type)
             if not literal:
@@ -561,10 +576,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     self.emit(f"LDI_A {prefix}{var.padded_name()}", f"Address-of {var.name}")
                 else:
                     # Local/param: frame pointer + offset
-                    self.emit("MOV_DH_AH", "Address-of: frame pointer to A")
-                    self.emit("MOV_DL_AL")
-                    self.emit(f"LDI_B {var.offset}", f"Address-of: offset for {var.name}")
-                    self.emit("CALL :add16_to_a", f"Address-of {var.name}")
+                    self._compute_local_address_to_a(var)
             
             # Result is a pointer to the original type
             result_typespec = TypeSpec(
@@ -689,14 +701,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+1", "Store to global/static")
             else:
                 # Local/param: need to compute address
-                self.emit("PUSH_CH", "Store: save C")
-                self.emit("PUSH_CL")
                 self.emit("ALUOP_CH %A%+%AH%", "Store: value to C")
                 self.emit("ALUOP_CL %A%+%AL%")
-                self.emit("MOV_DH_AH", "Store: frame pointer to A")
-                self.emit("MOV_DL_AL")
-                self.emit(f"LDI_B {var.offset}", f"Store: offset for {var.name}")
-                self.emit("CALL :add16_to_a", f"Store: address in A")
+                self._compute_local_address_to_a(var)
                 if expr_ctx.typespec.sizeof() == 1:
                     self.emit("STA_A_CL", f"Store to {var.name}")
                 elif expr_ctx.typespec.sizeof() == 2:
@@ -705,8 +712,6 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     self.emit("STA_A_CL", f"Store to {var.name}")
                 else:
                     raise NotImplementedError("Cannot store types > 2 bytes")
-                self.emit("POP_CL", "Store: restore C")
-                self.emit("POP_CH")
 
     def visit_BinaryOp(self, node):
         """
@@ -851,19 +856,19 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                         if op_size == 1:
                             if left_ctx.typespec.is_signed():
                                 if node.op == '<<':
-                                    self.emit(f"ALUOP_AL %A*2%+%AL%", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                                    self.emit(f"ALUOP_AL %A*2%+%AL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
                                 elif node.op == '>>':
-                                    self.emit(f"ALUOP_AL %A/2%+%AL%", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                                    self.emit(f"ALUOP_AL %A/2%+%AL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
                             else:
-                                self.emit(f"ALUOP_AL %A{node.op}1%+%AL%", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                                self.emit(f"ALUOP_AL %A{node.op}1%+%AL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
                         else:
                             if left_ctx.typespec.is_signed():
                                 raise NotImplementedError("Unable to shift signed 16-bit integers")
                             else:
                                 if node.op == '<<':
-                                    self.emit(f"CALL :shift16_a_left", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                                    self.emit(f"CALL :shift16_a_left", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
                                 elif node.op == '>>':
-                                    self.emit(f"CALL :shift16_a_right", "BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
+                                    self.emit(f"CALL :shift16_a_right", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
                 else:
                     raise NotImplementedError("Unable to shift by variable amounts")
             else:
@@ -893,10 +898,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             else:
                 raise ValueError(f"Unable to load var {var.name} as it's not 1 or 2 bytes")
         else:
-            self.emit(f"LDI_B {var.offset}", f"Load var {var.name} at offset {var.offset}")
-            self.emit("MOV_DH_AH", f"Load var {var.name} at offset {var.offset}")
-            self.emit("MOV_DL_AL", f"Load var {var.name} at offset {var.offset}")
-            self.emit("CALL :add16_to_b", f"Load var {var.name} at offset {var.offset}")
+            self._compute_local_address_to_b(var)
             if var.typespec.sizeof() == 2:
                 self.emit("LDA_B_AH", f"Load var {var.name} at offset {var.offset}")
                 self.emit("CALL :incr16_b", f"Load var {var.name} at offset {var.offset}")
@@ -1014,7 +1016,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         if reg == 'B':
             otherreg = 'A'
         if typespec.is_signed():
-            self.emit(f"ALUOP_PUSH %{otherreg}%+%{otherreg}L", f"Sign extend {reg}L: save {otherreg}L")
+            self.emit(f"ALUOP_PUSH %{otherreg}%+%{otherreg}L%", f"Sign extend {reg}L: save {otherreg}L")
             self.emit(f"LDI_{otherreg}L 0x80", f"Sign extend {reg}L: check sign bit")
             self.emit(f"ALUOP_FLAGS %A&B%+%AL%+%BL%", f"Sign extend {reg}L: check sign bit")
             self.emit(f"POP_{otherreg}L", f"Sign extend {reg}L: restore {otherreg}L")
@@ -1037,11 +1039,24 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         Clobbers A register temporarily.
         """
         if not comment:
-            comment = f"Compute address of {var.name} into B"
+            comment = f"Compute address of {var.name} at offset {var.offset} into B"
         self.emit("MOV_DH_AH", comment)
         self.emit("MOV_DL_AL", comment)
         self.emit(f"LDI_B {var.offset}", comment)
         self.emit("CALL :add16_to_b", comment)
+
+    def _compute_local_address_to_a(self, var: Variable, comment: str = ""):
+        """
+        Compute address of local/param variable into A register.
+        Frame pointer (D) + var.offset -> A
+        Clobbers B register temporarily.
+        """
+        if not comment:
+            comment = f"Compute address of {var.name} at offset {var.offset} into A"
+        self.emit("MOV_DH_AH", comment)
+        self.emit("MOV_DL_AL", comment)
+        self.emit(f"LDI_B {var.offset}", comment)
+        self.emit("CALL :add16_to_a", comment)
 
     def _load_var_value_to_a(self, var: Variable):
         """
@@ -1061,10 +1076,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 raise ValueError(f"Unable to load var {var.name} as it's not 1 or 2 bytes")
         else:
             # Local/param variable: compute address and load
-            self.emit(f"LDI_B {var.offset}", f"Load var {var.name} at offset {var.offset}")
-            self.emit("MOV_DH_AH", f"Load var {var.name} at offset {var.offset}")
-            self.emit("MOV_DL_AL", f"Load var {var.name} at offset {var.offset}")
-            self.emit("CALL :add16_to_b", f"Load var {var.name} at offset {var.offset}")
+            self._compute_local_address_to_b(var)
             if var.typespec.sizeof() == 2:
                 self.emit("LDA_B_AH", f"Load var {var.name} at offset {var.offset}")
                 self.emit("CALL :incr16_b", f"Load var {var.name} at offset {var.offset}")
@@ -1087,14 +1099,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+1", f"Store to {var.name}")
         else:
             # Local/param: need to compute address
-            self.emit("PUSH_CH", "Store: save C")
-            self.emit("PUSH_CL")
             self.emit("ALUOP_CH %A%+%AH%", "Store: value to C")
             self.emit("ALUOP_CL %A%+%AL%")
-            self.emit("MOV_DH_AH", "Store: frame pointer to A")
-            self.emit("MOV_DL_AL")
-            self.emit(f"LDI_B {var.offset}", f"Store: offset for {var.name}")
-            self.emit("CALL :add16_to_a", f"Store: address in A")
+            self._compute_local_address_to_a(var)
             if var.typespec.sizeof() == 1:
                 self.emit("STA_A_CL", f"Store to {var.name}")
             elif var.typespec.sizeof() == 2:
@@ -1103,8 +1110,6 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 self.emit("STA_A_CL", f"Store to {var.name}")
             else:
                 raise NotImplementedError("Cannot store types > 2 bytes")
-            self.emit("POP_CL", "Store: restore C")
-            self.emit("POP_CH")
 
     def generate_FuncCall_printf(self, node: c_ast.FuncCall, func: Function):
         """
@@ -1133,3 +1138,24 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         self.emit(f"CALL {func.asm_name()}")
         if self.context.verbose >= 1:
             self.emit(f"# End special extern function call {func.c_str()}")
+
+    def generate_FuncCall_print(self, node: c_ast.FuncCall, func: Function):
+        self.generate_FuncCall_printf(node, func)
+
+    def generate_FuncCall_putchar(self, node: c_ast.FuncCall, func: Function):
+        if self.context.verbose >= 1:
+            self.emit(f"# Begin special extern function call {func.c_str()}")
+        arg_nodes = [*enumerate(node.args.exprs)]
+        for idx, arg_node in reversed(arg_nodes):
+            if self.context.verbose >= 1:
+                self.emit(f"# Begin setting param idx {idx} in AL")
+            self.visit(arg_node) # char will be in AL
+            arg_ctx = self._pop_expr()
+            if self.context.verbose >= 1:
+                self.emit(f"# End setting param idx {idx} in AL")
+        self.emit(f"CALL {func.asm_name()}")
+        if self.context.verbose >= 1:
+            self.emit(f"# End special extern function call {func.c_str()}")
+
+    def generate_FuncCall_putchar_direct(self, node: c_ast.FuncCall, func: Function):
+        self.generate_FuncCall_putchar(node, func)
