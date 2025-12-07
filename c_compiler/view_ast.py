@@ -79,7 +79,7 @@ class ASTVisualizer(c_ast.NodeVisitor):
                 self.visit(child)
         self.indent_level -= 1
 
-def display_ast(filename, use_cpp=True):
+def display_ast(filename, use_cpp=True, cpp_args=''):
     """
     Parse a C file and display its AST
     
@@ -97,8 +97,7 @@ def display_ast(filename, use_cpp=True):
         # cpp_path: specify your gcc path if needed, e.g., 'gcc' or '/usr/bin/gcc'
         # cpp_args: preprocessor arguments, -E for preprocessing only
         if use_cpp:
-            ast = parse_file(filename, use_cpp=True,
-                           cpp_args=['-E', r'-I/usr/include/fakeinc'])
+            ast = parse_file(filename, use_cpp=True, cpp_args=cpp_args)
         else:
             # Parse without preprocessing (file must have no #includes or macros)
             ast = parse_file(filename, use_cpp=False)
@@ -135,13 +134,17 @@ Examples:
     parser.add_argument('--no-cpp',
                        action='store_true',
                        help='Disable C preprocessor (default: preprocessing enabled)')
+
+    parser.add_argument('--cpp-args',
+                        help='Add args to the cpp execution',
+                        default='-I/home/skaven/mycpu2/os_shell/lib')
     
     args = parser.parse_args()
     
     # use_cpp is True by default, unless --no-cpp is specified
     use_cpp = not args.no_cpp
     
-    display_ast(args.filename, use_cpp=use_cpp)
+    display_ast(args.filename, use_cpp=use_cpp, cpp_args=args.cpp_args)
 
 if __name__ == "__main__":
     main()
