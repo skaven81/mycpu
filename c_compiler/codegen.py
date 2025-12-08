@@ -820,13 +820,13 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     if op_size == 1:
                         if node.op in ('<', '<='):
                             self.emit(f"ALUOP_FLAGS %A-B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                        else:
+                        elif node.op in ('>', '>='):
                             self.emit(f"ALUOP_FLAGS %B-A%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
                     else:
                         # Note that :sub16_a_minus_b/:sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
                         if node.op in ('<', '<='):
                             self.emit(f"CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                        else:
+                        elif node.op in ('>', '>='):
                             self.emit(f"CALL :sub16_b_minus_a", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
 
                     # For < and >, we only need to check the overflow bit
@@ -837,7 +837,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                         self.emit(f".binop_true_{self.label_num}")
                         self.label_num += 1
                     # for <= and >=, we need to check the overflow AND zero bits
-                    else:
+                    elif '=' in node.op:
                         if op_size == 1:
                             self.emit(f"LDI_AL 1")
                             self.emit(f"JO .binop_true_{self.label_num}")
