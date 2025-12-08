@@ -768,9 +768,30 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             elif left_ctx.typespec.sizeof() == 2:
                 op_size = 2
 
-            # Set a flag for whether we'll be doing signed or unsigned operation
+            # Set a flag for whether we'll be doing signed or unsigned operation.
+            # We have some optimization here to avoid signed operations if the
+            # variable side of the comparison is unsigned and the constant side is
+            # a positive integer.
             signed_op = False
-            if left_ctx.typespec.is_signed() or right_ctx.typespec.is_signed():
+
+            # If either context is signed and are not constant (e.g. a signed variable)
+            # then we have to perform a signed op
+            if left_ctx.typespec.is_signed() and left_ctx.const_int is None:
+                signed_op = True
+            elif right_ctx.typespec.is_signed() and right_ctx.const_int is None:
+                signed_op = True
+
+            # If one side is unsigned and the other is signed but is a positive constant integer,
+            # treat it as an unsigned operation.
+            elif not left_ctx.typespec.is_signed() and right_ctx.typespec.is_signed() and right_ctx.const_int is not None and right_ctx.const_int >= 0:
+                signed_op = False
+                self.emit("# NOTE: treating this as an unsigned op because LHS is unsigned, and RHS is a signed (but positive) constant integer")
+            elif not right_ctx.typespec.is_signed() and left_ctx.typespec.is_signed() and left_ctx.const_int is not None and left_ctx.const_int >= 0:
+                signed_op = False
+                self.emit("# NOTE: treating this as an unsigned op because RHS is unsigned, and LHS is a signed (but positive) constant integer")
+
+            # Fallthrough and perform signed op if either side is signed
+            elif left_ctx.typespec.is_signed() or right_ctx.typespec.is_signed():
                 signed_op = True
 
             # generate op code
