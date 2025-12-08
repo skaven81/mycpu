@@ -754,6 +754,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 self.emit("POP_BH", "Set RHS of binary op")
 
             # RHS now in B
+
+            if left_ctx.typespec.sizeof() > 2 or right_ctx.typespec.sizeof() > 2:
+                raise NotImplementedError(f"Unable to perform BinaryOp on values with sizeof > 2: LHS {left_ctx.typespec} RHS {right_ctx.typespec}")
             
             # Sign extend if there is a size mismatch
             op_size = 1
