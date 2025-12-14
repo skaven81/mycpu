@@ -140,7 +140,7 @@ STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
 %b - a BCD byte formatted as decimal, one digit per byte (first four bits are ignored)
 %B - a BCD byte formatted as decimal, two digits per byte
 %x - a byte formatted as hex
-%X - a byte formatted as hex, with capital letters
+%X - a word formatted as hex
 %u - a byte formatted as unsigned decimal (0-255)
 %U - a word formatted as unsigned decimal (0-65535)
 %d - a byte formatted as a signed decimal (-128-127)

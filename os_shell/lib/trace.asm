@@ -8,7 +8,7 @@
 # :trace_{0,1,2,3,4,5,6,7} - prefixes the message with DEBUG{0,1,2,3,...}
 #####
 
-.trace_str "{%X%X} A:%x%x B:%x%x C:%x%x D:%x%x pgD:%x pgE:%x\n\0"
+.trace_str "{%X} A:%X B:%X C:%X D:%X pgD:%x pgE:%x\n\0"
 
 VAR global word $trace_d_backup
 
@@ -21,14 +21,10 @@ LD_DL %d_page%
 CALL :heap_push_DL
 POP_DL
 # Push the register state to the heap for printf
-CALL :heap_push_DL
-CALL :heap_push_DH
-CALL :heap_push_CL
-CALL :heap_push_CH
-CALL :heap_push_BL
-CALL :heap_push_BH
-CALL :heap_push_AL
-CALL :heap_push_AH
+CALL :heap_push_D
+CALL :heap_push_C
+CALL :heap_push_B
+CALL :heap_push_A
 
 # We can't use the heap to preserve the value of D, so we
 # use RAM instead.
@@ -44,8 +40,7 @@ PUSH_DH
 DECR_D          # Subtract three to get the address of the call
 DECR_D
 DECR_D
-CALL :heap_push_DL  # push address onto heap
-CALL :heap_push_DH
+CALL :heap_push_D  # push address onto heap
 
 # Restore D from backup
 LD_DH $trace_d_backup

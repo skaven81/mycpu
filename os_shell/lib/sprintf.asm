@@ -12,7 +12,7 @@
 # %b - a BCD byte formatted as decimal, one digit per byte (first four bits are ignored)
 # %B - a BCD byte formatted as decimal, two digits per byte
 # %x - a byte formatted as hex
-# %X - a byte formatted as hex, with capital letters
+# %X - a word formatted as hex
 # %u - a byte formatted as unsigned decimal (0-255)
 # %U - a word formatted as unsigned decimal (0-65535)
 # %d - a byte formatted as a signed decimal (-128-127)
@@ -69,13 +69,13 @@ ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_bcd_one
 LDI_AL 'B'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .handle_hex     # two-char BCD is equivalent to hex conversion
+JEQ .handle_hex_byte     # two-char BCD is equivalent to hex conversion
 LDI_AL 'x'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .handle_hex
+JEQ .handle_hex_byte
 LDI_AL 'X'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .handle_hex_capital
+JEQ .handle_hex_word
 LDI_AL 'u'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .handle_decimal_byte
@@ -181,19 +181,21 @@ RET
 
 #### %B BCD with two chars per byte, or
 #### %x hex with lowercase chars
-.handle_hex
-PUSH_CL
-LDI_CL 'a'-10
+.handle_hex_byte
 CALL .handle_hex_real
-POP_CL
 JMP .fmt_loop
 
-#### %X hex with uppercase chars
-.handle_hex_capital
+#### %X hex with uppercase chars, handle as two bytes
+.handle_hex_word
+PUSH_CH
 PUSH_CL
-LDI_CL 'A'-10
-CALL .handle_hex_real
+CALL :heap_pop_C                # words are stored in big-endian format on the heap,
+CALL :heap_push_CL              # so we have to rearrange the bytes so that the high
+CALL :heap_push_CH              # byte is handled first
 POP_CL
+POP_CH
+CALL .handle_hex_real
+CALL .handle_hex_real
 JMP .fmt_loop
 
 # The code is the same for upper and lower case, the only difference is
@@ -219,7 +221,7 @@ JO .hex_letter_upper            # use a-f
 LDI_AH '0'                      # otherwise use numbers
 JMP .hex_apply_upper
 .hex_letter_upper
-MOV_CL_AH                       # use letters
+LDI_AH 'a'-10                   # use letters
 .hex_apply_upper
 ALUOP_AH %A+B%+%AH%+%BL%        # AH now has the char we want
 
@@ -232,7 +234,7 @@ JO .hex_letter_lower            # use a-f
 LDI_BH '0'                      # otherwise use numbers
 JMP .hex_apply_lower
 .hex_letter_lower
-MOV_CL_BH                       # use letters
+LDI_BH 'a'-10                   # use letters
 .hex_apply_lower
 ALUOP_BH %A+B%+%BH%+%AL%        # BH now has the char we want
 
