@@ -467,7 +467,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         elif node.type == 'char':
             typespec = TypeSpec('char', 'char')
         elif node.type == 'string':
-            typespec = TypeSpec('string', 'char', pointer_depth=1)
+            typespec = TypeSpec('string', 'char', is_pointer=True, pointer_depth=1)
         else:
             raise NotImplementedError(f"I don't know how to represent a {node.type} constant")
         
