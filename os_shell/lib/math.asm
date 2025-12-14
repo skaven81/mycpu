@@ -227,10 +227,11 @@ RET
 #  AL+AH - first operand
 #  BL+BH - second operand
 ALUOP_AL %A-B%+%AL%+%BL%
-JNO .sub16_a_minus_b_high
-ALUOP_AH %A-1%+%AH%
-.sub16_a_minus_b_high
+JO .sub16_a_minus_b_borrow
 ALUOP_AH %A-B%+%AH%+%BH%
+RET
+.sub16_a_minus_b_borrow
+ALUOP_AH %A-B%+%AH%+%BH%+%Cin%
 RET
 
 :sub16_b_minus_a
@@ -240,10 +241,11 @@ RET
 #  AL+AH - first operand
 #  BL+BH - second operand
 ALUOP_BL %B-A%+%AL%+%BL%
-JNO .sub16_b_minus_a_high
-ALUOP_BH %B-1%+%BH%
-.sub16_b_minus_a_high
+JO .sub16_b_minus_a_borrow
 ALUOP_BH %B-A%+%AH%+%BH%
+RET
+.sub16_b_minus_a_borrow
+ALUOP_BH %B-A%+%AH%+%BH%+%Cin%
 RET
 
 :shift16_a_left
