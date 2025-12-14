@@ -477,10 +477,10 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         if node.type == 'int':
             if const_size == 1:
                 self.emit(f"LDI_AL {node.value}", "Constant assignment")
-                const_int = int(node.value)
+                const_int = int(node.value, base=0)
             elif const_size == 2:
                 self.emit(f"LDI_A {node.value}", "Constant assignment")
-                const_int = int(node.value)
+                const_int = int(node.value, base=0)
             else:
                 raise NotImplementedError("Can't load constants > 16 bit")
         elif node.type == 'char':
