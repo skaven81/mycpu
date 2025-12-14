@@ -575,8 +575,8 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             
             if lvalue.lvalue_in_b:
                 # Address is already in B, move to A
-                self.emit("MOV_BH_AH", "Address-of: copy address from B to A")
-                self.emit("MOV_BL_AL")
+                self.emit("ALUOP_AH %B%+%BH%", "Address-of: copy address from B to A")
+                self.emit("ALUOP_AL %B%+%BL%")
             else:
                 # Compute address for simple variables
                 var = lvalue.var
@@ -613,6 +613,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             pointed_type = TypeSpec(
                 expr_ctx.typespec.base_type,
                 expr_ctx.typespec.base_type,
+                is_pointer = False if expr_ctx.typespec.pointer_depth == 1 else True,
                 pointer_depth=expr_ctx.typespec.pointer_depth - 1
             )
             
