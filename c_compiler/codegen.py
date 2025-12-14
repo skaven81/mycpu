@@ -1079,6 +1079,30 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self.emit(exit_label, "Bottom of do-while loop")
             self.context.vartable.pop_scope()
 
+    def visit_While(self, node):
+        """
+        Generate code for While loops
+
+        cond: condition
+        stmt: code to run
+        """
+        top_label = f".while_top_{self.label_num}"
+        exit_label = f".while_exit_{self.label_num}"
+        self.label_num += 1
+        with self._debug_block("While loop"):
+            self.context.vartable.push_scope()
+            self.emit(top_label, "Top of while loop")
+            with self._debug_block("While loop condition"):
+                self.visit(node.cond)
+                # AL will contain 1 for true (continue looping) or 0 for false (end loop)
+                self.emit("ALUOP_FLAGS %A%+%AL%", "Check if loop condition is true (1) or false (0)")
+                self.emit(f"JZ {exit_label}", "Terminate loop if condition is false")
+            with self._debug_block("Do-While loop statement"):
+                self.visit(node.stmt)
+            self.emit(f"JMP {top_label}", "Continue loop if condition is true")
+            self.emit(exit_label, "Bottom of do-while loop")
+            self.context.vartable.pop_scope()
+
     def visit_For(self, node):
         """
         Generate code for for loops: for(init; cond; next) stmt
