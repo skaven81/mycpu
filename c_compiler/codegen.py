@@ -94,6 +94,11 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         for c in node:
             if isinstance(c, c_ast.Decl):
                 self.visit(c)
+        # Initialize static local vars from each function
+        for c in node:
+            if isinstance(c, c_ast.FuncDef):
+                self._generate_static_localvar_init(c)
+
         # If told to jump to the main function, and the main function
         # exists, insert the JMP instruction here
         if self.context.jmp_to_main and 'main' in self.context.funcreg:
@@ -140,6 +145,24 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         # We already collected types in earlier passes, now stored
         # in context.typereg, so we can skip over these nodes
         pass
+
+    def _generate_static_localvar_init(self, node, **kwargs):
+        """
+        We generate the initialization code for function's static
+        local vars outside the FuncDef itself, and we call into
+        this function from visit_FileAST so that the static local
+        vars are initialized only once, along with the globals.
+        """
+        if isinstance(node, c_ast.FuncDef):
+            self._generate_static_localvar_init(node.body, funcname=node.decl.name)
+        elif isinstance(node, c_ast.Decl) and 'static' in node.storage and node.init:
+            self.emit(f"# function {kwargs['funcname']} static local var {node.name} init")
+            typespec = self._build_typespec(node.name, node.type)
+            var = Variable(name=node.name, typespec=typespec, storage_class='static')
+            self._initialize_var(node.init, var)
+        else:
+            for c in node:
+                self._generate_static_localvar_init(c, **kwargs)
 
     def visit_FuncDef(self, node):
         # We already collected functions in earlier passes, now stored
@@ -321,12 +344,16 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
 
         if self.local_offset is not None:
             var.kind = 'local'
+            # we only allocate memory and perform initialization
+            # for non-static local vars, because initialization
+            # was already done for the static locals in visit_FileAST
+            # along with the globals
             if var.storage_class != 'static':
                 var.offset = self.local_offset+1
                 self.local_offset += var.typespec.sizeof()
+                if node.init:
+                    self._initialize_var(node.init, var)
             self.context.vartable.add_local(var)
-            if node.init:
-                self._initialize_var(node.init, var)
             return
 
     def _initialize_var(self, node, var):
