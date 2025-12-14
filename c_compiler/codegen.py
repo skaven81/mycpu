@@ -341,7 +341,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         """
         # get the initializer value into A register
         self.emit("")
-        with self._debug_block(f"initialize {var.kind} variable {var.name}" + 
+        with self._debug_block(f"initialize {var.kind} variable {var.name}" +
                               (f" at offset {var.offset}" if var.kind not in ('global',) and var.storage_class != 'static' else "")):
             self.visit(node)  # A/AL now contains the value we need to store in the variable
             expr_ctx = self._pop_expr()
@@ -907,7 +907,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     raise NotImplementedError("Unable to shift by variable amounts")
             else:
                 raise NotImplementedError(f"BinaryOp {node.op} not implemented")
-            
+
             # Result is in A, no lvalue
             self._push_expr(result_type, None)
 
@@ -921,7 +921,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         var = self.context.vartable.lookup(node.name)
         if not var:
             raise ValueError(f"Unable to find var {node.name} in variable table")
-        
+
         if var.kind == 'global' or var.storage_class == 'static':
             prefix = self._get_static_prefix()
             self.emit(f"LDI_B {prefix}{var.padded_name()}", f"Set up address (lvalue) for {var.storage_class} {var.typespec.base_type} {var.name}")
@@ -937,7 +937,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 self.emit("LDA_B_AH", f"Load var {var.name} at offset {var.offset}")
                 self.emit("CALL :incr16_b", f"Load var {var.name} at offset {var.offset}")
             self.emit("LDA_B_AL", f"Load var {var.name} at offset {var.offset}")
-        
+
         # Value in A, lvalue info for simple variable (address not in B)
         self._push_expr(var.typespec, LValueInfo(var, 'simple', lvalue_in_b=True))
 
@@ -1021,7 +1021,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self.emit(loop_top_label, "For loop begin")
             with self._debug_block("For loop cond"):
                 self.visit(node.cond)
-                
+
                 # AL will contain 1 for true (continue looping) or 0 for false (end loop)
                 self.emit("ALUOP_FLAGS %A%+%AL%", "Check if loop condition is true (1) or false (0)")
                 self.emit(f"JZ {loop_exit_label}", "Terminate loop if condition is false")
