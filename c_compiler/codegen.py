@@ -815,7 +815,67 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                         self.emit(f"ALUOP_AH %A{asm_op}B%+%AH%+%BH%", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
             elif node.op in ('<', '<=', '>', '>='):
                 if signed_op:
-                    raise NotImplementedError(f"Unable to compute signed comparisions yet. LHS={left_ctx.typespec} signed:{left_ctx.typespec.is_signed()}, RHS={right_ctx.typespec} signed:{right_ctx.typespec.is_signed()}")
+                    # For < and <=, we use A - B; for > and >= we use B - A
+                    result_reg = 'A'
+                    other_reg = 'B'
+                    if node.op in ('>', '>='):
+                        result_reg = 'B'
+                        other_reg = 'A'
+
+                    if op_size == 1:
+                        self.emit(f"ALUOP_{result_reg}L %{result_reg}-{other_reg}%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    else:
+                        self.emit(f"CALL :sub16_{result_reg.lower()}_minus_{other_reg.lower()}", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+
+                    # save the overflow bit in CL
+                    self.emit(f"LDI_CL 0x80", "CL MSB == overflow bit")
+                    self.emit(f"JO .binop_overflow_{self.label_num}")
+                    self.emit(f"LDI_CL 0x00", "Clear overflow bit")
+                    self.emit(f".binop_overflow_{self.label_num}")
+                    self.label_num += 1
+
+                    # save the result on the stack, we may need it again later
+                    self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}L%", "Save result for zero check later")
+                    if op_size > 1:
+                        self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}H%", "Save result for zero check later")
+
+                    # extract the sign bit into CH
+                    if op_size == 1:
+                        self.emit(f"LDI_{other_reg}L 0x80", "Mask for sign bit")
+                        self.emit(f"ALUOP_CH %A&B%+%AL%+%BL%", "Store sign bit in CH")
+                    else:
+                        self.emit(f"LDI_{other_reg}H 0x80", "Mask for sign bit")
+                        self.emit(f"ALUOP_CH %A&B%+%AH%+%BH%", "Store sign bit in CH")
+
+                    # overflow XOR sign bit == 1 -> true
+                    self.emit("MOV_CH_AH", "Copy sign bit into AH")
+                    self.emit("MOV_CL_BH", "Copy overflow bit into BH")
+                    self.emit("ALUOP_FLAGS %AxB%+%AH%+%BH%", "sign XOR overflow")
+
+                    if op_size > 1:
+                        self.emit(f"POP_BH", "Restore result into BH")
+                    self.emit(f"POP_BL", "Restore result into BL")
+
+                    self.emit("LDI_AL 1", "assume true")
+                    self.emit(f"JNZ .binop_true_{self.label_num}", f"A {node.op.strip('=')} B if XOR != 0")
+
+                    # if this was a <= or >= then we still might end up true if the result was zero
+                    if '=' in node.op:
+                        if op_size > 1:
+                            self.emit("ALUOP_FLAGS %B%+%BH%", "Check if high byte is zero")
+                            self.emit(f"JZ .binop_high_zero_{self.label_num}")
+                            self.emit(f"JMP .binop_false_{self.label_num}")
+                            self.emit(f".binop_high_zero_{self.label_num}")
+                        self.emit("ALUOP_FLAGS %B%+%BL%", "Check if low byte is zero")
+                        self.emit(f"JZ .binop_low_zero_{self.label_num}")
+                        self.emit(f"JMP .binop_false_{self.label_num}")
+                        self.emit(f".binop_low_zero_{self.label_num}")
+                        self.emit(f"JMP .binop_true_{self.label_num}")
+                        self.emit(f".binop_false_{self.label_num}")
+
+                    self.emit("LDI_AL 0")
+                    self.emit(f".binop_true_{self.label_num}")
+                    self.label_num += 1
                 else:
                     # For < and <=, we use A - B; for > and >= we use B - A
                     if op_size == 1:
@@ -865,24 +925,24 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                             self.emit(f".binop_true_{self.label_num}")
                             self.label_num += 1
                 result_type = TypeSpec('binop_result', 'bool')
-            elif node.op == '!=':
-                if op_size == 1:
-                    self.emit(f"ALUOP_FLAGS %A-B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                    self.emit(f"LDI_AL 1")
-                    self.emit(f"JZ .binop_true_{self.label_num}")
-                    self.emit(f"LDI_AL 0")
-                    self.emit(f".binop_true_{self.label_num}")
-                    self.label_num += 1
+            elif node.op in ('==', '!='):
+                if node.op == '==':
+                    default_state = 'false'
+                    default_value = '0'
+                    other_value = '1'
                 else:
-                    self.emit(f"CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                    self.emit(f"LDI_AL 0")
-                    self.emit(f"ALUOP_FLAGS %A%+%AH%")
-                    self.emit(f"JNZ .binop_false_{self.label_num}")
-                    self.emit(f"ALUOP_FLAGS %A%+%AL%")
-                    self.emit(f"JNZ .binop_false_{self.label_num}")
-                    self.emit(f"LDI_AL 1")
-                    self.emit(f".binop_false_{self.label_num}")
-                    self.label_num += 1
+                    default_state = 'true'
+                    default_value = '1'
+                    other_value = '0'
+                self.emit(f"LDI_AL {default_value}")
+                self.emit(f"ALUOP_FLAGS %A-B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                self.emit(f"JNZ .binop_{default_state}_{self.label_num}")
+                if op_size > 1:
+                    self.emit(f"ALUOP_FLAGS %A-B%+%AH%+%BH%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                    self.emit(f"JNZ .binop_{default_state}_{self.label_num}")
+                self.emit(f"LDI_AL {other_value}")
+                self.emit(f".binop_{default_state}_{self.label_num}")
+                self.label_num += 1
                 result_type = TypeSpec('binop_result', 'bool')
             elif node.op in ('<<', '>>'):
                 if right_ctx.const_int is not None:
