@@ -925,7 +925,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                         self.emit(f".binop_true_{self.label_num}")
                         self.label_num += 1
                     # for <= and >=, we need to check the overflow AND zero bits
-                    elif '=' in node.op:
+                    elif node.op in ('<=', '>='):
                         if op_size == 1:
                             self.emit(f"LDI_AL 1")
                             self.emit(f"JO .binop_true_{self.label_num}")
@@ -934,7 +934,6 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                             self.emit(f".binop_true_{self.label_num}")
                             self.label_num += 1
                         else:
-                            self.emit(f"LDI_AL 1")
                             self.emit(f"JO .binop_true_{self.label_num}")
                             if node.op == '<=':
                                 self.emit(f"ALUOP_FLAGS %A%+%AH%")
@@ -949,7 +948,10 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                             self.emit(f"JMP .binop_true_{self.label_num}")
                             self.emit(f".binop_false_{self.label_num}")
                             self.emit(f"LDI_AL 0")
+                            self.emit(f"JMP .binop_done_{self.label_num}")
                             self.emit(f".binop_true_{self.label_num}")
+                            self.emit(f"LDI_AL 1")
+                            self.emit(f".binop_done_{self.label_num}")
                             self.label_num += 1
                 result_type = TypeSpec('binop_result', 'bool')
             elif node.op in ('==', '!='):
