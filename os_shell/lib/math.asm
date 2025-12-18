@@ -298,28 +298,6 @@ ALUOP_BH %B>>1%+%BH%                # shift BH
 POP_AL                              # restore AL
 RET                                 # and return
 
-:merge_popcount
-# The ALU popcount instruction returns the population count
-# of each nybble, not the whole byte.  So this function merges
-# the result of a popcount instruction.
-#
-# Input: 1 byte, top of heap
-# Output: 1 byte, top of heap
-ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %B%+%BL%
-CALL :heap_pop_AL                   # Retrieve our operand into AL
-ALUOP_BL %A>>1%+%AL%                # Shift the upper nybble of BL four places
-ALUOP_BL %B>>1%+%BL%                # Shift the upper nybble of BL four places
-ALUOP_BL %B>>1%+%BL%                # Shift the upper nybble of BL four places
-ALUOP_BL %B>>1%+%BL%                # Shift the upper nybble of BL four places
-ALUOP_AL %A+B%+%AL%+%BL%            # Add the lower nybbles together
-LDI_BL 0x0f                         # Mask out the upper nybble in AL
-ALUOP_AL %A&B%+%AL%+%BL%            # AL now contains the combined value
-CALL :heap_push_AL                  # Put final value onto the heap
-POP_BL
-POP_AL
-RET
-
 :double_dabble_byte
 # Performs the double-dabble algorithm to convert a byte (in AL)
 # into a two-byte BCD representation (returned in A, with the lower
