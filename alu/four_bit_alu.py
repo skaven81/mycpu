@@ -43,6 +43,9 @@ class FourBitALU():
         self.output['zero'] = 0b0
         self.output['equal'] = 0b0
 
+        def signed(b):
+            return b if b <= 63 else b - 128
+
         ### Identity
         # 00: zero
         if op == 0x00:
@@ -63,7 +66,7 @@ class FourBitALU():
         if op == 0x04:
             self.output['result']   = self.input['b'] + self.input['cin_lsb']
 
-        ### Arithmetic
+        ### Unsigned Arithmetic
         # 05: A + B + Cin_lsb
         if op == 0x05:
             self.output['result']   = self.input['a'] + self.input['b'] + self.input['cin_lsb']
@@ -111,8 +114,8 @@ class FourBitALU():
                 # set overflow
                 self.output['cout_msb'] = 1
 
-        ### Display operation helpers (cursor + blink bit manipulation)
-        # 0a: A 0x80 bit = Cin_msb (set/clear blink)
+        ### Signed arithmetic helpers
+        # 0a: A 0x80 bit = Cin_msb (set/clear MSB) (this is also used to set/clear blink bit for display)
         if op == 0x0a:
             if self.high:
                 if self.input['cin_lsb'] == 1:
@@ -122,47 +125,89 @@ class FourBitALU():
             else:
                 self.output['result'] = self.input['a']
                 self.output['cout_msb'] = self.input['cin_lsb']
-        # 0b: A 0x80 bit toggle (toggle blink)
+
+        ### Signed arithmetic
+        # 0b: Signed A+B+Cin: overflow if sign changes unexpectedly
         if op == 0x0b:
             if self.high:
-                self.output['result'] = (self.input['a'] ^ 0x8)
-            else:
-                self.output['result'] = self.input['a']
-                self.output['cout_msb'] = self.input['cin_lsb']
-        # 0c: A 0x40 bit = Cin_msb (set/clear cursor)
-        if op == 0x0c:
-            if self.high:
-                if self.input['cin_lsb'] == 1:
-                    self.output['result'] = (self.input['a'] | 0x4)
+                self.output['result'] = (self.input['a'] + self.input['b'] + self.input['cin_lsb']) & 0xf
+                if (self.input['a'] & 0x8) ^ (self.input['b'] & 0x8):
+                    # input signs differ - overflow cannot occur
+                    self.output['cout_msb'] = 0
                 else:
-                    self.output['result'] = (self.input['a'] & ~0x4)
+                    # input signs are the same, must check for overflow, by
+                    # checking if the result sign changed from the inputs
+                    assert (self.input['a'] & 0x8) == (self.input['b'] & 0x8)
+                    result_sign = self.output['result'] & 0x8
+                    input_sign = self.input['a'] & 0x8
+                    # set cout (overflow) if input and result signs differ
+                    self.output['cout_msb'] = 1 if (result_sign ^ input_sign) > 0 else 0
             else:
-                self.output['result'] = self.input['a']
-                self.output['cout_msb'] = self.input['cin_lsb']
-        # 0d: A 0x40 bit toggle (toggle cursor)
-        if op == 0x0d:
+                # low nybble is a normal unsigned addition; cout carries
+                # into high nybble
+                self.output['result'] = self.input['a'] + self.input['b'] + self.input['cin_lsb']
+
+        # 0c: Signed A-B-Cin / B-A-Cin: overflow if sign changes unexpectedly
+        if op == 0x0c or op == 0x0d:
+            if op == 0x0c:
+                lhs = self.input['a']
+                rhs = self.input['b']
+            if op == 0x0d:
+                lhs = self.input['b']
+                rhs = self.input['a']
+            orig_lhs = lhs
+
+            if self.input['cin_lsb'] == 1:
+                # downstream signaled a carry for us, so lhs
+                # needs to be decremented
+                lhs -= 1
+
+            if rhs > lhs:
+                if not self.high:
+                    # flag the upstream ALU that a carry happened
+                    self.output['cout_msb'] = 1
+                # apply the carry
+                lhs += 0x10
+
+            self.output['result'] = lhs - rhs
+
+            # evaluate for signed overflow, if the above didn't already set it
             if self.high:
-                self.output['result'] = (self.input['a'] ^ 0x4)
-            else:
-                self.output['result'] = self.input['a']
-                self.output['cout_msb'] = self.input['cin_lsb']
-        # 0e: A 0xc0 bits = Cin_msb (set/clear blink+cursor)
-        if op == 0x0e:
-            if self.high:
-                if self.input['cin_lsb'] == 1:
-                    self.output['result'] = (self.input['a'] | 0xc)
+                # only set the overflow flag if the sign changed unexpectedly
+                if (orig_lhs & 0x8) ^ (rhs & 0x8) == 0:
+                    # input signs same - overflow cannot occur
+                    assert (orig_lhs & 0x8) == (rhs & 0x8)
+                    self.output['cout_msb'] = 0
                 else:
-                    self.output['result'] = (self.input['a'] & ~0xc)
-            else:
-                self.output['result'] = self.input['a']
-                self.output['cout_msb'] = self.input['cin_lsb']
-        # 0f: A 0xc0 bits toggle (toggle blink+cursor)
-        if op == 0x0f:
+                    # input signs are different, must check for overflow, by
+                    # checking if the result sign differs from LHS sign
+                    result_sign = self.output['result'] & 0x8
+                    input_sign = orig_lhs & 0x8
+                    # set cout (overflow) if input and result signs differ
+                    self.output['cout_msb'] = 1 if (result_sign ^ input_sign) > 0 else 0
+
+        # 0e: Signed invert A/B: overflow if inverting -128
+        if op == 0x0e or op == 0x0f:
+            if op == 0x0e:
+                input='a'
+            elif op == 0x0f:
+                input='b'
+
+            # The only input value that can result in an overflow is -128, 0x80.
+            # so for the low nybble, we set the carry-out bit ONLY if the lower
+            # nibble is 0, that way the upper nibble can know for sure that if
+            # it's 8, and cin is set, then it needs to trigger overflow.
+
             if self.high:
-                self.output['result'] = (self.input['a'] ^ 0xc)
+                self.output['result'] = (~self.input[input] + self.input['cin_lsb']) & 0xf
+                # set overflow bit if cin was set (as that can only happen if low nybble was 0x0)
+                # and the upper nybble ix 0x8
+                if self.input['cin_lsb'] == 1 and self.input[input] == 0x8:
+                    self.output['cout_msb'] = 1
             else:
-                self.output['result'] = self.input['a']
-                self.output['cout_msb'] = self.input['cin_lsb']
+                self.output['result'] = (~self.input[input] + 1) & 0xf
+                if self.input[input] == 0:
+                    self.output['cout_msb'] = 1
 
         ### Logic
         # 10: NOT A
@@ -200,24 +245,19 @@ class FourBitALU():
             self.output['result'] = self.input['b'] & ~self.input['a']
             if self.output['result'] < 0:
                 self.output['result'] = (self.output['result'] + 2**4) & 0xf
-        # 17: popcount(A) (but distributed across nybbles)
+
+        # 17: Amsb Return most significant bit of A input
         if op == 0x17:
-            count = 0
-            mask = 0x1
-            for idx in range(4):
-                if self.input['a'] & mask:
-                    count += 1
-                mask = mask << 1
-            self.output['result'] = count
-        # 18: popcount(B) (but distributed across nybbles)
+            if self.high:
+                self.output['result'] = self.input['a'] & 0x8
+            else:
+                self.output['result'] = self.input['a'] & 0x0
+        # 18: Bmsb Return most significant bit of B input
         if op == 0x18:
-            count = 0
-            mask = 0x1
-            for idx in range(4):
-                if self.input['b'] & mask:
-                    count += 1
-                mask = mask << 1
-            self.output['result'] = count
+            if self.high:
+                self.output['result'] = self.input['b'] & 0x8
+            else:
+                self.output['result'] = self.input['b'] & 0x0
 
         ### Logical shifting
         # 19: A << 1 (new LSB set by cin_lsb)
@@ -236,34 +276,37 @@ class FourBitALU():
             self.output['cout_lsb'] = (self.input['b'] & 0x1)
 
         ### Arithmetic shifting (preserves MSB in high ALU)
-        # 1d: A << 1
+        # 1d: A << 1 + Cin
         if op == 0x1d:
+            shifted = (self.input['a'] << 1) + self.input['cin_lsb']
+            self.output['result'] = shifted & 0xf
             if self.high:
-                a_val = self.input['a'] & 0x7
-                a_sign = self.input['a'] & 0x8
-                shifted = (a_val << 1) + self.input['cin_lsb']
-                self.output['result'] = shifted & 0x7 | a_sign
-                self.output['cout_msb'] = (shifted & 0x8) >> 3
+                # set overflow if shift caused sign to change
+                old_sign_bit = (1 if shifted & 0x10 > 0 else 0)
+                new_sign_bit = (1 if shifted & 0x8 > 0 else 0)
+                self.output['cout_msb'] = old_sign_bit ^ new_sign_bit
             else:
-                shifted = (self.input['a'] << 1) + self.input['cin_lsb']
-                self.output['result'] = shifted & 0xf
-                self.output['cout_msb'] = (shifted & 0x10) >> 4
-        # 1e: A >> 1
+                self.output['cout_msb'] = (1 if (shifted & 0x10) > 0 else 0)
+        # 1e: A >> 1 with sign extension
         if op == 0x1e:
             if self.high:
-                a_val = self.input['a'] & 0x7
-                a_sign = self.input['a'] & 0x8
-                shifted = (a_val >> 1) | (self.input['cin_msb'] << 3)
-                self.output['result'] = shifted & 0x7 | a_sign
-                self.output['cout_lsb'] = a_val & 0x1
+                shifted = self.input['a'] >> 1
+                # extend sign
+                if (shifted & 0x4) > 0:
+                    shifted |= 0x8
+                self.output['result'] = shifted & 0xf
+                self.output['cout_lsb'] = self.input['a'] & 0x1
             else:
-                shifted = (self.input['a'] >> 1) | (self.input['cin_lsb'] << 4)
+                shifted = (self.input['a'] >> 1) | (self.input['cin_msb'] << 3)
                 self.output['result'] = shifted & 0xf
                 self.output['cout_lsb'] = self.input['a'] & 0x1
 
-        # 1f: undefined (zero)
+        # 1f: Amsb xor Bmsb
         if op == 0x1f:
-            self.output['result'] = 0x0
+            if self.high:
+                self.output['result'] = (self.input['a'] & 0x8) ^ (self.input['b'] & 0x8)
+            else:
+                self.output['result'] = 0x0
         
         # Normalize the result to four bits and set cout_msb if overflow
         if self.output['result'] > 0xf:
