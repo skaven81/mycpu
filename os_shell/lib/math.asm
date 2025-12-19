@@ -119,15 +119,27 @@ JMP .div8_done
 #
 # Outputs:
 #  A - the inverted value
-ALUOP_PUSH %B%+%BL%
+#  O flag set if 0x8000 was attempted to be inverted
 ALUOP_PUSH %B%+%BH%
+LDI_BH 0x80
+ALUOP_FLAGS %AxB%+%AH%+%BH%         # is AH 0x80?
+POP_BH
+JNE .signed_invert_a_no_overflow
+ALUOP_FLAGS %A%+%AL%                # is AL 0x00?
+JNZ .signed_invert_a_no_overflow
+# Inversion would overflow since the operand is 0x8000
+ALUOP_AL %~A%+%AL%                  # invert anyway
+ALUOP_AH %~A%+%AH%
+CALL :incr16_a
+ALUOP_PUSH %B%+%BH%
+LDI_BH 0x00
+ALUOP_FLAGS %B-1%+%BH%              # but set the O flag
+POP_BH
+RET
+.signed_invert_a_no_overflow
 ALUOP_AL %~A%+%AL%
 ALUOP_AH %~A%+%AH%
-LDI_BH 0x00
-LDI_BL 0x01
-CALL :add16_to_a
-POP_BH
-POP_BL
+CALL :incr16_a                      # O flag will be clear
 RET
 
 :signed_invert_b
@@ -139,12 +151,27 @@ RET
 #
 # Outputs:
 #  B - the inverted value
-ALUOP_PUSH %A%+%AL%
-ALUOP_AL %~B%+%BL%
+#  O flag set if 0x8000 was attempted to be inverted
+ALUOP_PUSH %A%+%AH%
+LDI_AH 0x80
+ALUOP_FLAGS %AxB%+%AH%+%BH%         # is BH 0x80?
+POP_AH
+JNE .signed_invert_b_no_overflow
+ALUOP_FLAGS %B%+%BL%                # is BL 0x00?
+JNZ .signed_invert_b_no_overflow
+# Inversion would overflow since the operand is 0x8000
+ALUOP_AL %~B%+%BL%                  # invert anyway
 ALUOP_AH %~B%+%BH%
-LDI_AL 0x01
-CALL :add16_to_b
-POP_AL
+CALL :incr16_b
+ALUOP_PUSH %A%+%AH%
+LDI_AH 0x00
+ALUOP_FLAGS %A-1%+%AH%              # but set the O flag
+POP_AH
+RET
+.signed_invert_b_no_overflow
+ALUOP_BL %~B%+%BL%
+ALUOP_BH %~B%+%BH%
+CALL :incr16_b                      # O flag will be clear
 RET
 
 
@@ -191,6 +218,82 @@ JNO .decr16b_done
 ALUOP_BH %B-1%+%BH%
 .decr16b_done
 RET
+
+:signed_add16_to_a
+# Adds 16-bit values A+B, stores result in A,
+# sets overflow flag if a signed overflow occurs
+# Note that E and Z flags cannot be trusted
+#
+# Inputs:
+#  A - first operand, and result
+#  B - second operand
+
+PUSH_CH                             # Save CH
+ALUOP_CH %A%+%AH%                   # Save original AH operand in CH
+CALL :add16_to_a                    # Start with the standard unsigned addition
+
+# Now we need to check for overflow: # O = !(Amsb ^ Bmsb) & (Bmsb ^ Rmsb)
+
+ALUOP_PUSH %A%+%AH%                 # Preserve AH result
+MOV_CH_AH                           # Original AH restored
+ALUOP_FLAGS %Amsb^Bmsb%+%AH%+%BH%   # Check Amsb ^ Bmsb
+POP_AH                              # Restore result into AH
+POP_CH                              # Restore CH
+JZ .signed_add16_to_a_next          # ~(Amsb ^ Bmsb) is true (MSBs are the same, xor == 0) so overflow is possible
+ALUOP_FLAGS %A&B%+%AH%+%BH%         # dummy operation to clear overflow bit if set
+RET                                 # and return
+
+.signed_add16_to_a_next             # Begin step two, calculating Amsb ^ Rmsb
+ALUOP_FLAGS %Amsb^Bmsb%+%AH%+%BH%   # Check Rmsb ^ Bmsb
+JNZ .signed_add16_to_a_overflow     # If true (nonzero), there was an overflow
+ALUOP_FLAGS %A&B%+%AH%+%BH%         # dummy operation to clear overflow bit if set
+RET                                 # and return
+
+.signed_add16_to_a_overflow         # both ~(Amsb ^ Bmsb) and (Rmsb ^ Bmsb) were true
+ALUOP_PUSH %A%+%AL%
+LDI_AL 0xff
+ALUOP_FLAGS %A+1%+%AL%              # Dummy operation to Set overflow bit
+POP_AL
+RET                                 # and return
+
+:signed_sub16_a_minus_b
+# Subtracts signed 16-bit values A-B, stores result in A
+#
+# Inputs:
+#  A - first operand
+#  B - second operand
+#
+# Outputs:
+#  A - result
+#  B - unchanged
+#  O flag will be set if overflow occurred (contents of A will be invalid)
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+CALL :signed_invert_b
+JO .signed_sub16_A_minus_B_end      # abort with O flag set if overflowed on inversion
+CALL :signed_add16_to_a             # will set O flag if overflow occurs
+.signed_sub16_A_minus_B_end
+POP_BL
+POP_BH
+RET
+
+:signed_sub16_b_minus_a
+# Subtracts signed 16-bit values B-A, stores result in A
+#
+# Inputs:
+#  A - second operand
+#  B - first operand
+#
+# Outputs:
+#  A - result
+#  B - unchanged
+#  O flag will be set if overflow occurred (contents of A will be invalid)
+CALL :signed_invert_a
+JO .signed_sub16_B_minus_A_end      # abort with O flag set if overflowed on inversion
+CALL :signed_add16_to_a             # will set O flag if overflow occurs
+.signed_sub16_B_minus_A_end
+RET
+
 
 :add16_to_a
 # Adds 16-bit values A+B, stores result in A
