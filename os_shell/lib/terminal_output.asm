@@ -392,14 +392,20 @@ JMP .print_loop_color
 .print_set_cursor
 INCR_C                          # move to next char
 LD_AL $term_current_color       # Get current color byte
-ALUOP_ADDR %A_setcursor% $term_current_color
+ALUOP_PUSH %B%+%BL%
+LDI_BL %cursor%
+ALUOP_ADDR %A|B%+%AL%+%BL% $term_current_color
+POP_BL
 JMP .print_loop_color
 
 # @c Handle clear cursor
 .print_clear_cursor
 INCR_C                          # move to next char
 LD_AL $term_current_color       # Get current color byte
-ALUOP_ADDR %A_clrcursor% $term_current_color
+ALUOP_PUSH %B%+%BL%
+LDI_BL %cursor%
+ALUOP_ADDR %A&~B%+%AL%+%BL% $term_current_color
+POP_BL
 JMP .print_loop_color
 
 # @B Handle set blink

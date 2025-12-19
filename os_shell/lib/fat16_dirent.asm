@@ -222,7 +222,10 @@ ALUOP_BH %B>>1%+%BH%
 ALUOP_BH %B>>1%+%BH%
 ALUOP_BH %B>>1%+%BH%            # shift min/sec byte right 5 positions
 ALUOP_AL %A+B%+%AH%+%BH%        # combine high and low bits into AL
-ALUOP_AL %A_clrbltoptwo%+%AL%   # clear the top two bits
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0xc0                     # mask for top two bits
+ALUOP_AL %A&~B%+%AL%+%BL%       # clear the top two bits
+POP_BL
 CALL :double_dabble_byte        # AL converted to BCD across AH+AL
 CALL :heap_push_AL              # push minutes (tens and units) onto heap
 

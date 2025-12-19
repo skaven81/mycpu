@@ -441,10 +441,16 @@ LDA_D_AH                    # Load the color data at the cursor into AH
 LD_AL $crsr_on              # Load the cursor flag into AL
 ALUOP_FLAGS %A%+%AL%        # Check if AL is 0 or non-zero
 JZ .cs_off
-ALUOP_ADDR_D %AH%+%A_setcursor% # set the cursor bit in AH and store it back at $crsr_addr_color
+ALUOP_PUSH %B%+%BL%
+LDI_BL %cursor%
+ALUOP_ADDR_D %A|B%+%AH%+%BL% # set the cursor bit in AH and store it back at $crsr_addr_color
+POP_BL
 JMP .cs_done
 .cs_off
-ALUOP_ADDR_D %AH%+%A_clrcursor% # clear the cursor bit in AH and store it back at $crsr_addr_color
+ALUOP_PUSH %B%+%BL%
+LDI_BL %cursor%
+ALUOP_ADDR_D %A&~B%+%AH%+%BL% # clear the cursor bit in AH and store it back at $crsr_addr_color
+POP_BL
 .cs_done
 POP_AH
 POP_AL
@@ -632,7 +638,10 @@ ALUOP_PUSH %A%+%AH%
 LD_DH $crsr_addr_color
 LD_DL $crsr_addr_color+1            # D reg has the current cursor address in color space
 LDA_D_AH                            # Load RAM@D into AH - current color flags for cursor
-ALUOP_ADDR_D %AH%+%A_clrcursor%     # Clear the cursor bit from that byte and store it back
+ALUOP_PUSH %B%+%BL%
+LDI_BL %cursor%
+ALUOP_ADDR_D %A&~B%+%AH%+%BL%       # Clear the cursor bit from that byte and store it back
+POP_BL
 
 # Get AH back from the stack
 PEEK_AH
@@ -688,7 +697,10 @@ ALUOP_PUSH %A%+%AH%
 LD_DH $crsr_addr_color
 LD_DL $crsr_addr_color+1            # D reg has the current cursor address in color space
 LDA_D_AH                            # Load RAM@D into AH - current color flags for cursor
-ALUOP_ADDR_D %AH%+%A_clrcursor%     # Clear the cursor bit from that byte and store it back
+ALUOP_PUSH %B%+%BL%
+LDI_BL %cursor%
+ALUOP_ADDR_D %A&~B%+%AH%+%BL%       # Clear the cursor bit from that byte and store it back
+POP_BL
 
 # Get our row argument back off the stack
 PEEK_AH
