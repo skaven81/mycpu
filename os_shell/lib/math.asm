@@ -139,7 +139,8 @@ RET
 .signed_invert_a_no_overflow
 ALUOP_AL %~A%+%AL%
 ALUOP_AH %~A%+%AH%
-CALL :incr16_a                      # O flag will be clear
+CALL :incr16_a
+ALUOP_FLAGS %A%+%AL%                # clear O flag
 RET
 
 :signed_invert_b
@@ -171,7 +172,8 @@ RET
 .signed_invert_b_no_overflow
 ALUOP_BL %~B%+%BL%
 ALUOP_BH %~B%+%BH%
-CALL :incr16_b                      # O flag will be clear
+CALL :incr16_b
+ALUOP_FLAGS %B%+%BL%                # clear O flag
 RET
 
 
