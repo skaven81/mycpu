@@ -53,12 +53,12 @@ class TypeCollector(c_ast.NodeVisitor, TypeSpecBuilder):
     After instantiation, call visit(ast) to perform collection
     """
     
-    def __init__(self, registry: TypeRegistry):
-        self.registry = registry
+    def __init__(self, type_registry: TypeRegistry):
+        self.type_registry = type_registry
     
     def visit_Typedef(self, node: c_ast.Typedef) -> None:
         """Visit a typedef node and create a TypeSpec."""
         typespec = self._build_typespec(node.name, node.type)
-        self.registry.register(node.name, typespec)
+        self.type_registry.register(node.name, typespec)
     
 
