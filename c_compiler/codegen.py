@@ -362,7 +362,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self.context.vartable.add_local(var)
             return
 
-    def _initialize_var(self, node, var):
+        raise ValueError(f"Should not have ended up here with node {node}")
+
+    def _initialize_var(self, node, var, member_name=None):
         """
         Initialize a variable with a value from an expression.
         
@@ -491,6 +493,8 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
 
     def visit_StructRef(self, node):
         var = self.context.vartable.lookup(node.name.name)
+        if not var:
+            raise ValueError(f"No variable found associated with {node}")
         member_name = node.field.name
         if node.type == '.':
             with self._debug_block(f"Load {var.name}.{member_name}"):
