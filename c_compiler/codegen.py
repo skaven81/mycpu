@@ -852,15 +852,17 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     # For < and <=, we use A - B; for > and >= we use B - A
                     lhs = 'A'
                     rhs = 'B'
+                    result_reg = 'A'
                     if node.op in ('>', '>='):
                         lhs = 'B'
                         rhs = 'A'
+                        result_reg = 'B'
                     sign_reg = 'H'
 
                     # For signed comparisons we do full 16-bit operations since we don't have
                     # an 8-bit signed-overflow-detecting subtraction function in math.asm
                     if op_size == 1:
-                        self.emit(f"ALUOP_AL %{lhs}-{rhs}_signed%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
+                        self.emit(f"ALUOP_{result_reg}L %{lhs}-{rhs}_signed%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
                         sign_reg = 'L'
                     elif op_size == 2:
                         self.emit(f"CALL :signed_sub16_{lhs.lower()}_minus_{rhs.lower()}", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()}) (result in A)")
@@ -872,9 +874,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     # No-signed-overflow case
                     # Check the sign bit - if set, return true, if clear, return false
                     if op_size == 2:
-                        self.emit(f"ALUOP_PUSH %A%+%AH%", "Save result for later")
-                    self.emit(f"ALUOP_PUSH %A%+%AL%", "Save result for later")
-                    self.emit(f"ALUOP_FLAGS %Amsb%+%A{sign_reg}%", "check sign bit of result")
+                        self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}H%", "Save result for later")
+                    self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}L%", "Save result for later")
+                    self.emit(f"ALUOP_FLAGS %{result_reg}msb%+%{result_reg}{sign_reg}%", "check sign bit of result")
                     self.emit(f"LDI_AL 1", "No signed overflow, sign bit set = true")
                     self.emit(f"JNZ .binop_gtlt_no_overflow_signbit_set_{self.label_num}")
                     self.emit(f"LDI_AL 0", "No signed overflow, sign bit clear = false")
@@ -885,9 +887,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     # Check the sign bit - if set, return false, if clear, return true
                     self.emit(f".binop_gtlt_overflow_{self.label_num}")
                     if op_size == 2:
-                        self.emit(f"ALUOP_PUSH %A%+%AH%", "Save result for later")
-                    self.emit(f"ALUOP_PUSH %A%+%AL%", "Save result for later")
-                    self.emit(f"ALUOP_FLAGS %Amsb%+%A{sign_reg}%", "check sign bit of result")
+                        self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}H%", "Save result for later")
+                    self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}L%", "Save result for later")
+                    self.emit(f"ALUOP_FLAGS %{result_reg}msb%+%{result_reg}{sign_reg}%", "check sign bit of result")
                     self.emit(f"LDI_AL 0", "Signed overflow, sign bit set = false")
                     self.emit(f"JNZ .binop_gtlt_overflow_signbit_set_{self.label_num}")
                     self.emit(f"LDI_AL 1", "Signed overflow, sign bit clear = true")

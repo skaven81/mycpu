@@ -229,34 +229,13 @@ RET
 # Inputs:
 #  A - first operand, and result
 #  B - second operand
-
-PUSH_CH                             # Save CH
-ALUOP_CH %A%+%AH%                   # Save original AH operand in CH
-CALL :add16_to_a                    # Start with the standard unsigned addition
-
-# Now we need to check for overflow: # O = !(Amsb ^ Bmsb) & (Bmsb ^ Rmsb)
-
-ALUOP_PUSH %A%+%AH%                 # Preserve AH result
-MOV_CH_AH                           # Original AH restored
-ALUOP_FLAGS %Amsb^Bmsb%+%AH%+%BH%   # Check Amsb ^ Bmsb
-POP_AH                              # Restore result into AH
-POP_CH                              # Restore CH
-JZ .signed_add16_to_a_next          # ~(Amsb ^ Bmsb) is true (MSBs are the same, xor == 0) so overflow is possible
-ALUOP_FLAGS %A&B%+%AH%+%BH%         # dummy operation to clear overflow bit if set
-RET                                 # and return
-
-.signed_add16_to_a_next             # Begin step two, calculating Amsb ^ Rmsb
-ALUOP_FLAGS %Amsb^Bmsb%+%AH%+%BH%   # Check Rmsb ^ Bmsb
-JNZ .signed_add16_to_a_overflow     # If true (nonzero), there was an overflow
-ALUOP_FLAGS %A&B%+%AH%+%BH%         # dummy operation to clear overflow bit if set
-RET                                 # and return
-
-.signed_add16_to_a_overflow         # both ~(Amsb ^ Bmsb) and (Rmsb ^ Bmsb) were true
-ALUOP_PUSH %A%+%AL%
-LDI_AL 0xff
-ALUOP_FLAGS %A+1%+%AL%              # Dummy operation to Set overflow bit
-POP_AL
-RET                                 # and return
+ALUOP_AL %A+B%+%AL%+%BL%
+JO .signed_add16_to_a_overflow
+ALUOP_AH %A+B_signed%+%AH%+%BH%
+RET
+.signed_add16_to_a_overflow
+ALUOP_AH %A+B+1_signed%+%AH%+%BH%
+RET
 
 :signed_sub16_a_minus_b
 # Subtracts signed 16-bit values A-B, stores result in A
@@ -269,18 +248,16 @@ RET                                 # and return
 #  A - result
 #  B - unchanged
 #  O flag will be set if overflow occurred (contents of A will be invalid)
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %B%+%BL%
-CALL :signed_invert_b
-JO .signed_sub16_A_minus_B_end      # abort with O flag set if overflowed on inversion
-CALL :signed_add16_to_a             # will set O flag if overflow occurs
-.signed_sub16_A_minus_B_end
-POP_BL
-POP_BH
+ALUOP_AL %A-B%+%AL%+%BL%
+JO .signed_sub16_a_minus_b_borrow
+ALUOP_AH %A-B_signed%+%AH%+%BH%
+RET
+.signed_sub16_a_minus_b_borrow
+ALUOP_AH %A-B-1_signed%+%AH%+%BH%
 RET
 
 :signed_sub16_b_minus_a
-# Subtracts signed 16-bit values B-A, stores result in A
+# Subtracts signed 16-bit values B-A, stores result in B
 #
 # Inputs:
 #  A - second operand
@@ -290,12 +267,13 @@ RET
 #  A - result
 #  B - unchanged
 #  O flag will be set if overflow occurred (contents of A will be invalid)
-CALL :signed_invert_a
-JO .signed_sub16_B_minus_A_end      # abort with O flag set if overflowed on inversion
-CALL :signed_add16_to_a             # will set O flag if overflow occurs
-.signed_sub16_B_minus_A_end
+ALUOP_BL %B-A%+%AL%+%BL%
+JO .signed_sub16_b_minus_a_borrow
+ALUOP_BH %B-A_signed%+%AH%+%BH%
 RET
-
+.signed_sub16_b_minus_a_borrow
+ALUOP_BH %B-A-1_signed%+%AH%+%BH%
+RET
 
 :add16_to_a
 # Adds 16-bit values A+B, stores result in A
