@@ -120,6 +120,21 @@ class TypeSpec:
             ).sizeof()
         return 2
 
+    def field_offset(self, field_name) -> (int, 'TypeSpec',):
+        if not self.is_struct:
+            return (0, self,)
+        if not self.struct_members:
+            # Empty or opaque struct
+            return (0, self,)
+
+        offset = 0
+        for member in self.struct_members:
+            if member.name == field_name:
+                return (offset, member,)
+            offset += member.sizeof()
+
+        raise ValueError(f"Field {field_name} not found in struct type {self.name}")
+
     def c_str(self) -> str:
         return f"{self.base_type} {'*'*self.pointer_depth}{self.name}"
 

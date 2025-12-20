@@ -16,9 +16,10 @@ from typing import Optional
 class LValueInfo:
     """Information needed to read from or write to a location"""
     var: Variable
-    kind: str  # 'simple', 'array', 'pointer_deref'
+    kind: str  # 'simple', 'struct_member', 'array', 'pointer_deref'
     lvalue_in_b: bool = False  # If True, B register contains the lvalue address
     # For 'array': lvalue_in_b=True, address is in B register
+    # For 'struct_member': lvalue_in_b=True, address is in B register
     # For 'simple': lvalue_in_b=False, use var.offset or var.name directly
 
 @dataclass
@@ -377,7 +378,44 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                               (f" at offset {var.offset}" if var.kind not in ('global',) and var.storage_class != 'static' else "")):
             self.visit(node)  # A/AL now contains the value we need to store in the variable
             expr_ctx = self._pop_expr()
-            self._store_a_to_var(var)
+            if var.kind == 'global' or var.storage_class == 'static':
+                prefix = self._get_static_prefix()
+                if var.typespec.is_struct:
+                    if not member_name:
+                        raise ValueError(f"Must provide a member_name when storing to a struct")
+                    member_offset, member_type = var.typespec.field_offset(member_name)
+                    if member_type.sizeof() == 1:
+                        self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+{member_offset}", f"Store to {var.name}.{member_name} at offset {member_offset}")
+                    elif member_type.sizeof() == 2:
+                        self.emit(f"ALUOP_ADDR %A%+%AH% {prefix}{var.padded_name()}+{member_offset}", f"Store to {var.name}.{member_name} at offset {member_offset}")
+                        self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+{member_offset+1}", f"Store to {var.name}.{member_name} at offset {member_offset}")
+                elif var.typespec.sizeof() == 1:
+                    self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}", f"Store to {var.name}")
+                elif var.typespec.sizeof() == 2:
+                    self.emit(f"ALUOP_ADDR %A%+%AH% {prefix}{var.padded_name()}", f"Store to {var.name}")
+                    self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+1", f"Store to {var.name}")
+            else:
+                # Local/param: need to compute address
+                self.emit("ALUOP_CH %A%+%AH%", "Store: preserve value in C")
+                self.emit("ALUOP_CL %A%+%AL%")
+                if var.typespec.is_struct:
+                    if not member_name:
+                        raise ValueError(f"Must provide a member_name when storing to a struct")
+                    member_offset, member_type = var.typespec.field_offset(member_name)
+                    self._compute_local_address_to_a(var, member_name=member_name)
+                    ts = member_type
+                else:
+                    self._compute_local_address_to_a(var)
+                    ts = var.typespec
+
+                if ts.sizeof() == 1:
+                    self.emit("STA_A_CL", f"Store to {var.name}{'.'+member_name if member_name else ''}")
+                elif ts.sizeof() == 2:
+                    self.emit("STA_A_CH", f"Store to {var.name}{'.'+member_name if member_name else ''}")
+                    self.emit("CALL :incr16_a")
+                    self.emit("STA_A_CL", f"Store to {var.name}{'.'+member_name if member_name else ''}")
+                else:
+                    raise NotImplementedError("Cannot store types > 2 bytes")
 
     def visit_ArrayRef(self, node):
         """
@@ -437,11 +475,12 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 # Now add A (index offset) and B (base address) to get the final address in B
                 self.emit("CALL :add16_to_b", f"B contains indexed address into {var.name}")
 
-                # Load the value into A/AL
+                # Load the value into A/AL, preserving address in B
                 if var.typespec.sizeof_element() == 2:
                     self.emit("LDA_B_AH", f"Load {var.name}[index] into A")
                     self.emit("CALL :incr16_b")
                     self.emit("LDA_B_AL", f"Load {var.name}[index] into A")
+                    self.emit("CALL :decr16_b")
                 elif var.typespec.sizeof_element() == 1:
                     self.emit("LDA_B_AL", f"Load {var.name}[index] into AL")
                 else:
@@ -451,8 +490,32 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self._push_expr(TypeSpec('arr_element', var.typespec.base_type), LValueInfo(var, 'array', lvalue_in_b=True), _registry=self.type_registry)
 
     def visit_StructRef(self, node):
-        # TODO: be sure to self._push_expr member typespec
-        self.generic_visit(node)
+        var = self.context.vartable.lookup(node.name.name)
+        member_name = node.field.name
+        if node.type == '.':
+            with self._debug_block(f"Load {var.name}.{member_name}"):
+                offset, ts = var.typespec.field_offset(member_name)
+                if var.kind == 'global' or var.storage_class == 'static':
+                    prefix = self._get_static_prefix()
+                    self.emit(f"LDI_B {prefix}{var.padded_name()}+{offset}", f"Set up address (lvalue) for {var.storage_class} {ts.base_type} {var.name}.{member_name}")
+                    if var.typespec.sizeof() == 2:
+                        self.emit(f"LD16_A {prefix}{var.padded_name()}+{offset}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}.{member_name}")
+                    elif var.typespec.sizeof() == 1:
+                        self.emit(f"LD_AL {prefix}{var.padded_name()}+{offset}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}.{member_name}")
+                    else:
+                        raise ValueError(f"Unable to load var {var.name}.{member_name} as it's not 1 or 2 bytes")
+                else:
+                    self._compute_local_address_to_b(var, member_name=member_name)
+                    if ts.sizeof() == 2:
+                        self.emit("LDA_B_AH", f"Load var {var.name}.{member_name} at offset {var.offset}+{offset}")
+                        self.emit("CALL :incr16_b", f"Load var {var.name}.{member_name} at offset {var.offset}+{offset}")
+                        self.emit("LDA_B_AL", f"Load var {var.name}.{member_name} at offset {var.offset}+{offset}")
+                        self.emit("CALL :decr16_b")
+                    else:
+                        self.emit("LDA_B_AL", f"Load var {var.name}.{member_name} at offset {var.offset}+{offset}")
+                self._push_expr(ts, LValueInfo(var, 'struct_member', lvalue_in_b=True))
+        else:
+            raise NotImplementedError(f"StructRef with op='{node.type}' not yet supported")
 
     def visit_Cast(self, node):
         """
@@ -475,14 +538,34 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self.emit(f"# Above value in A is cast from {from_context.typespec.name}/{from_context.typespec.base_type} to {to_typespec.name}/{to_typespec.base_type}")
 
     def visit_Assignment(self, node):
-        with self._debug_block(f"Assignment {node.op} to {node.lvalue.name}"):
+        with self._debug_block(f"Assignment {node.op} to {node.lvalue.name.name if type(node.lvalue) is c_ast.StructRef else node.lvalue.name}"):
             # generate rvalue, result will be in A/AL
             with self._debug_block(f"Generate rvalue for assignment"):
                 self.visit(node.rvalue)
             rvalue_context = self._pop_expr()
-            var = self.context.vartable.lookup(node.lvalue.name)
-            with self._debug_block(f"Assign to {var.name} at offset {var.offset}"):
-                self._store_a_to_var(var)
+            if rvalue_context.typespec.sizeof() == 2:
+                self.emit("ALUOP_CH %A%+%AH%", "Preserve assignment rvalue")
+            self.emit("ALUOP_CL %A%+%AL%", "Preserve assignment rvalue")
+
+            # generate lvalue, current value in A/AL, address (if available) in B
+            with self._debug_block(f"Generate lvalue for assignment"):
+                self.visit(node.lvalue)
+            lvalue_context = self._pop_expr()
+
+            # Simple assignment
+            if node.op == '=':
+                if lvalue_context.lvalue_info:
+                    if lvalue_context.lvalue_info.lvalue_in_b:
+                        if lvalue_context.typespec.sizeof() == 2:
+                            self.emit("STA_B_CH", f"Store rvalue at lvalue address")
+                            self.emit("CALL :incr16_b", f"Store rvalue at lvalue address")
+                        self.emit("STA_B_CL", f"Store rvalue at lvalue address")
+                    else:
+                        raise ValueError(f"Can't assign to something with no address")
+                else:
+                    raise ValueError(f"Can't assign without lvalue_info")
+            else:
+                raise NotImplementedError(f"Assignment op '{node.op}' not yet supported")
 
     def visit_Constant(self, node):
         """
@@ -608,16 +691,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             if lvalue.lvalue_in_b:
                 # Address is already in B, move to A
                 self.emit("ALUOP_AH %B%+%BH%", "Address-of: copy address from B to A")
-                self.emit("ALUOP_AL %B%+%BL%")
+                self.emit("ALUOP_AL %B%+%BL%", "Address-of: copy address from B to A")
             else:
-                # Compute address for simple variables
-                var = lvalue.var
-                if var.kind == 'global' or var.storage_class == 'static':
-                    prefix = self._get_static_prefix()
-                    self.emit(f"LDI_A {prefix}{var.padded_name()}", f"Address-of {var.name}")
-                else:
-                    # Local/param: frame pointer + offset
-                    self._compute_local_address_to_a(var)
+                raise ValueError(f"lvalue not in B for {lvalue.var.name}")
             
             # Result is a pointer to the original type
             result_typespec = TypeSpec(
@@ -658,6 +734,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 self.emit("LDA_B_AH", "Pointer deref: load high byte")
                 self.emit("CALL :incr16_b")
                 self.emit("LDA_B_AL", "Pointer deref: load low byte")
+                self.emit("CALL :decr16_b")
             else:
                 raise NotImplementedError("Cannot deref pointers to types > 2 bytes")
             
@@ -671,12 +748,9 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             expr_ctx = self._pop_expr()
             
             if expr_ctx.typespec.sizeof() == 1:
-                self.emit("ALUOP_AL %~A%+%AL%", "Unary negation")
-                self.emit("ALUOP_AL %A+1%+%AL%", "Unary negation")
+                self.emit("ALUOP_AL %-A_signed%+%AL%", "Unary negation")
             else:
-                self.emit("ALUOP_AL %~A%+%AL%", "Unary negation")
-                self.emit("ALUOP_AH %~A%+%AH%", "Unary negation")
-                self.emit("CALL :incr16_a", "Unary negation")
+                self.emit("CALL :signed_invert_a", "Unary negation")
             
             self._push_expr(expr_ctx.typespec, None)  # Result has no lvalue
             
@@ -1042,7 +1116,10 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             if var.typespec.sizeof() == 2:
                 self.emit("LDA_B_AH", f"Load var {var.name} at offset {var.offset}")
                 self.emit("CALL :incr16_b", f"Load var {var.name} at offset {var.offset}")
-            self.emit("LDA_B_AL", f"Load var {var.name} at offset {var.offset}")
+                self.emit("LDA_B_AL", f"Load var {var.name} at offset {var.offset}")
+                self.emit("CALL :decr16_b")
+            else:
+                self.emit("LDA_B_AL", f"Load var {var.name} at offset {var.offset}")
 
         # Value in A, lvalue info for simple variable (address not in B)
         self._push_expr(var.typespec, LValueInfo(var, 'simple', lvalue_in_b=True))
@@ -1220,84 +1297,43 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         """Get the assembly prefix for static/global variables"""
         return '$' if self.context.static_type == 'asm_var' else '.'
 
-    def _compute_local_address_to_b(self, var: Variable, comment: str = ""):
+    def _compute_local_address_to_b(self, var: Variable, member_name: str=None, comment: str = ""):
         """
         Compute address of local/param variable into B register.
         Frame pointer (D) + var.offset -> B
         Clobbers A register temporarily.
         """
         if not comment:
-            comment = f"Compute address of {var.name} at offset {var.offset} into B"
-        self.emit("MOV_DH_AH", comment)
-        self.emit("MOV_DL_AL", comment)
-        self.emit(f"LDI_B {var.offset}", comment)
+            if member_name:
+                comment = f"Compute address of {var.name}.{member_name} at base frame offset {var.offset} into A"
+            else:
+                comment = f"Compute address of {var.name} at frame offset {var.offset} into A"
+        self.emit("MOV_DH_BH", comment)
+        self.emit("MOV_DL_BL", comment)
+        if member_name:
+            self.emit(f"LDI_A {var.offset}+{var.typespec.field_offset(member_name)[0]}", comment)
+        else:
+            self.emit(f"LDI_A {var.offset}", comment)
         self.emit("CALL :add16_to_b", comment)
 
-    def _compute_local_address_to_a(self, var: Variable, comment: str = ""):
+    def _compute_local_address_to_a(self, var: Variable, member_name: str=None, comment: str = ""):
         """
         Compute address of local/param variable into A register.
         Frame pointer (D) + var.offset -> A
         Clobbers B register temporarily.
         """
         if not comment:
-            comment = f"Compute address of {var.name} at offset {var.offset} into A"
+            if member_name:
+                comment = f"Compute address of {var.name}.{member_name} at base frame offset {var.offset} into A"
+            else:
+                comment = f"Compute address of {var.name} at frame offset {var.offset} into A"
         self.emit("MOV_DH_AH", comment)
         self.emit("MOV_DL_AL", comment)
-        self.emit(f"LDI_B {var.offset}", comment)
+        if member_name:
+            self.emit(f"LDI_B {var.offset}+{var.typespec.field_offset(member_name)[0]}", comment)
+        else:
+            self.emit(f"LDI_B {var.offset}", comment)
         self.emit("CALL :add16_to_a", comment)
-
-    def _load_var_value_to_a(self, var: Variable):
-        """
-        Load variable value into A/AL register.
-        
-        REGISTER STATE:
-        - Entry: (none)
-        - Exit: A/AL = variable value
-        """
-        if var.kind == 'global' or var.storage_class == 'static':
-            prefix = self._get_static_prefix()
-            if var.typespec.sizeof() == 2:
-                self.emit(f"LD16_A {prefix}{var.padded_name()}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}")
-            elif var.typespec.sizeof() == 1:
-                self.emit(f"LD_AL {prefix}{var.padded_name()}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}")
-            else:
-                raise ValueError(f"Unable to load var {var.name} as it's not 1 or 2 bytes")
-        else:
-            # Local/param variable: compute address and load
-            self._compute_local_address_to_b(var)
-            if var.typespec.sizeof() == 2:
-                self.emit("LDA_B_AH", f"Load var {var.name} at offset {var.offset}")
-                self.emit("CALL :incr16_b", f"Load var {var.name} at offset {var.offset}")
-            self.emit("LDA_B_AL", f"Load var {var.name} at offset {var.offset}")
-
-    def _store_a_to_var(self, var: Variable):
-        """
-        Store value in A/AL to variable (global, static, or local).
-        
-        REGISTER STATE:
-        - Entry: A/AL = value to store
-        - Exit: A/AL preserved, C register used as scratch
-        """
-        if var.kind == 'global' or var.storage_class == 'static':
-            prefix = self._get_static_prefix()
-            if var.typespec.sizeof() == 1:
-                self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}", f"Store to {var.name}")
-            elif var.typespec.sizeof() == 2:
-                self.emit(f"ALUOP_ADDR %A%+%AH% {prefix}{var.padded_name()}", f"Store to {var.name}")
-                self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+1", f"Store to {var.name}")
-        else:
-            # Local/param: need to compute address
-            self.emit("ALUOP_CH %A%+%AH%", "Store: value to C")
-            self.emit("ALUOP_CL %A%+%AL%")
-            self._compute_local_address_to_a(var)
-            if var.typespec.sizeof() == 1:
-                self.emit("STA_A_CL", f"Store to {var.name}")
-            elif var.typespec.sizeof() == 2:
-                self.emit("STA_A_CH", f"Store to {var.name}")
-                self.emit("CALL :incr16_a")
-                self.emit("STA_A_CL", f"Store to {var.name}")
-            else:
-                raise NotImplementedError("Cannot store types > 2 bytes")
 
     def generate_FuncCall_printf(self, node: c_ast.FuncCall, func: Function):
         """
