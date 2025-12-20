@@ -397,7 +397,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 self.visit(node.subscript)
                 subscript_ctx = self._pop_expr()
                 if subscript_ctx.typespec.sizeof() == 1:
-                    self.emit_sign_extend("A", TypeSpec('int', 'int'))
+                    self.emit_sign_extend("A", TypeSpec('int', 'int', _registry=self.type_registry))
             
             # var is the pointer variable, not the datatype being pointed to.
             assert isinstance(node.name, c_ast.ID)
@@ -448,7 +448,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                     raise NotImplementedError("Can't load datatypes > 2 bytes yet")
             
             # Push result: value in A/AL, address still in B
-            self._push_expr(TypeSpec('arr_element', var.typespec.base_type), LValueInfo(var, 'array', lvalue_in_b=True))
+            self._push_expr(TypeSpec('arr_element', var.typespec.base_type), LValueInfo(var, 'array', lvalue_in_b=True), _registry=self.type_registry)
 
     def visit_StructRef(self, node):
         # TODO: be sure to self._push_expr member typespec
@@ -495,11 +495,11 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
         STACK EFFECT: Pushes 1 ExprContext (constant, no lvalue)
         """
         if node.type == 'int':
-            typespec = TypeSpec('int', 'int')
+            typespec = TypeSpec('int', 'int', _registry=self.type_registry)
         elif node.type == 'char':
-            typespec = TypeSpec('char', 'char')
+            typespec = TypeSpec('char', 'char', _registry=self.type_registry)
         elif node.type == 'string':
-            typespec = TypeSpec('string', 'char', is_pointer=True, pointer_depth=1)
+            typespec = TypeSpec('string', 'char', is_pointer=True, pointer_depth=1, _registry=self.type_registry)
         else:
             raise NotImplementedError(f"I don't know how to represent a {node.type} constant")
         
@@ -624,7 +624,8 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 expr_ctx.typespec.name + '*',
                 expr_ctx.typespec.base_type,
                 is_pointer=True,
-                pointer_depth=expr_ctx.typespec.pointer_depth + 1
+                pointer_depth=expr_ctx.typespec.pointer_depth + 1,
+                _registry=self.type_registry,
             )
             self._push_expr(result_typespec, None)  # Addresses themselves don't have lvalues
             
@@ -646,7 +647,8 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 expr_ctx.typespec.base_type,
                 expr_ctx.typespec.base_type,
                 is_pointer = False if expr_ctx.typespec.pointer_depth == 1 else True,
-                pointer_depth=expr_ctx.typespec.pointer_depth - 1
+                pointer_depth=expr_ctx.typespec.pointer_depth - 1,
+                _registry=self.type_registry,
             )
             
             # Load value from address in B
@@ -704,7 +706,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self.emit(f".logical_not_false_{self.label_num}")
             self.label_num += 1
             
-            result_type = TypeSpec('bool', 'bool')
+            result_type = TypeSpec('bool', 'bool', _registry=self.type_registry)
             self._push_expr(result_type, None)  # Result has no lvalue
         else:
             raise NotImplementedError(f"UnaryOp {node.op} not implemented")
@@ -966,7 +968,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                             self.emit(f"LDI_AL 1")
                             self.emit(f".binop_done_{self.label_num}")
                             self.label_num += 1
-                result_type = TypeSpec('binop_result', 'bool')
+                result_type = TypeSpec('binop_result', 'bool', _registry=self.type_registry)
             elif node.op in ('==', '!='):
                 if node.op == '==':
                     default_state = 'false'
@@ -985,7 +987,7 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
                 self.emit(f"LDI_AL {other_value}")
                 self.emit(f".binop_{default_state}_{self.label_num}")
                 self.label_num += 1
-                result_type = TypeSpec('binop_result', 'bool')
+                result_type = TypeSpec('binop_result', 'bool', _registry=self.type_registry)
             elif node.op in ('<<', '>>'):
                 if right_ctx.const_int is not None:
                     for _ in range(right_ctx.const_int):
