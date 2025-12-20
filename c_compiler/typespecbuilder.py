@@ -13,8 +13,7 @@ class TypeSpecBuilder:
             qualifiers = []
         
         # Get the type registry from the implementing class
-        type_registry = getattr(self, 'type_registry', None)
-        spec = TypeSpec(name=name, qualifiers=qualifiers, _registry=type_registry)
+        spec = TypeSpec(name=name, qualifiers=qualifiers, _registry=self.type_registry)
         
         # Handle different type node types
         if isinstance(type_node, c_ast.TypeDecl):
@@ -29,8 +28,8 @@ class TypeSpecBuilder:
             spec.base_type = type_name
             
             # Check if this is a typedef'd struct
-            if type_registry:
-                resolved = type_registry.lookup(type_name)
+            if self.type_registry:
+                resolved = self.type_registry.lookup(type_name)
                 if resolved and resolved.is_struct:
                     # This is a typedef to a struct, propagate struct info
                     spec.is_struct = True
