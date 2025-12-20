@@ -71,6 +71,7 @@ class TypeSpec:
         # Base types
         if self.base_type:
             base_sizes = {
+                'bool': 1,
                 'char': 1,
                 'signed char': 1,
                 'unsigned char': 1,
