@@ -82,7 +82,7 @@ class FunctionCollector(c_ast.NodeVisitor, TypeSpecBuilder):
                         function.parameters[param_name] = param_type
                 elif isinstance(param, c_ast.EllipsisParam):
                     # Handle variadic functions (...)
-                    function.parameters['...'] = TypeSpec(name='...', base_type='...')
+                    function.parameters['...'] = TypeSpec(name='...', base_type='...', _registry=self.type_registry)
         
         self.function_registry.register(func_name, function)
 
