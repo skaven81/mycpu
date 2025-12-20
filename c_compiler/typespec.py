@@ -17,8 +17,8 @@ class TypeSpec:
     qualifiers: List[str] = field(default_factory=list)  # const, volatile, etc.
     
     # Reference to registry for looking up dependent types
-    _registry: Optional['TypeRegistry'] = field(default=None, repr=False)
-    
+    _registry: 'TypeRegistry' = field(default=None, repr=False)
+
     def is_signed(self) -> bool:
         if self.is_struct:
             return False
