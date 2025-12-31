@@ -262,7 +262,14 @@ class CodeGenerator(c_ast.NodeVisitor):
         elif mode == 'generate_rvalue':
             if member_var.sizeof() <= 2 and not member_var.is_array:
                 with self._debug_block(f"Load value for {member_var.name} into {dest_reg}"):
-                    self._deref_load(member_var.sizeof(), dest_reg, dest_reg)
+                    other_reg = 'B' if dest_reg == 'A' else 'A'
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load struct member value")
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load struct member value")
+                    self._deref_load(member_var.sizeof(), addr_reg=dest_reg, dest_reg=other_reg)
+                    self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Transfer value to {dest_reg}")
+                    self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Transfer value to {dest_reg}")
+                    self.emit(f"POP_{other_reg}L", f"Restore {other_reg} after loading struct member value")
+                    self.emit(f"POP_{other_reg}H", f"Restore {other_reg} after loading struct member value")
                 return
             else:
                 # address is already in dest_reg, we're done
@@ -295,7 +302,7 @@ class CodeGenerator(c_ast.NodeVisitor):
             # New Variable declaration and storage allocation
             if type(node.type) in (c_ast.TypeDecl, c_ast.PtrDecl, c_ast.ArrayDecl):
                 new_typespec = self.visit(node.type, mode='return_typespec', init=getattr(node, 'init'))
-                new_var = self.visit(node.type, mode='return_var', var_kind=var_kind, **kwargs)
+                new_var = self.visit(node.type, mode='return_var', var_kind=var_kind, register_var=register_var, **kwargs)
                 if node.storage:
                     new_var.storage = node.storage[0]
                 if not new_var.name:
@@ -362,7 +369,7 @@ class CodeGenerator(c_ast.NodeVisitor):
         if mode == 'return_parameter_vars':
             params = []
             for p in node.params:
-                new_param = self.visit(p, mode='return_var', register_var=False)
+                new_param = self.visit(p, mode='return_var', var_kind='param', register_var=False)
                 new_param.kind = 'param'
                 params.append(new_param)
             return params
@@ -802,12 +809,22 @@ class CodeGenerator(c_ast.NodeVisitor):
                 self._get_var_base_address(var, dest_reg)
             elif var.is_pointer:
                 # Load pointer value
-                self._get_var_base_address(var, dest_reg)
-                self._deref_load(2, addr_reg=dest_reg, dest_reg=dest_reg)  # Load 2-byte pointer
+                other_reg = 'B' if dest_reg == 'A' else 'A'
+                self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load pointer")
+                self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load pointer")
+                self._get_var_base_address(var, other_reg)
+                self._deref_load(2, addr_reg=other_reg, dest_reg=dest_reg)  # Load 2-byte pointer
+                self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, pointer is in {dest_reg}")
+                self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, pointer is in {dest_reg}")
             else:
                 # Load simple value
-                self._get_var_base_address(var, dest_reg)
-                self._deref_load(var.sizeof(), addr_reg=dest_reg, dest_reg=dest_reg)
+                other_reg = 'B' if dest_reg == 'A' else 'A'
+                self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load value")
+                self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load value")
+                self._get_var_base_address(var, other_reg)
+                self._deref_load(var.sizeof(), addr_reg=other_reg, dest_reg=dest_reg)
+                self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, value is in {dest_reg}")
+                self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, value is in {dest_reg}")
             return var
         else:
             raise NotImplementedError(f"visit_ID mode {mode} not yet supported")
@@ -886,8 +903,8 @@ class CodeGenerator(c_ast.NodeVisitor):
             self.emit(f"MOV_DL_{dest_reg}L", f"Load base address of {var.name} into {dest_reg}")
             self.emit(f"LDI_{other_reg} {var.offset}", f"Load base address of {var.name} into {dest_reg}")
             self.emit(f"CALL :add16_to_{dest_reg.lower()}", f"Load base address of {var.name} into {dest_reg}")
-            self.emit(f"POP_%{other_reg}H%", f"Load base address of {var.name} into {dest_reg}")
-            self.emit(f"POP_%{other_reg}L%", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"POP_{other_reg}H", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"POP_{other_reg}L", f"Load base address of {var.name} into {dest_reg}")
 
     def _add_array_offset(self, var, index_reg='B', addr_reg='A'):
         """Add array[index] offset to address in addr_reg. Destroys index_reg."""
@@ -927,11 +944,13 @@ class CodeGenerator(c_ast.NodeVisitor):
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
             self.emit(f"LDI_{other_reg} {member_var.offset}", f"Add struct member {member_var.name} offset to address in {addr_reg}")
             self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add struct member {member_var.name} offset to address in {addr_reg}")
-            self.emit(f"POP_%{other_reg}H%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
-            self.emit(f"POP_%{other_reg}L%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            self.emit(f"POP_{other_reg}H", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            self.emit(f"POP_{other_reg}L", f"Add struct member {member_var.name} offset to address in {addr_reg}")
 
     def _deref_load(self, size, addr_reg, dest_reg):
         """Load 'size' bytes from address in addr_reg into dest_reg. Destroys addr_reg."""
+        if addr_reg == dest_reg:
+            raise ValueError("Cannot perform deref load with addr_reg and dest_reg the same")
         if size == 1:
             self.emit(f"LDA_{addr_reg}_{dest_reg}L", f"Dereferenced load")
         elif size == 2:
@@ -999,12 +1018,12 @@ class CodeGenerator(c_ast.NodeVisitor):
             self._emit_bulk_store(var, lvalue_reg, rvalue_reg)
         else:
             if var.typespec.sizeof() == 1:
-                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L", f"Store to {var.friendly_name()}")
+                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
             elif var.typespec.sizeof() == 2:
-                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}H", f"Store to {var.friendly_name()}")
-                self.emit(f"CALL :incr16_{lvalue_reg.lower()}", f"Store to {var.typespec.base_type}")
-                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L", f"Store to {var.friendly_name()}")
-                self.emit(f"CALL :decr16_{lvalue_reg.lower()}", f"Store to {var.typespec.base_type}")
+                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}H%", f"Store to {var.friendly_name()}")
+                self.emit(f"CALL :incr16_{lvalue_reg.lower()}", f"Store to {var.friendly_name()}")
+                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
+                self.emit(f"CALL :decr16_{lvalue_reg.lower()}", f"Store to {var.friendly_name()}")
             else:
                 raise NotImplementedError(f"_emit_store can't store simple values larger than 16 bit")
 
