@@ -8,11 +8,11 @@ import argparse
 from pycparser import parse_file
 from pprint import pprint
 from dataclasses import dataclass
-from typecollection import TypeRegistry, TypeCollector
-from functioncollection import FunctionRegistry, FunctionCollector
-from literalcollection import LiteralRegistry, LiteralCollector
+from typeregistry import TypeRegistry
+from functionregistry import FunctionRegistry
+from literalregistry import LiteralRegistry
+from variabletable import VariableTable
 from codegen import CodeGenerator
-from variables import VariableTable
 
 @dataclass
 class CompilerContext:
@@ -56,11 +56,13 @@ def compile(filename, output, use_cpp=True, cpp_args="", static_type='inline', j
         jmp_to_main=jmp_to_main,
         verbose=verbose)
 
+    # Build our code generator
+    codegen = CodeGenerator(context, output=output)
+
     # Pass 1: Type collection
     if verbose >= 2:
         print("Starting type collection", file=sys.stderr)
-    type_collector = TypeCollector(context.typereg)
-    type_collector.visit(ast)
+    codegen.visit(ast, mode='type_collection')
     if verbose >= 1:
         print("Collected types:", file=sys.stderr)
         if verbose >= 2:
@@ -68,23 +70,10 @@ def compile(filename, output, use_cpp=True, cpp_args="", static_type='inline', j
         else:
             print([*context.typereg.keys()], file=sys.stderr)
 
-    # Pass 2: Literal collection
-    if verbose >= 2:
-        print("Starting literal collection", file=sys.stderr)
-    literal_collector = LiteralCollector(context.literalreg)
-    literal_collector.visit(ast)
-    if verbose >= 1:
-        print("Collected literals:", file=sys.stderr)
-        if verbose >= 2:
-            pprint(context.literalreg.__dict__, stream=sys.stderr)
-        else:
-            print([*context.literalreg.keys()], file=sys.stderr)
-
-    # Pass 3: Function collection
+    # Pass 2: Function collection
     if verbose >= 2:
         print("Starting function collection", file=sys.stderr)
-    function_collector = FunctionCollector(context.funcreg, context.typereg)
-    function_collector.visit(ast)
+    codegen.visit(ast, mode='function_collection')
     if verbose >= 1:
         print("Collected functions:", file=sys.stderr)
         if verbose >= 2:
@@ -92,11 +81,12 @@ def compile(filename, output, use_cpp=True, cpp_args="", static_type='inline', j
         else:
             print([*context.funcreg.keys()], file=sys.stderr)
 
-    # Pass 4: Generate code
+    # Pass 3: Generate code
     if verbose >= 1:
         print("Starting code generation", file=sys.stderr)
-    code_generator = CodeGenerator(context, output=output)
-    code_generator.visit(ast)
+    codegen.visit(ast, mode='codegen')
+    if verbose >= 1:
+        print("Finished code generation", file=sys.stderr)
         
 def main():
     """Main function to handle command-line execution"""

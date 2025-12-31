@@ -1,1268 +1,78 @@
 import sys
-from pycparser import c_ast
-from typespecbuilder import TypeSpecBuilder
-from typespec import TypeSpec
-from variables import Variable
-from function import Function
-from pprint import pprint
 from contextlib import contextmanager
-from copy import deepcopy
+from pycparser import c_ast
+from typespec import TypeSpec
+from function import Function
+from variable import Variable
 import ast
 
-from dataclasses import dataclass
-from typing import Optional
-
-@dataclass
-class LValueInfo:
-    """Information needed to read from or write to a location"""
-    var: Variable
-    kind: str  # 'simple', 'struct_member', 'array', 'pointer_deref'
-    lvalue_in_b: bool = False  # If True, B register contains the lvalue address
-    # For 'array': lvalue_in_b=True, address is in B register
-    # For 'struct_member': lvalue_in_b=True, address is in B register
-    # For 'simple': lvalue_in_b=False, use var.offset or var.name directly
-
-@dataclass
-class ExprContext:
-    """Result of evaluating an expression"""
-    typespec: Optional[TypeSpec] = None
-    lvalue_info: Optional[LValueInfo] = None
-    const_int: Optional[int] = None
-    # Value is always in A/AL register after expression evaluation
-    # If lvalue_info is not None and lvalue_in_b=True, address is in B register
-
-class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
-    """
-    Visitor that generates Odyssey assembly from an AST
-    """
-
+class CodeGenerator(c_ast.NodeVisitor):
     def __init__(self, context, output=sys.stdout):
         self.context = context
         self.output = output
-        self.current_function = None
-        self.func_return_label = []
-        self.param_offset = None
-        self.local_offset = None
         self.label_num = 0
-        self.expr_stack = []
+        self.debug_depth = 0
+        self.func_return_label = None
 
-        # required for TypeSpecBuilder to ensure TypeSpec objects have a reference to the registry
-        self.type_registry = self.context.typereg
-
-    def _push_expr(self, typespec, lvalue_info=None, const_int=None):
-        self.expr_stack.append(ExprContext(typespec, lvalue_info, const_int=const_int))
-
-    def _pop_expr(self) -> ExprContext:
-        if not self.expr_stack:
-            raise ValueError("Expression stack underflow")
-        return self.expr_stack.pop()
-
-    def _peek_expr(self) -> ExprContext:
-        if not self.expr_stack:
+    def visit(self, node, mode, **kwargs):
+        """
+        Visit a node with a specified mode, and allow additional
+        arguments 
+        """
+        if node is None:
             return None
-        return self.expr_stack[-1]
+            
+        method = 'visit_' + node.__class__.__name__
+        visitor = getattr(self, method, self.generic_visit)
+
+        if self.context.verbose > 1:
+            node_name = None
+            if type(getattr(node, 'name', None)) is str:
+                node_name = node.name
+            elif type(getattr(getattr(node, 'name', None), 'name', None)) is str:
+                node_name = node.name.name
+            with self._debug_block(f"Visiting {node.__class__.__name__} {node_name if node_name else ''}"):
+                ret = visitor(node, mode, **kwargs)
+        else:
+            ret = visitor(node, mode, **kwargs)
+        return ret
+
+    def _get_label(self, name, prefix='.'):
+        self.label_num += 1
+        return f"{prefix}{name}_{self.label_num}"
+
+    def _get_static_prefix(self):
+        """Get the assembly prefix for static/global variables"""
+        return '$' if self.context.static_type == 'asm_var' else '.'
 
     @contextmanager
-    def _debug_block(self, name: str, min_verbose: int = 1):
+    def _debug_block(self, name: str, min_verbose: int = 2):
         """Emit debug comments for begin/end of operation block"""
         if self.context.verbose >= min_verbose:
-            self.emit(f"# Begin {name}")
+            self.emit(f"# {'-'*self.debug_depth*2}Begin {name}")
+            self.debug_depth += 1
         try:
             yield
         finally:
             if self.context.verbose >= min_verbose:
-                self.emit(f"# End {name}")
+                self.debug_depth -= 1
+                self.emit(f"# {'-'*self.debug_depth*2}End {name}")
+
+    def emit_debug(self, comment: str, min_verbose: int = 2):
+        if self.context.verbose >= min_verbose:
+            self.emit(f"# {'-'*self.debug_depth*2}{comment}")
+
+    def emit_verbose(self, comment: str, min_verbose: int = 2):
+        if self.context.verbose >= min_verbose:
+            self.emit(f"# {'-'*self.debug_depth*2}{comment}")
+        elif self.context.verbose >= 1:
+            self.emit(f"# {comment}")
 
     def emit(self, asm, comment=None):
         if comment:
             print(f"{asm:<32} # {comment}", file=self.output)
         else:
             print(asm, file=self.output)
-
-    def generic_visit(self, node):
-        name = None
-        if hasattr(node, 'name') and node.name:
-            name = node.name
-            if hasattr(name, 'name') and name.name:
-                name = name.name
-        self.emit(f"# \033[1;33m ⚠⚠ !!!!!!!! TODO {node.__class__.__name__} {name} !!!!!!!!  ⚠⚠\033[0m")
-        for c in node:
-            self.visit(c)
-
-    def visit_FileAST(self, node):
-        # Generate initialization code: Decl nodes at the top level
-        self.emit("# Global var initialization")
-        for c in node:
-            if isinstance(c, c_ast.Decl):
-                self.visit(c)
-        # Initialize static local vars from each function
-        for c in node:
-            if isinstance(c, c_ast.FuncDef):
-                self._generate_static_localvar_init(c)
-
-        # If told to jump to the main function, and the main function
-        # exists, insert the JMP instruction here
-        if self.context.jmp_to_main and 'main' in self.context.funcreg:
-            self.emit(f"JMP {self.context.funcreg['main'].asm_name()}")
-        # Generate all the code
-        for c in node:
-            if not isinstance(c, c_ast.Decl):
-                self.visit(c)
-        # Finish the code by listing global/static vars and constant literals
-        self.emit("")
-        self.emit("# Constant literals")
-        for literal in self.context.literalreg.get_all_literals():
-            self.emit(f"{literal.label} {literal.asm()}")
-        prefix = self._get_static_prefix()
-        local_statics = self.context.vartable.get_all_local_statics()
-        if local_statics:
-            self.emit("# Static local variables")
-            for var in local_statics:
-                if prefix == '$':
-                    if var.typespec.sizeof() == 1:
-                        self.emit(f"VAR global byte ${var.padded_name()}")
-                    elif var.typespec.sizeof() == 2:
-                        self.emit(f"VAR global word ${var.padded_name()}")
-                    else:
-                        self.emit(f"VAR global {var.typespec.sizeof()} ${var.padded_name()}")
-                else:
-                    self.emit(f'.{var.padded_name()} "' + '\\0'*var.typespec.sizeof() + '"')
-        globals = self.context.vartable.get_all_globals()
-        if globals:
-            self.emit("# Global variables")
-            for var in globals:
-                if prefix == '$':
-                    if var.typespec.sizeof() == 1:
-                        self.emit(f"VAR global byte ${var.padded_name()}")
-                    elif var.typespec.sizeof() == 2:
-                        self.emit(f"VAR global word ${var.padded_name()}")
-                    else:
-                        self.emit(f"VAR global {var.typespec.sizeof()} ${var.padded_name()}")
-                else:
-                    self.emit(f'.{var.padded_name()} "' + '\\0'*var.typespec.sizeof() + '"')
-
-
-    def visit_EmptyStatement(self, node):
-        # Not even sure why this exists in the AST, it has no code
-        # associated and no children...
-        pass
-
-    def visit_Typedef(self, node):
-        # We already collected types in earlier passes, now stored
-        # in context.typereg, so we can skip over these nodes
-        pass
-
-    def _generate_static_localvar_init(self, node, **kwargs):
-        """
-        We generate the initialization code for function's static
-        local vars outside the FuncDef itself, and we call into
-        this function from visit_FileAST so that the static local
-        vars are initialized only once, along with the globals.
-        """
-        if isinstance(node, c_ast.FuncDef):
-            self._generate_static_localvar_init(node.body, funcname=node.decl.name)
-        elif isinstance(node, c_ast.Decl) and 'static' in node.storage and node.init:
-            self.emit(f"# function {kwargs['funcname']} static local var {node.name} init")
-            typespec = self._build_typespec(node.name, node.type)
-            var = Variable(name=node.name, typespec=typespec, storage_class='static')
-            self._initialize_var(node.init, var)
-        else:
-            for c in node:
-                self._generate_static_localvar_init(c, **kwargs)
-
-    def visit_FuncDef(self, node):
-        # We already collected functions in earlier passes, now stored
-        # in context.funcreg, so we don't need to descend into the Decl
-        # node, just get the name and descend into the body
-        self.current_function = self.context.funcreg[node.decl.name]
-        self.local_offset = 0
-        self.context.vartable.push_scope()
-
-        # Function header and prologue
-        self.emit("")
-        if self.context.verbose >= 1:
-            self.emit(f"# Begin FuncDef Decl for {node.decl.name}")
-        if self.current_function.storage == 'static':
-            self.emit(f'.{self.current_function.name}', self.current_function.c_str())
-        else:
-            self.emit(f':{self.current_function.name}', self.current_function.c_str())
-        self.func_return_label.append(f".{self.current_function.name}_return")
-        self.emit_stackpush()
-
-        # Set frame pointer
-        self.emit("LD_DH $heap_ptr", "Set frame pointer")
-        self.emit("LD_DL $heap_ptr+1", "Set frame pointer")
-
-        # Local variable memory allocation
-        localvar_space = self._total_localvar_size(node)
-        if self.context.verbose >= 1:
-            self.emit(f"# Found {localvar_space} bytes of local vars in this function")
-        # Register parameter vars in context
-        self.param_offset = 0
-        self.visit(node.decl.type)
-        if self.context.verbose >= 1:
-            self.emit(f"# Found {self.param_offset * -1} bytes of param vars in this function")
-        retreat_bytes = localvar_space + (self.param_offset * -1)
-        self.param_offset = None
-        if localvar_space > 0:
-            self.emit(f"LDI_BL {localvar_space}", "Bytes to allocate for local vars")
-            self.emit(f"CALL :heap_advance_BL")
-
-        # Generate function body, including local var allocation and initialization
-        if self.context.verbose >= 2:
-            self.emit("# Begin function body")
-        self.visit(node.body)
-        if self.context.verbose >= 2:
-            self.emit("# End function body")
-
-        # Function epilogue
-        self.emit(self.func_return_label[-1])
-        self.func_return_label.pop()
-
-        if retreat_bytes:
-            self.emit(f"LDI_BL {retreat_bytes}", "Bytes to free from local vars and parameters")
-            self.emit(f"CALL :heap_retreat_BL")
-
-        if self.current_function.return_type.sizeof() == 0:
-            self.emit("# void function, no push to heap")
-        elif self.current_function.return_type.sizeof() == 1:
-            self.emit("CALL :heap_push_AL", "Return value")
-        elif self.current_function.return_type.sizeof() == 2:
-            self.emit("CALL :heap_push_A", "Return value")
-        else:
-            raise NotImplementedError("Unable to return from function with > 2 bytes")
-
-        # Unroll scope context
-        self.emit_stackpop()
-        self.context.vartable.pop_scope()
-        self.local_offset = None
-        self.current_function = None
-
-        # Return
-        self.emit("RET")
-
-        if self.context.verbose >= 1:
-            self.emit(f"# End FuncDef Decl for {node.decl.name}")
-
-    def visit_FuncDecl(self, node):
-        # visited when generating code from a FuncDef node. We need
-        # to collect the parameter variables and register them in the
-        # current scope, noting their offset in the stack frame
-        if self.param_offset is None:
-            raise ValueError("Unexpected entry into FuncDecl without param_offset set")
-        if node.args:
-            for param_node in node.args:
-                param_typespec = self._build_typespec(param_node.name, param_node.type)
-                param_var = Variable(param_node.name, param_typespec, param_node.storage[0] if param_node.storage else '', offset=self.param_offset, kind='param')
-                self.context.vartable.add_local(param_var)
-                if self.context.verbose >= 1:
-                    self.emit(f"# Registered param var {param_var} at offset {self.param_offset}")
-                self.param_offset -= param_typespec.sizeof()
-
-    def visit_FuncCall(self, node):
-        func = self.context.funcreg.lookup(node.name.name)
-        if not func:
-            raise ValueError(f"FuncCall to function {node.name.name} that does not exist in function registry")
-
-        if func.storage == 'extern':
-            if func.name.startswith('trace'):
-                pass
-            elif hasattr(self, f"generate_FuncCall_{func.name}"):
-                getattr(self, f"generate_FuncCall_{func.name}")(node, func)
-                return
-            else:
-                raise NotImplementedError(f"No generate_FuncCall_{func.name} function found to generate call to extern {func.name} function")
-
-        if self.context.verbose >= 1:
-            self.emit(f"# Begin function call {func.c_str()}")
-        arg_nodes = reversed(node.args.exprs) if node.args else []
-        param_types = reversed(func.parameters.values())
-        for arg_node, param_type in zip(arg_nodes, param_types):
-            if self.context.verbose >= 1:
-                self.emit(f"# Begin pushing param {param_type.c_str()}")
-            self.visit(arg_node)
-            arg_ctx = self._pop_expr()
-            if param_type.sizeof() == 1:
-                self.emit(f"CALL :heap_push_AL")
-            elif param_type.sizeof() == 2:
-                self.emit(f"CALL :heap_push_A")
-            else:
-                raise NotImplementedError("Unable to handle function args larger than 2 bytes")
-            if self.context.verbose >= 1:
-                self.emit(f"# End pushing param {param_type.c_str()}")
-        self.emit(f"CALL {func.asm_name()}")
-        if func.return_type.sizeof() == 0:
-            self.emit("# function returns nothing, not popping a return value")
-        elif func.return_type.sizeof() == 1:
-            self.emit(f"CALL :heap_pop_AL")
-        elif func.return_type.sizeof() == 2:
-            self.emit(f"CALL :heap_pop_A")
-        else:
-            raise NotImplementedError("Unable to handle function calls that return more than 2 bytes")
-        if self.context.verbose >= 1:
-            self.emit(f"# End function call {func.c_str()}")
-        self._push_expr(func.return_type)  # Return value now in A/AL
-
-    def visit_Compound(self, node):
-        if self.context.verbose >= 1:
-            self.emit(f"# Begin Compound")
-        self.context.vartable.push_scope()
-        if node.block_items:
-            for item in node.block_items:
-                self.visit(item)
-        self.context.vartable.pop_scope()
-        if self.context.verbose >= 1:
-            self.emit(f"# End Compound")
-
-    def visit_ParamList(self, node):
-        self.param_offset = 0
-        self.visit(node.params)
-        self.param_offset = None
-
-    def visit_DeclList(self, node):
-        for d in node.decls:
-            with self._debug_block(f"DeclList: {d.name}"):
-                self.visit(d)
-
-    def visit_Decl(self, node):
-        # skip function declarations, we already did that in an earlier pass
-        if type(node.type) is c_ast.FuncDecl:
-            return
-
-        typespec = self._build_typespec(node.name, node.type)
-        storage = node.storage[0] if node.storage else 'auto'
-        var = Variable(name=node.name, typespec=typespec, storage_class=storage)
-        if not self.current_function:
-            var.kind = 'global'
-            self.context.vartable.add_global(var)
-            if node.init:
-                self._initialize_var(node.init, var)
-            return
-
-        if self.param_offset is not None:
-            var.kind = 'param'
-            var.offset = self.param_offset
-            self.param_offset -= var.typespec.sizeof()
-            self.context.vartable.add_local(var)
-            if node.init:
-                self._initialize_var(node.init, var)
-            return
-
-        if self.local_offset is not None:
-            var.kind = 'local'
-            # we only allocate memory and perform initialization
-            # for non-static local vars, because initialization
-            # was already done for the static locals in visit_FileAST
-            # along with the globals
-            if var.storage_class != 'static':
-                var.offset = self.local_offset+1
-                self.local_offset += var.typespec.sizeof()
-                if node.init:
-                    self._initialize_var(node.init, var)
-            self.context.vartable.add_local(var)
-            return
-
-        raise ValueError(f"Should not have ended up here with node {node}")
-
-    def _initialize_var(self, node, var, member_name=None):
-        """
-        Initialize a variable with a value from an expression.
-        
-        REGISTER STATE:
-        - Entry: (none)
-        - Exit: A/AL may be clobbered
-        
-        STACK EFFECT: Pops 1 ExprContext (initializer expression)
-        """
-        # get the initializer value into A register
-        self.emit("")
-        with self._debug_block(f"initialize {var.kind} variable {var.name}" +
-                              (f" at offset {var.offset}" if var.kind not in ('global',) and var.storage_class != 'static' else "")):
-            self.visit(node)  # A/AL now contains the value we need to store in the variable
-            expr_ctx = self._pop_expr()
-            if var.kind == 'global' or var.storage_class == 'static':
-                prefix = self._get_static_prefix()
-                if var.typespec.is_struct:
-                    if not member_name:
-                        raise ValueError(f"Must provide a member_name when storing to a struct")
-                    member_offset, member_type = var.typespec.field_offset(member_name)
-                    if member_type.sizeof() == 1:
-                        self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+{member_offset}", f"Store to {var.name}.{member_name} at offset {member_offset}")
-                    elif member_type.sizeof() == 2:
-                        self.emit(f"ALUOP_ADDR %A%+%AH% {prefix}{var.padded_name()}+{member_offset}", f"Store to {var.name}.{member_name} at offset {member_offset}")
-                        self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+{member_offset+1}", f"Store to {var.name}.{member_name} at offset {member_offset}")
-                elif var.typespec.sizeof() == 1:
-                    self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}", f"Store to {var.name}")
-                elif var.typespec.sizeof() == 2:
-                    self.emit(f"ALUOP_ADDR %A%+%AH% {prefix}{var.padded_name()}", f"Store to {var.name}")
-                    self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+1", f"Store to {var.name}")
-            else:
-                # Local/param: need to compute address
-                self.emit("ALUOP_CH %A%+%AH%", "Store: preserve value in C")
-                self.emit("ALUOP_CL %A%+%AL%")
-                if var.typespec.is_struct:
-                    if not member_name:
-                        raise ValueError(f"Must provide a member_name when storing to a struct")
-                    member_offset, member_type = var.typespec.field_offset(member_name)
-                    self._compute_local_address_to_a(var, member_name=member_name)
-                    ts = member_type
-                else:
-                    self._compute_local_address_to_a(var)
-                    ts = var.typespec
-
-                if ts.sizeof() == 1:
-                    self.emit("STA_A_CL", f"Store to {var.name}{'.'+member_name if member_name else ''}")
-                elif ts.sizeof() == 2:
-                    self.emit("STA_A_CH", f"Store to {var.name}{'.'+member_name if member_name else ''}")
-                    self.emit("CALL :incr16_a")
-                    self.emit("STA_A_CL", f"Store to {var.name}{'.'+member_name if member_name else ''}")
-                else:
-                    raise NotImplementedError("Cannot store types > 2 bytes")
-
-    def visit_ArrayRef(self, node):
-        """
-        Generate code for array indexing (e.g., arr[i]).
-        
-        REGISTER STATE:
-        - Entry: (none)
-        - Exit: A/AL = element value
-                B = address of element (lvalue_in_b=True)
-        
-        STACK EFFECT: Pops 1 ExprContext (subscript), pushes 1 (element)
-        """
-        with self._debug_block("ArrayRef"):
-            # Start by computing the subscript as an offset, stored in A
-            subscript_ctx = None
-            with self._debug_block("compute ArrayRef subscript"):
-                self.visit(node.subscript)
-                subscript_ctx = self._pop_expr()
-                if subscript_ctx.typespec.sizeof() == 1:
-                    self.emit_sign_extend("A", TypeSpec('int', 'int', _registry=self.type_registry))
-            
-            # var is the pointer variable, not the datatype being pointed to.
-            assert isinstance(node.name, c_ast.ID)
-            var = self.context.vartable.lookup(node.name.name)
-            assert var.typespec.is_pointer
-
-            # Scale the index by element size
-            if var.typespec.sizeof_element() == 1:
-                if self.context.verbose >= 1:
-                    self.emit(f"# ArrayRef offset no change, {var.name} element size==1")
-            elif var.typespec.sizeof_element() == 2:
-                self.emit("CALL :shift16_a_left", f"ArrayRef offset doubles, {var.name} element size==2")
-            else:
-                raise NotImplementedError("Indexing into arrays of types > 2 bytes is not yet supported")
-
-            # Get the base address 
-            with self._debug_block("get indexed value address"):
-                if var.kind == 'global' or var.storage_class == 'static':
-                    prefix = self._get_static_prefix()
-                    self.emit(f"LD16_B {prefix}{var.padded_name()}", f"Contents of {var.name} into B")
-                else:
-                    # save A (the index offset)
-                    self.emit("ALUOP_PUSH %A%+%AH%", f"Save index offset")
-                    self.emit("ALUOP_PUSH %A%+%AL%", f"Save index offset")
-                    # Compute base address into C
-                    self._compute_local_address_to_b(var)
-                    # B now contains the address of the pointer. We need to dereference the pointer to get the base address of the array
-                    self.emit("ALUOP_CH %B%+%BH%", f"Copy address of {var.name} to C")
-                    self.emit("ALUOP_CL %B%+%BL%", f"Copy address of {var.name} to C")
-                    self.emit("LDA_C_BH", f"Dereference {var.name} into B")
-                    self.emit("INCR_C", f"Dereference {var.name} into B")
-                    self.emit("LDA_C_BL", f"Dereference {var.name} into B")
-                    # restore A (the index offset)
-                    self.emit("POP_AL", f"Restore index offset into A")
-                    self.emit("POP_AH", f"Restore index offset into A")
-
-                # Now add A (index offset) and B (base address) to get the final address in B
-                self.emit("CALL :add16_to_b", f"B contains indexed address into {var.name}")
-
-                # Load the value into A/AL, preserving address in B
-                if var.typespec.sizeof_element() == 2:
-                    self.emit("LDA_B_AH", f"Load {var.name}[index] into A")
-                    self.emit("CALL :incr16_b")
-                    self.emit("LDA_B_AL", f"Load {var.name}[index] into A")
-                    self.emit("CALL :decr16_b")
-                elif var.typespec.sizeof_element() == 1:
-                    self.emit("LDA_B_AL", f"Load {var.name}[index] into AL")
-                else:
-                    raise NotImplementedError("Can't load datatypes > 2 bytes yet")
-            
-            # Push result: value in A/AL, address still in B
-            self._push_expr(TypeSpec('arr_element', var.typespec.base_type), LValueInfo(var, 'array', lvalue_in_b=True), _registry=self.type_registry)
-
-    def visit_StructRef(self, node):
-        var = self.context.vartable.lookup(node.name.name)
-        if not var:
-            raise ValueError(f"No variable found associated with {node}")
-        member_name = node.field.name
-        if node.type == '.':
-            with self._debug_block(f"Load {var.name}.{member_name}"):
-                offset, ts = var.typespec.field_offset(member_name)
-                if var.kind == 'global' or var.storage_class == 'static':
-                    prefix = self._get_static_prefix()
-                    self.emit(f"LDI_B {prefix}{var.padded_name()}+{offset}", f"Set up address (lvalue) for {var.storage_class} {ts.base_type} {var.name}.{member_name}")
-                    if var.typespec.sizeof() == 2:
-                        self.emit(f"LD16_A {prefix}{var.padded_name()}+{offset}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}.{member_name}")
-                    elif var.typespec.sizeof() == 1:
-                        self.emit(f"LD_AL {prefix}{var.padded_name()}+{offset}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}.{member_name}")
-                    else:
-                        raise ValueError(f"Unable to load var {var.name}.{member_name} as it's not 1 or 2 bytes")
-                else:
-                    self._compute_local_address_to_b(var, member_name=member_name)
-                    if ts.sizeof() == 2:
-                        self.emit("LDA_B_AH", f"Load var {var.name}.{member_name} at offset {var.offset}+{offset}")
-                        self.emit("CALL :incr16_b", f"Load var {var.name}.{member_name} at offset {var.offset}+{offset}")
-                        self.emit("LDA_B_AL", f"Load var {var.name}.{member_name} at offset {var.offset}+{offset}")
-                        self.emit("CALL :decr16_b")
-                    else:
-                        self.emit("LDA_B_AL", f"Load var {var.name}.{member_name} at offset {var.offset}+{offset}")
-                self._push_expr(ts, LValueInfo(var, 'struct_member', lvalue_in_b=True))
-        else:
-            raise NotImplementedError(f"StructRef with op='{node.type}' not yet supported")
-
-    def visit_Cast(self, node):
-        """
-        Cast a variable to a new type.  Renders the same
-        code for node.expr but pops the typespec from the
-        expression context and replaces it with the one
-        from the to_type node.
-        """
-        self.visit(node.expr)
-
-        from_context = self._pop_expr()
-        to_typespec = self._build_typespec(from_context.typespec.name, node.to_type.type)
-        to_lvalue = from_context.lvalue_info
-        self._push_expr(to_typespec, to_lvalue, const_int=from_context.const_int)
-        if from_context.typespec.sizeof() == 1 and to_typespec.sizeof() == 2:
-            self.emit(f"# Above value in A is cast from {from_context.typespec.name}/{from_context.typespec.base_type} to {to_typespec.name}/{to_typespec.base_type}, requiring sign extension")
-            self.emit_sign_extend("A", to_typespec)
-            self.emit("# Above value in A is now cast to full 16 bit")
-        else:
-            self.emit(f"# Above value in A is cast from {from_context.typespec.name}/{from_context.typespec.base_type} to {to_typespec.name}/{to_typespec.base_type}")
-
-    def visit_Assignment(self, node):
-        with self._debug_block(f"Assignment {node.op} to {node.lvalue.name.name if type(node.lvalue) is c_ast.StructRef else node.lvalue.name}"):
-            # generate rvalue, result will be in A/AL
-            with self._debug_block(f"Generate rvalue for assignment"):
-                self.visit(node.rvalue)
-            rvalue_context = self._pop_expr()
-            if rvalue_context.typespec.sizeof() == 2:
-                self.emit("ALUOP_CH %A%+%AH%", "Preserve assignment rvalue")
-            self.emit("ALUOP_CL %A%+%AL%", "Preserve assignment rvalue")
-
-            # generate lvalue, current value in A/AL, address (if available) in B
-            with self._debug_block(f"Generate lvalue for assignment"):
-                self.visit(node.lvalue)
-            lvalue_context = self._pop_expr()
-
-            # Simple assignment
-            if node.op == '=':
-                if lvalue_context.lvalue_info:
-                    if lvalue_context.lvalue_info.lvalue_in_b:
-                        if lvalue_context.typespec.sizeof() == 2:
-                            self.emit("STA_B_CH", f"Store rvalue at lvalue address")
-                            self.emit("CALL :incr16_b", f"Store rvalue at lvalue address")
-                        self.emit("STA_B_CL", f"Store rvalue at lvalue address")
-                    else:
-                        raise ValueError(f"Can't assign to something with no address")
-                else:
-                    raise ValueError(f"Can't assign without lvalue_info")
-            else:
-                raise NotImplementedError(f"Assignment op '{node.op}' not yet supported")
-
-    def visit_Constant(self, node):
-        """
-        Generate code for constants (integers, strings).
-        
-        REGISTER STATE:
-        - Entry: (none)
-        - Exit: A/AL = constant value
-        
-        STACK EFFECT: Pushes 1 ExprContext (constant, no lvalue)
-        """
-        if node.type == 'int':
-            typespec = TypeSpec('int', 'int', _registry=self.type_registry)
-        elif node.type == 'char':
-            typespec = TypeSpec('char', 'char', _registry=self.type_registry)
-        elif node.type == 'string':
-            typespec = TypeSpec('string', 'char', is_pointer=True, pointer_depth=1, _registry=self.type_registry)
-        else:
-            raise NotImplementedError(f"I don't know how to represent a {node.type} constant")
-        
-        const_size = typespec.sizeof()
-
-        const_int=None
-        if node.type == 'int':
-            if const_size == 1:
-                self.emit(f"LDI_AL {node.value}", "Constant assignment")
-                const_int = int(node.value, base=0)
-            elif const_size == 2:
-                self.emit(f"LDI_A {node.value}", "Constant assignment")
-                const_int = int(node.value, base=0)
-            else:
-                raise NotImplementedError("Can't load constants > 16 bit")
-        elif node.type == 'char':
-            const_int = ord(ast.literal_eval(node.value))
-            self.emit(f"LDI_AL {const_int}", f"Constant assignment ord({node.value}): {const_int}")
-        elif node.type == 'string':
-            literal = self.context.literalreg.lookup_by_content(node.value, node.type)
-            if not literal:
-                raise ValueError(f"Could not find literal in registry matching {node.value}")
-            self.emit(f"LDI_A {literal.label}", literal.content)
-        
-        # Constants don't have lvalues
-        self._push_expr(typespec, None, const_int=const_int)
-
-    def visit_Return(self, node):
-        """
-        Generate code for return statement.
-        
-        REGISTER STATE:
-        - Entry: (none)
-        - Exit: A/AL = return value (if any)
-                Jumps to function epilogue
-        
-        STACK EFFECT: Pops 1 ExprContext (if return has expression)
-        """
-        # Ensure that the value we're returning is in A/AL by generating
-        # any child code, otherwise we assume the value is already in A/AL.
-        # then jump to the end of the function.
-        if node.expr:
-            self.visit(node.expr)
-            expr_ctx = self._pop_expr()  # discard the return type info, value is already in A/AL
-
-        self.emit(f"JMP {self.func_return_label[-1]}", f"Return from {self.current_function.name}")
-
-    def visit_UnaryOp(self, node):
-        if self.context.verbose >= 1:
-            self.emit(f"# Begin UnaryOp {node.op}")
-        
-        if node.op in ('++', '--', 'p++', 'p--'):
-            # Pre/post increment/decrement - need lvalue
-            is_postfix = node.op.startswith('p')
-            is_increment = '+' in node.op
-            
-            self.visit(node.expr)
-            expr_ctx = self._pop_expr()
-            
-            if not expr_ctx.lvalue_info:
-                raise ValueError(f"UnaryOp {node.op} requires an lvalue")
-            
-            lvalue = expr_ctx.lvalue_info
-            
-            # Current value is in A
-            if is_postfix:
-                # Save original value for return
-                self.emit("ALUOP_PUSH %A%+%AL%", f"Save original for postfix {node.op}")
-                if expr_ctx.typespec.sizeof() == 2:
-                    self.emit("ALUOP_PUSH %A%+%AH%", f"Save original for postfix {node.op}")
-            
-            # Increment/decrement
-            if expr_ctx.typespec.sizeof() == 1:
-                if is_increment:
-                    self.emit("ALUOP_AL %A+1%+%AL%", f"UnaryOp {node.op}")
-                else:
-                    self.emit("ALUOP_AL %A-1%+%AL%", f"UnaryOp {node.op}")
-            else:
-                if is_increment:
-                    self.emit("CALL :incr16_a", f"UnaryOp {node.op}")
-                else:
-                    self.emit("CALL :decr16_a", f"UnaryOp {node.op}")
-            
-            # Store back using lvalue information
-            self._store_to_lvalue(expr_ctx)
-            
-            if is_postfix:
-                # Restore original value for expression result
-                if expr_ctx.typespec.sizeof() == 2:
-                    self.emit("POP_AH", f"Restore original for postfix {node.op}")
-                self.emit("POP_AL", f"Restore original for postfix {node.op}")
-            
-            # Result is in A, lvalue info preserved
-            self._push_expr(expr_ctx.typespec, lvalue)
-            
-        elif node.op == '&':
-            # Address-of operator
-            self.visit(node.expr)
-            expr_ctx = self._pop_expr()
-            
-            if not expr_ctx.lvalue_info:
-                raise ValueError("Cannot take address of non-lvalue")
-            
-            lvalue = expr_ctx.lvalue_info
-            
-            if lvalue.lvalue_in_b:
-                # Address is already in B, move to A
-                self.emit("ALUOP_AH %B%+%BH%", "Address-of: copy address from B to A")
-                self.emit("ALUOP_AL %B%+%BL%", "Address-of: copy address from B to A")
-            else:
-                raise ValueError(f"lvalue not in B for {lvalue.var.name}")
-            
-            # Result is a pointer to the original type
-            result_typespec = TypeSpec(
-                expr_ctx.typespec.name + '*',
-                expr_ctx.typespec.base_type,
-                is_pointer=True,
-                pointer_depth=expr_ctx.typespec.pointer_depth + 1,
-                _registry=self.type_registry,
-            )
-            self._push_expr(result_typespec, None)  # Addresses themselves don't have lvalues
-            
-        elif node.op == '*':
-            # Pointer dereference
-            self.visit(node.expr)
-            expr_ctx = self._pop_expr()
-            
-            # A contains the pointer (address)
-            # Move it to B for dereferencing
-            self.emit("ALUOP_BH %A%+%AH%", "Pointer deref: address to B")
-            self.emit("ALUOP_BL %A%+%AL%")
-            
-            # Determine pointed-to type
-            if expr_ctx.typespec.pointer_depth < 1:
-                raise ValueError("Cannot dereference non-pointer type")
-            
-            pointed_type = TypeSpec(
-                expr_ctx.typespec.base_type,
-                expr_ctx.typespec.base_type,
-                is_pointer = False if expr_ctx.typespec.pointer_depth == 1 else True,
-                pointer_depth=expr_ctx.typespec.pointer_depth - 1,
-                _registry=self.type_registry,
-            )
-            
-            # Load value from address in B
-            if pointed_type.sizeof() == 1:
-                self.emit("LDA_B_AL", "Pointer deref: load byte")
-            elif pointed_type.sizeof() == 2:
-                self.emit("LDA_B_AH", "Pointer deref: load high byte")
-                self.emit("CALL :incr16_b")
-                self.emit("LDA_B_AL", "Pointer deref: load low byte")
-                self.emit("CALL :decr16_b")
-            else:
-                raise NotImplementedError("Cannot deref pointers to types > 2 bytes")
-            
-            # Create a pseudo-variable for the lvalue
-            pseudo_var = Variable("*deref", pointed_type, 'auto')
-            self._push_expr(pointed_type, LValueInfo(pseudo_var, 'pointer_deref', lvalue_in_b=True))
-            
-        elif node.op == '-':
-            # Unary negation
-            self.visit(node.expr)
-            expr_ctx = self._pop_expr()
-            
-            if expr_ctx.typespec.sizeof() == 1:
-                self.emit("ALUOP_AL %-A_signed%+%AL%", "Unary negation")
-            else:
-                self.emit("CALL :signed_invert_a", "Unary negation")
-            
-            self._push_expr(expr_ctx.typespec, None)  # Result has no lvalue
-            
-        elif node.op == '~':
-            # Bitwise NOT
-            self.visit(node.expr)
-            expr_ctx = self._pop_expr()
-            
-            if expr_ctx.typespec.sizeof() == 1:
-                self.emit("ALUOP_AL %~A%+%AL%", "Bitwise NOT")
-            else:
-                self.emit("ALUOP_AL %~A%+%AL%", "Bitwise NOT low")
-                self.emit("ALUOP_AH %~A%+%AH%", "Bitwise NOT high")
-            
-            self._push_expr(expr_ctx.typespec, None)  # Result has no lvalue
-            
-        elif node.op == '!':
-            # Logical NOT
-            self.visit(node.expr)
-            expr_ctx = self._pop_expr()
-            
-            # Check if value is zero
-            self.emit(f"ALUOP_FLAGS %A%+%AL%", "Logical NOT: check zero in low byte")
-            self.emit(f"LDI_AL 0", "Logical NOT: assume false")
-            self.emit(f"JNZ .logical_not_false_{self.label_num}")
-            self.emit(f"LDI_AL 1", "Logical NOT: was zero, now true")
-            self.emit(f".logical_not_false_{self.label_num}")
-            self.label_num += 1
-            
-            result_type = TypeSpec('bool', 'bool', _registry=self.type_registry)
-            self._push_expr(result_type, None)  # Result has no lvalue
-        else:
-            raise NotImplementedError(f"UnaryOp {node.op} not implemented")
-        
-        if self.context.verbose >= 1:
-            self.emit(f"# End UnaryOp {node.op}")
-
-    def _store_to_lvalue(self, expr_ctx: ExprContext):
-        """Store value in A to the lvalue described by expr_ctx"""
-        if not expr_ctx.lvalue_info:
-            raise ValueError("Cannot store to expression without lvalue")
-        
-        lvalue = expr_ctx.lvalue_info
-        var = lvalue.var
-        
-        if lvalue.lvalue_in_b:
-            # Address is in B, value is in A
-            
-            if expr_ctx.typespec.sizeof() == 1:
-                self.emit("ALUOP_ADDR_B %A%+%AL%", "Store byte in AL to lvalue in B")
-            elif expr_ctx.typespec.sizeof() == 2:
-                self.emit("ALUOP_ADDR_B %A%+%AH%", "Store high byte in AH to lvalue in B")
-                self.emit("CALL :incr16_b")
-                self.emit("ALUOP_ADDR_B %A%+%AL%", "Store low byte in AL to lvalue in B")
-                self.emit("CALL :decr16_b", "Store: restore address")
-            else:
-                raise NotImplementedError("Cannot store types > 2 bytes")
-        else:
-            # Simple variable: use var.name or var.offset
-            if var.kind == 'global' or var.storage_class == 'static':
-                prefix = self._get_static_prefix()
-                if expr_ctx.typespec.sizeof() == 1:
-                    self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}", "Store to global/static")
-                elif expr_ctx.typespec.sizeof() == 2:
-                    self.emit(f"ALUOP_ADDR %A%+%AH% {prefix}{var.padded_name()}", "Store to global/static")
-                    self.emit(f"ALUOP_ADDR %A%+%AL% {prefix}{var.padded_name()}+1", "Store to global/static")
-            else:
-                # Local/param: need to compute address
-                self.emit("ALUOP_CH %A%+%AH%", "Store: value to C")
-                self.emit("ALUOP_CL %A%+%AL%")
-                self._compute_local_address_to_a(var)
-                if expr_ctx.typespec.sizeof() == 1:
-                    self.emit("STA_A_CL", f"Store to {var.name}")
-                elif expr_ctx.typespec.sizeof() == 2:
-                    self.emit("STA_A_CH", f"Store to {var.name}")
-                    self.emit("CALL :incr16_a")
-                    self.emit("STA_A_CL", f"Store to {var.name}")
-                else:
-                    raise NotImplementedError("Cannot store types > 2 bytes")
-
-    def visit_BinaryOp(self, node):
-        """
-        Generate code for binary operations.
-        
-        REGISTER STATE:
-        - Entry: (none)
-        - Exit: A/AL = result value
-        
-        STACK EFFECT: Pops 2 ExprContext (left, right), pushes 1 (result)
-        
-        Supported operators:
-        - Arithmetic: +, -, &, |, ^
-        - Comparison: <, <=, >, >=, !=
-        """
-        with self._debug_block(f"BinaryOp {node.op}"):
-            self.visit(node.right)  # RHS in A
-            right_ctx = self._pop_expr()
-            
-            if right_ctx.typespec.sizeof() == 2:
-                self.emit("ALUOP_PUSH %A%+%AH%", "Preserve RHS of binary op")
-            if right_ctx.typespec.sizeof() >= 1:
-                self.emit("ALUOP_PUSH %A%+%AL%", "Preserve RHS of binary op")
-            
-            self.visit(node.left)  # LHS in A
-            left_ctx = self._pop_expr()
-            
-            if right_ctx.typespec.sizeof() >= 1:
-                self.emit("POP_BL", "Set RHS of binary op")
-            if right_ctx.typespec.sizeof() == 2:
-                self.emit("POP_BH", "Set RHS of binary op")
-
-            # RHS now in B
-
-            if left_ctx.typespec.sizeof() > 2 or right_ctx.typespec.sizeof() > 2:
-                raise NotImplementedError(f"Unable to perform BinaryOp on values with sizeof > 2: LHS {left_ctx.typespec} RHS {right_ctx.typespec}")
-            
-            # Sign extend if there is a size mismatch
-            op_size = 1
-            result_type = left_ctx.typespec
-            if left_ctx.typespec.sizeof() != right_ctx.typespec.sizeof():
-                if left_ctx.typespec.sizeof() == 1:
-                    self.emit_sign_extend("A", left_ctx.typespec)
-                    result_type = right_ctx.typespec
-                if right_ctx.typespec.sizeof() == 1:
-                    self.emit_sign_extend("B", right_ctx.typespec)
-                    result_type = left_ctx.typespec
-            elif left_ctx.typespec.sizeof() == 2:
-                op_size = 2
-
-            # Set a flag for whether we'll be doing signed or unsigned operation.
-            # We have some optimization here to avoid signed operations if the
-            # variable side of the comparison is unsigned and the constant side is
-            # a positive integer.
-            signed_op = False
-
-            # If either context is signed and are not constant (e.g. a signed variable)
-            # then we have to perform a signed op
-            if left_ctx.typespec.is_signed() and left_ctx.const_int is None:
-                signed_op = True
-            elif right_ctx.typespec.is_signed() and right_ctx.const_int is None:
-                signed_op = True
-
-            # If one side is unsigned and the other is signed but is a positive constant integer,
-            # treat it as an unsigned operation.
-            elif not left_ctx.typespec.is_signed() and right_ctx.typespec.is_signed() and right_ctx.const_int is not None and right_ctx.const_int >= 0:
-                signed_op = False
-                self.emit("# NOTE: treating this as an unsigned op because LHS is unsigned, and RHS is a signed (but positive) constant integer")
-            elif not right_ctx.typespec.is_signed() and left_ctx.typespec.is_signed() and left_ctx.const_int is not None and left_ctx.const_int >= 0:
-                signed_op = False
-                self.emit("# NOTE: treating this as an unsigned op because RHS is unsigned, and LHS is a signed (but positive) constant integer")
-
-            # Fallthrough and perform signed op if either side is signed
-            elif left_ctx.typespec.is_signed() or right_ctx.typespec.is_signed():
-                signed_op = True
-
-            # generate op code
-            if node.op in ('+', '-', '&', '|', '^'):
-                asm_op = node.op
-                if node.op == '^':
-                    asm_op = 'x'
-                if op_size == 1:
-                    self.emit(f"ALUOP_AL %A{asm_op}B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-                else:
-                    if asm_op == '+':
-                        self.emit("CALL :add16_to_a", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-                    elif asm_op == '-':
-                        self.emit("CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-                    else:
-                        self.emit(f"ALUOP_AL %A{asm_op}B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-                        self.emit(f"ALUOP_AH %A{asm_op}B%+%AH%+%BH%", f"BinaryOp ({left_ctx.typespec.c_str()}) {asm_op} ({right_ctx.typespec.c_str()})")
-            elif node.op in ('<', '<=', '>', '>='):
-                if signed_op:
-                    # For < and <=, we use A - B; for > and >= we use B - A
-                    lhs = 'A'
-                    rhs = 'B'
-                    result_reg = 'A'
-                    if node.op in ('>', '>='):
-                        lhs = 'B'
-                        rhs = 'A'
-                        result_reg = 'B'
-                    sign_reg = 'H'
-
-                    # For signed comparisons we do full 16-bit operations since we don't have
-                    # an 8-bit signed-overflow-detecting subtraction function in math.asm
-                    if op_size == 1:
-                        self.emit(f"ALUOP_{result_reg}L %{lhs}-{rhs}_signed%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                        sign_reg = 'L'
-                    elif op_size == 2:
-                        self.emit(f"CALL :signed_sub16_{lhs.lower()}_minus_{rhs.lower()}", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()}) (result in A)")
-
-                    # Check overflow flag: if (signed) overflow, we need to check the
-                    # sign bit and compare against the operands.
-                    self.emit(f"JO .binop_gtlt_overflow_{self.label_num}")
-
-                    # No-signed-overflow case
-                    # Check the sign bit - if set, return true, if clear, return false
-                    if op_size == 2:
-                        self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}H%", "Save result for later")
-                    self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}L%", "Save result for later")
-                    self.emit(f"ALUOP_FLAGS %{result_reg}msb%+%{result_reg}{sign_reg}%", "check sign bit of result")
-                    self.emit(f"LDI_AL 1", "No signed overflow, sign bit set = true")
-                    self.emit(f"JNZ .binop_gtlt_no_overflow_signbit_set_{self.label_num}")
-                    self.emit(f"LDI_AL 0", "No signed overflow, sign bit clear = false")
-                    self.emit(f".binop_gtlt_no_overflow_signbit_set_{self.label_num}")
-                    self.emit(f"JMP .binop_gtlt_next_{self.label_num}")
-
-                    # Signed-overflow case
-                    # Check the sign bit - if set, return false, if clear, return true
-                    self.emit(f".binop_gtlt_overflow_{self.label_num}")
-                    if op_size == 2:
-                        self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}H%", "Save result for later")
-                    self.emit(f"ALUOP_PUSH %{result_reg}%+%{result_reg}L%", "Save result for later")
-                    self.emit(f"ALUOP_FLAGS %{result_reg}msb%+%{result_reg}{sign_reg}%", "check sign bit of result")
-                    self.emit(f"LDI_AL 0", "Signed overflow, sign bit set = false")
-                    self.emit(f"JNZ .binop_gtlt_overflow_signbit_set_{self.label_num}")
-                    self.emit(f"LDI_AL 1", "Signed overflow, sign bit clear = true")
-                    self.emit(f".binop_gtlt_overflow_signbit_set_{self.label_num}")
-
-                    # Continue computation
-                    self.emit(f".binop_gtlt_next_{self.label_num}")
-                    self.emit(f"POP_BL", "Restore result into B")
-                    if op_size == 2:
-                        self.emit(f"POP_BH", "Restore result into B")
-
-                    # if this was a <= or >= then we still might end up true if the result was zero,
-                    # but can skip all this if the above computation ended up with 0 (false) in AL.
-                    if '=' in node.op:
-                        self.emit(f"ALUOP_FLAGS %A%+%AL%", "No need to check equality if {node.op.strip('=')} is true")
-                        self.emit(f"JNZ .binop_true_{self.label_num}")
-
-                        if op_size == 2:
-                            self.emit("ALUOP_FLAGS %B%+%BH%", "Check if high byte of result is zero")
-                            self.emit(f"JZ .binop_high_zero_{self.label_num}")
-                            self.emit(f"JMP .binop_false_{self.label_num}")
-                            self.emit(f".binop_high_zero_{self.label_num}")
-                        self.emit("ALUOP_FLAGS %B%+%BL%", "Check if low byte of result is zero")
-                        self.emit(f"JZ .binop_true_{self.label_num}")
-                        self.emit(f"JMP .binop_false_{self.label_num}")
-
-                        self.emit(f".binop_true_{self.label_num}")
-                        self.emit(f"LDI_AL 1")
-                        self.emit(f".binop_false_{self.label_num}")
-                    self.label_num += 1
-                else: # unsigned op
-                    # For < and <=, we use A - B; for > and >= we use B - A
-                    if op_size == 1:
-                        if node.op in ('<', '<='):
-                            self.emit(f"ALUOP_FLAGS %A-B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                        elif node.op in ('>', '>='):
-                            self.emit(f"ALUOP_FLAGS %B-A%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                    else:
-                        # Note that :sub16_a_minus_b/:sub16_b_minus_a does not reliably set the E or Z status bits, we can only trust the O bit,
-                        if node.op in ('<', '<='):
-                            self.emit(f"CALL :sub16_a_minus_b", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                        elif node.op in ('>', '>='):
-                            self.emit(f"CALL :sub16_b_minus_a", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-
-                    # For < and >, we only need to check the overflow bit
-                    if node.op in ('<', '>'):
-                        self.emit(f"LDI_AL 1")
-                        self.emit(f"JO .binop_true_{self.label_num}")
-                        self.emit(f"LDI_AL 0")
-                        self.emit(f".binop_true_{self.label_num}")
-                        self.label_num += 1
-                    # for <= and >=, we need to check the overflow AND zero bits
-                    elif node.op in ('<=', '>='):
-                        if op_size == 1:
-                            self.emit(f"LDI_AL 1")
-                            self.emit(f"JO .binop_true_{self.label_num}")
-                            self.emit(f"JZ .binop_true_{self.label_num}")
-                            self.emit(f"LDI_AL 0")
-                            self.emit(f".binop_true_{self.label_num}")
-                            self.label_num += 1
-                        else:
-                            self.emit(f"JO .binop_true_{self.label_num}")
-                            if node.op == '<=':
-                                self.emit(f"ALUOP_FLAGS %A%+%AH%")
-                            elif node.op == '>=':
-                                self.emit(f"ALUOP_FLAGS %B%+%BH%")
-                            self.emit(f"JNZ .binop_false_{self.label_num}")
-                            if node.op == '<=':
-                                self.emit(f"ALUOP_FLAGS %A%+%AL%")
-                            elif node.op == '>=':
-                                self.emit(f"ALUOP_FLAGS %B%+%BL%")
-                            self.emit(f"JNZ .binop_false_{self.label_num}")
-                            self.emit(f"JMP .binop_true_{self.label_num}")
-                            self.emit(f".binop_false_{self.label_num}")
-                            self.emit(f"LDI_AL 0")
-                            self.emit(f"JMP .binop_done_{self.label_num}")
-                            self.emit(f".binop_true_{self.label_num}")
-                            self.emit(f"LDI_AL 1")
-                            self.emit(f".binop_done_{self.label_num}")
-                            self.label_num += 1
-                result_type = TypeSpec('binop_result', 'bool', _registry=self.type_registry)
-            elif node.op in ('==', '!='):
-                if node.op == '==':
-                    default_state = 'false'
-                    default_value = '0'
-                    other_value = '1'
-                else:
-                    default_state = 'true'
-                    default_value = '1'
-                    other_value = '0'
-                self.emit(f"ALUOP_FLAGS %A-B%+%AL%+%BL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                self.emit(f"LDI_AL {default_value}")
-                self.emit(f"JNZ .binop_{default_state}_{self.label_num}")
-                if op_size > 1:
-                    self.emit(f"ALUOP_FLAGS %A-B%+%AH%+%BH%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} ({right_ctx.typespec.c_str()})")
-                    self.emit(f"JNZ .binop_{default_state}_{self.label_num}")
-                self.emit(f"LDI_AL {other_value}")
-                self.emit(f".binop_{default_state}_{self.label_num}")
-                self.label_num += 1
-                result_type = TypeSpec('binop_result', 'bool', _registry=self.type_registry)
-            elif node.op in ('<<', '>>'):
-                if right_ctx.const_int is not None:
-                    for _ in range(right_ctx.const_int):
-                        if op_size == 1:
-                            if left_ctx.typespec.is_signed():
-                                if node.op == '<<':
-                                    self.emit(f"ALUOP_AL %A*2%+%AL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
-                                elif node.op == '>>':
-                                    self.emit(f"ALUOP_AL %A/2%+%AL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
-                            else:
-                                self.emit(f"ALUOP_AL %A{node.op}1%+%AL%", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
-                        else:
-                            if left_ctx.typespec.is_signed():
-                                raise NotImplementedError("Unable to shift signed 16-bit integers")
-                            else:
-                                if node.op == '<<':
-                                    self.emit(f"CALL :shift16_a_left", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
-                                elif node.op == '>>':
-                                    self.emit(f"CALL :shift16_a_right", f"BinaryOp ({left_ctx.typespec.c_str()}) {node.op} {right_ctx.const_int}")
-                else:
-                    raise NotImplementedError("Unable to shift by variable amounts")
-            else:
-                raise NotImplementedError(f"BinaryOp {node.op} not implemented")
-
-            # Result is in A, no lvalue
-            self._push_expr(result_type, None)
-
-    def visit_TernaryOp(self, node):
-        # TODO be sure to self._push_expr(result typespec)
-        self.generic_visit(node)
-
-    def visit_ID(self, node):
-        # ID is the name of a variable. Pull info from current scope
-        # and put the variable into A/AL
-        var = self.context.vartable.lookup(node.name)
-        if not var:
-            raise ValueError(f"Unable to find var {node.name} in variable table")
-
-        if var.kind == 'global' or var.storage_class == 'static':
-            prefix = self._get_static_prefix()
-            self.emit(f"LDI_B {prefix}{var.padded_name()}", f"Set up address (lvalue) for {var.storage_class} {var.typespec.base_type} {var.name}")
-            if var.typespec.sizeof() == 2:
-                self.emit(f"LD16_A {prefix}{var.padded_name()}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}")
-            elif var.typespec.sizeof() == 1:
-                self.emit(f"LD_AL {prefix}{var.padded_name()}", f"Load {var.storage_class} {var.typespec.base_type} {var.name}")
-            else:
-                raise ValueError(f"Unable to load var {var.name} as it's not 1 or 2 bytes")
-        else:
-            self._compute_local_address_to_b(var)
-            if var.typespec.sizeof() == 2:
-                self.emit("LDA_B_AH", f"Load var {var.name} at offset {var.offset}")
-                self.emit("CALL :incr16_b", f"Load var {var.name} at offset {var.offset}")
-                self.emit("LDA_B_AL", f"Load var {var.name} at offset {var.offset}")
-                self.emit("CALL :decr16_b")
-            else:
-                self.emit("LDA_B_AL", f"Load var {var.name} at offset {var.offset}")
-
-        # Value in A, lvalue info for simple variable (address not in B)
-        self._push_expr(var.typespec, LValueInfo(var, 'simple', lvalue_in_b=True))
-
-    def visit_If(self,node):
-        """
-        Generate code for for conditionals
-        
-        STACK EFFECT: Pops ExprContext for cond
-        """
-        false_label = f".if_cond_false_{self.label_num}"
-        end_label = f".if_cond_end_{self.label_num}"
-        self.label_num += 1
-        with self._debug_block("If block"):
-            with self._debug_block("If block: condition"):
-                # Generate the condition code, result will be in A
-                self.visit(node.cond)
-                self.emit("ALUOP_FLAGS %A%+%AL%", "Check if condition is true")
-                if node.iffalse:
-                    self.emit(f"JZ {false_label}")
-                else:
-                    self.emit(f"JZ {end_label}")
-            with self._debug_block("If block: if-true"):
-                self.visit(node.iftrue)
-                self.emit(f"JMP {end_label}")
-            if node.iffalse:
-                with self._debug_block("If block: if-false"):
-                    self.emit(false_label)
-                    self.visit(node.iffalse)
-            self.emit(end_label)
-
-    def visit_DoWhile(self, node):
-        """
-        Generate code for Do-While loops
-
-        stmt: code to run
-        cond: condition
-        """
-        top_label = f".do_while_top_{self.label_num}"
-        exit_label = f".do_while_exit_{self.label_num}"
-        self.label_num += 1
-        with self._debug_block("Do-While loop"):
-            self.context.vartable.push_scope()
-            self.emit(top_label, "Top of do-while loop")
-            with self._debug_block("Do-While loop statement"):
-                self.visit(node.stmt)
-            with self._debug_block("Do-While loop condition"):
-                self.visit(node.cond)
-                # AL will contain 1 for true (continue looping) or 0 for false (end loop)
-                self.emit("ALUOP_FLAGS %A%+%AL%", "Check if loop condition is true (1) or false (0)")
-                self.emit(f"JZ {exit_label}", "Terminate loop if condition is false")
-                self.emit(f"JMP {top_label}", "Continue loop if condition is true")
-            self.emit(exit_label, "Bottom of do-while loop")
-            self.context.vartable.pop_scope()
-
-    def visit_While(self, node):
-        """
-        Generate code for While loops
-
-        cond: condition
-        stmt: code to run
-        """
-        top_label = f".while_top_{self.label_num}"
-        exit_label = f".while_exit_{self.label_num}"
-        self.label_num += 1
-        with self._debug_block("While loop"):
-            self.context.vartable.push_scope()
-            self.emit(top_label, "Top of while loop")
-            with self._debug_block("While loop condition"):
-                self.visit(node.cond)
-                # AL will contain 1 for true (continue looping) or 0 for false (end loop)
-                self.emit("ALUOP_FLAGS %A%+%AL%", "Check if loop condition is true (1) or false (0)")
-                self.emit(f"JZ {exit_label}", "Terminate loop if condition is false")
-            with self._debug_block("Do-While loop statement"):
-                self.visit(node.stmt)
-            self.emit(f"JMP {top_label}", "Continue loop if condition is true")
-            self.emit(exit_label, "Bottom of do-while loop")
-            self.context.vartable.pop_scope()
-
-    def visit_For(self, node):
-        """
-        Generate code for for loops: for(init; cond; next) stmt
-        
-        Structure:
-            init
-        loop_top:
-            if (!cond) goto loop_exit
-            stmt
-            next
-            goto loop_top
-        loop_exit:
-        
-        REGISTER STATE:
-        - Entry: (none)
-        - Exit: undefined
-        
-        STACK EFFECT: Pops ExprContext for init, cond, next (if present)
-        """
-        with self._debug_block("For loop"):
-            self.context.vartable.push_scope()
-            with self._debug_block("For loop init"):
-                self.visit(node.init)
-            loop_top_label = f".for_loop_top_{self.label_num}"
-            loop_exit_label = f".for_loop_exit_{self.label_num}"
-            self.label_num += 1
-            self.emit(loop_top_label, "For loop begin")
-            with self._debug_block("For loop cond"):
-                self.visit(node.cond)
-
-                # AL will contain 1 for true (continue looping) or 0 for false (end loop)
-                self.emit("ALUOP_FLAGS %A%+%AL%", "Check if loop condition is true (1) or false (0)")
-                self.emit(f"JZ {loop_exit_label}", "Terminate loop if condition is false")
-            with self._debug_block("For loop statement"):
-                self.visit(node.stmt)
-            if node.next:
-                with self._debug_block("For loop next"):
-                    self.visit(node.next)
-            self.emit(f"JMP {loop_top_label}", "Continue for loop")
-            self.emit(loop_exit_label, "For loop terminate")
-            self.context.vartable.pop_scope()
-
-    def _total_localvar_size(self, node) -> int:
-        """
-        Recursively descend into the entirety of node's AST searching for
-        local, non-static variable declarations (excluding parameters) and
-        total up their size.
-        """
-        # Don't count function parameters in local var size
-        if type(node) is c_ast.ParamList:
-            return 0
-        if type(node) is c_ast.Decl and type(node.type) is not c_ast.FuncDecl:
-            ts = self._build_typespec(node.name, node.type)
-            if self.context.verbose >= 2:
-                self.emit(f"# _total_localvar_size: Computing size of {node.name}, {node.type.__class__.__name__} = {ts.sizeof()}")
-            return ts.sizeof()
-        recursive_sum = 0
-        for child in node:
-            recursive_sum += self._total_localvar_size(child)
-        return recursive_sum
 
     def emit_stackpush(self, skip=set()):
         for alupush in ('AL', 'AH', 'BL', 'BH'):
@@ -1281,109 +91,920 @@ class CodeGenerator(c_ast.NodeVisitor, TypeSpecBuilder):
             self.emit(f"POP_{pop}")
 
     def emit_sign_extend(self, reg: str, typespec: TypeSpec):
-        otherreg = 'B'
-        if reg == 'B':
-            otherreg = 'A'
         if typespec.is_signed():
-            self.emit(f"ALUOP_PUSH %{otherreg}%+%{otherreg}L%", f"Sign extend {reg}L: save {otherreg}L")
-            self.emit(f"LDI_{otherreg}L 0x80", f"Sign extend {reg}L: check sign bit")
-            self.emit(f"ALUOP_FLAGS %A&B%+%AL%+%BL%", f"Sign extend {reg}L: check sign bit")
-            self.emit(f"POP_{otherreg}L", f"Sign extend {reg}L: restore {otherreg}L")
+            label = self._get_label("sign_extend")
+            self.emit(f"ALUOP_FLAGS %{reg}msb%+%{reg}L%", f"Sign extend {reg}L: check sign bit")
             self.emit(f"LDI_{reg}H 0x00", f"Sign extend {reg}L: assume sign bit not set")
-            self.emit(f"JZ .sign_extend_{self.label_num}", f"Sign extend {reg}L: don't overwrite {reg}H if sign bit was not set")
+            self.emit(f"JZ {label}", f"Sign extend {reg}L: don't overwrite {reg}H if sign bit was not set")
             self.emit(f"LDI_{reg}H 0xff", f"Sign extend {reg}L: sign bit was set")
-            self.emit(f".sign_extend_{self.label_num}", f"Sign extend {reg}L")
+            self.emit(f"{label}", f"Sign extend {reg}L")
             self.label_num += 1
         else:
-            self.emit(f"LDI_{reg}H 0x00", f"Sign extend {reg}L: unsigned value in AL")
+            self.emit(f"LDI_{reg}H 0x00", f"Sign extend {reg}L: unsigned value in {reg}L")
 
-    def _get_static_prefix(self):
-        """Get the assembly prefix for static/global variables"""
-        return '$' if self.context.static_type == 'asm_var' else '.'
+    def generic_visit(self, node, mode, **kwargs):
+        raise NotImplementedError(f"{node.__class__.__name__} visitor not implemented yet. mode={mode}")
 
-    def _compute_local_address_to_b(self, var: Variable, member_name: str=None, comment: str = ""):
-        """
-        Compute address of local/param variable into B register.
-        Frame pointer (D) + var.offset -> B
-        Clobbers A register temporarily.
-        """
-        if not comment:
-            if member_name:
-                comment = f"Compute address of {var.name}.{member_name} at base frame offset {var.offset} into A"
-            else:
-                comment = f"Compute address of {var.name} at frame offset {var.offset} into A"
-        self.emit("MOV_DH_BH", comment)
-        self.emit("MOV_DL_BL", comment)
-        if member_name:
-            self.emit(f"LDI_A {var.offset}+{var.typespec.field_offset(member_name)[0]}", comment)
+    def visit_FileAST(self, node, mode, **kwargs):
+        if mode == 'type_collection':
+            for c in node:
+                if type(c) is c_ast.Typedef:
+                    self.visit(c, mode=mode, **kwargs)
+                elif type(c) is c_ast.Decl and type(c.type) is c_ast.Struct:
+                    # insert a fake Typedef node so non-typedef structs get
+                    # picked up in the type registry as well.
+                    self.visit(c_ast.Typedef(name=c.type.name, quals=[], storage=['struct'], type=c), mode=mode, **kwargs)
+            return
+        elif mode == 'function_collection':
+            for c in node:
+                if type(c) in (c_ast.Decl, c_ast.FuncDef):
+                    self.visit(c, mode=mode, **kwargs)
+            return
+        elif mode == 'codegen':
+            visited_toplevel_nodes = []
+            # Generate code for declaring global vars
+            self.emit_debug("#"*40)
+            with self._debug_block("Global var declaration"):
+                for c in node:
+                    if type(c) is c_ast.Decl:
+                        self.visit(c, mode=mode, **kwargs)
+                        visited_toplevel_nodes.append(c)
+            self.emit_debug("#"*40)
+            self.emit_verbose("")
+
+            # Generate the jump-to-main if configured
+            main_func = self.context.funcreg.lookup('main')
+            if self.context.jmp_to_main and main_func:
+                self.emit(f"JMP {main_func.asm_name()}", "Initialization complete, go to main function")
+                self.emit("")
+
+            # Generate the functions
+            self.emit_debug("#"*40)
+            with self._debug_block("Function declarations"):
+                self.emit("")
+                for c in node:
+                    if type(c) is c_ast.FuncDef:
+                        self.visit(c, mode=mode, **kwargs)
+                        self.emit("")
+                        visited_toplevel_nodes.append(c)
+            self.emit_debug("#"*40)
+            self.emit_verbose("")
+
+            # Generate data block: constant literals
+            prefix = self._get_static_prefix()
+            with self._debug_block("Constant literals"):
+                for literal in self.context.literalreg.get_all_literals():
+                    if literal.comment:
+                        self.emit_verbose(literal.comment)
+                    self.emit(f"{literal.label} {literal.asm()}")
+            # Generate data block: global vars
+            with self._debug_block("Global vars"):
+                for var in self.context.vartable.get_all_globals():
+                    if prefix == '$':
+                        if var.sizeof() == 1:
+                            self.emit(f"VAR global byte ${var.padded_name()}")
+                        elif var.sizeof() == 2:
+                            self.emit(f"VAR global word ${var.padded_name()}")
+                        else:
+                            self.emit(f"VAR global {var.typespec.sizeof()} ${var.padded_name()}")
+                    else:
+                        self.emit(f'.{var.padded_name()} "' + '\\0'*var.sizeof() + '"')
+            # Generate data block: static local vars
+            with self._debug_block("Static local vars"):
+                for var in self.context.vartable.get_all_local_statics():
+                    if prefix == '$':
+                        if var.typespec.sizeof() == 1:
+                            self.emit(f"VAR global byte ${var.padded_name()}")
+                        elif var.typespec.sizeof() == 2:
+                            self.emit(f"VAR global word ${var.padded_name()}")
+                        else:
+                            self.emit(f"VAR global {var.typespec.sizeof()} ${var.padded_name()}")
+                    else:
+                        self.emit(f'.{var.padded_name()} "' + '\\0'*var.typespec.sizeof() + '"')
         else:
-            self.emit(f"LDI_A {var.offset}", comment)
-        self.emit("CALL :add16_to_b", comment)
+            raise NotImplementedError(f"visit_FileAST mode {mode} not yet supported")
 
-    def _compute_local_address_to_a(self, var: Variable, member_name: str=None, comment: str = ""):
-        """
-        Compute address of local/param variable into A register.
-        Frame pointer (D) + var.offset -> A
-        Clobbers B register temporarily.
-        """
-        if not comment:
-            if member_name:
-                comment = f"Compute address of {var.name}.{member_name} at base frame offset {var.offset} into A"
-            else:
-                comment = f"Compute address of {var.name} at frame offset {var.offset} into A"
-        self.emit("MOV_DH_AH", comment)
-        self.emit("MOV_DL_AL", comment)
-        if member_name:
-            self.emit(f"LDI_B {var.offset}+{var.typespec.field_offset(member_name)[0]}", comment)
+    def visit_Typedef(self, node, mode, **kwargs):
+        if mode == 'type_collection':
+            new_type = self.visit(node.type, mode=mode, **kwargs)
+            self.context.typereg.register(node.name, new_type)
+            return 
+        elif mode in ('codegen',):
+            return
         else:
-            self.emit(f"LDI_B {var.offset}", comment)
-        self.emit("CALL :add16_to_a", comment)
+            raise NotImplementedError(f"visit_Typedef mode {mode} not yet supported")
 
-    def generate_FuncCall_printf(self, node: c_ast.FuncCall, func: Function):
-        """
-        External printf function call
-        """
-        if self.context.verbose >= 1:
-            self.emit(f"# Begin special extern function call {func.c_str()}")
-        arg_nodes = [*enumerate(node.args.exprs)]
-        for idx, arg_node in reversed(arg_nodes):
-            if self.context.verbose >= 1:
-                self.emit(f"# Begin pushing param idx {idx}")
-            self.visit(arg_node)
-            arg_ctx = self._pop_expr()
-            if idx > 0:
-                if arg_ctx.typespec.sizeof() == 1:
-                    self.emit(f"CALL :heap_push_AL")
-                elif arg_ctx.typespec.sizeof() == 2:
-                    self.emit(f"CALL :heap_push_A")
+    def visit_TypeDecl(self, node, mode, **kwargs):
+        registered_type = self.context.typereg.lookup(node.declname)
+        if mode == 'type_collection':
+            if registered_type:
+                return registered_type
+            new_type = self.visit(node.type, mode=mode, **kwargs)
+            new_type.qualifiers.extend(node.quals)
+            if not new_type.name:
+                new_type.name = node.declname
+            return new_type
+        elif mode == 'return_typespec':
+            return self.visit(node.type, mode=mode, **kwargs)
+        elif mode == 'return_var':
+            return Variable(name=node.declname,
+                            typespec=self.visit(node.type, mode='return_typespec', **kwargs))
+        else:
+            raise NotImplementedError(f"visit_TypeDecl mode {mode} not yet supported")
+       
+    def visit_IdentifierType(self, node, mode, **kwargs):
+        type_name = ' '.join(node.names)
+        registered_type = self.context.typereg.lookup(type_name)
+        if mode == 'type_collection':
+            if registered_type:
+                return registered_type
+            else:
+                return TypeSpec(base_type = ' '.join(node.names), _registry=self.context.typereg)
+        elif mode == 'return_typespec':
+            return registered_type
+        else:
+            raise NotImplementedError(f"visit_IdentifierType mode {mode} not yet supported")
+
+    def visit_Struct(self, node, mode, **kwargs):
+        if mode == 'type_collection':
+            member_vars = []
+            member_offset = 0
+            for c in node.decls:
+                membervar = self.visit(c, mode='return_var', var_kind='struct_member', **kwargs)
+                membervar.is_struct_member = True
+                membervar.name = c.name
+                membervar.kind = "struct_member"
+                membervar.offset = member_offset
+                member_vars.append(membervar)
+                member_offset += membervar.sizeof()
+            new_typespec = TypeSpec(name=node.name, is_struct=True, struct_members=member_vars, _registry=self.context.typereg)
+            return new_typespec
+        elif mode == 'return_typespec':
+            return self.context.typereg.lookup(node.name)
+        else:
+            raise NotImplementedError(f"visit_Struct mode {mode} not yet supported")
+
+    def visit_StructRef(self, node, mode, dest_reg='A', **kwargs):
+        with self._debug_block(f"Get base address of struct into {dest_reg}"):
+            if node.type == '.':
+                base_var = self.visit(node.name, mode='generate_lvalue_address', dest_reg=dest_reg)
+            else:  # '->'
+                base_var = self.visit(node.name, mode='generate_rvalue', dest_reg=dest_reg)
+        
+        # dest_reg now has struct base address
+        member_var = base_var.typespec.struct_member(node.field.name)
+        with self._debug_block(f"Add member {member_var.name} offset {member_var.offset} to struct address"):
+            self._add_member_offset(member_var, dest_reg)
+        
+        if mode == 'generate_lvalue_address':
+            # address is already in dest_reg, we're done
+            return member_var
+        elif mode == 'generate_rvalue':
+            if member_var.sizeof() <= 2 and not member_var.is_array:
+                with self._debug_block(f"Load value for {member_var.name} into {dest_reg}"):
+                    self._deref_load(member_var.sizeof(), dest_reg, dest_reg)
+                return
+            else:
+                # address is already in dest_reg, we're done
+                return
+        else:
+            raise NotImplementedError(f"visit_StructRef mode {mode} not yet supported")
+
+    def visit_Decl(self, node, mode, var_kind=None, register_var=True, **kwargs):
+        if mode in ('return_typespec', 'type_collection',):
+            return self.visit(node.type, mode=mode, **kwargs)
+        elif mode == 'function_collection':
+            if type(node.type) is c_ast.FuncDecl:
+                # Don't re-register functions we already have
+                if node.name in self.context.funcreg:
+                    return
+                new_funcdef = self.visit(node.type, mode=mode, **kwargs)
+                if node.storage:
+                    new_funcdef.storage = node.storage[0]
+                new_funcdef.name = node.name
+                self.context.funcreg.register(node.name, new_funcdef)
+                return
+        elif mode == 'return_var':
+            # Don't redo the work of generating the variable if the
+            # identifier already exists in the table
+            var = self.context.vartable.lookup(node.name)
+            if var:
+                return var
+            if type(node.type) in (c_ast.Struct, c_ast.FuncDecl,):
+                raise ValueError(f"return_var for Struct or FuncDecl type Decl node doesn't make sense")
+            # New Variable declaration and storage allocation
+            if type(node.type) in (c_ast.TypeDecl, c_ast.PtrDecl, c_ast.ArrayDecl):
+                new_typespec = self.visit(node.type, mode='return_typespec', init=getattr(node, 'init'))
+                new_var = self.visit(node.type, mode='return_var', var_kind=var_kind, **kwargs)
+                if node.storage:
+                    new_var.storage = node.storage[0]
+                if not new_var.name:
+                    new_var.name = node.name
+                new_var.typespec.qualifiers.extend(node.quals)
+                if new_var.is_array and not new_var.array_dims:
+                    if not node.init:
+                        raise ValueError("Cannot declare dimensionless array without intiializer")
+                    new_var.array_dims.extend(self.visit(node.init, mode='return_array_dim'))
+                if var_kind in ('struct_member', 'param',):
+                    new_var.kind = var_kind
+                    return new_var
+                elif self.context.vartable.get_scope_depth() == 0:
+                    # global var declaration
+                    new_var.kind = 'global'
+                    if register_var:
+                        self.context.vartable.add(new_var)
+                    self.emit_verbose(f"Registered {new_var.kind} variable {new_var.friendly_name()}")
+                    return new_var
                 else:
-                    raise NotImplementedError("Unable to handle function args larger than 2 bytes")
+                    # local var declaration
+                    new_var.kind = 'local'
+                    if register_var:
+                        self.context.vartable.add(new_var) # registration sets the offset
+                        new_var = self.context.vartable.lookup(new_var.name)
+                        self.emit_verbose(f"Registered {new_var.kind} variable {new_var.friendly_name()}, size {new_var.sizeof()} at offset {new_var.offset}")
+                        if not new_var.offset:
+                            raise ValueError(f"Local var {new_var.name} was not assigned an offset")
+                    return new_var
             else:
-                self.emit("ALUOP_CH %A%+%AH%", f"Load format string pointer into C")
-                self.emit("ALUOP_CL %A%+%AL%", f"Load format string pointer into C")
-            if self.context.verbose >= 1:
-                self.emit(f"# End pushing param idx {idx}")
-        self.emit(f"CALL {func.asm_name()}")
-        if self.context.verbose >= 1:
-            self.emit(f"# End special extern function call {func.c_str()}")
+                raise NotImplementedError(f"visit_Decl mode {mode} not yet supported for {node.type.__class__.__name__} types")
+        elif mode == 'codegen':
+            if type(node.type) in (c_ast.Struct, c_ast.FuncDecl,):
+                # skip code generation for Struct and FuncDecl declarations, these
+                # were handled during type and function collection
+                return
+            var = self.visit(node, mode='return_var')
+            if not var:
+                raise ValueError(f"Can't generate code for an unregistered variable")
+            if node.init:
+                with self._debug_block(f"Initialize var {var.name}"):
+                    if var.is_array or var.typespec.is_struct:
+                        self.visit(c_ast.ID(name=var.name), mode='generate_lvalue_address', dest_reg='B')
+                        init_var = self.visit(node.init, mode='generate_rvalue', dest_reg='A', dest_typespec=var.typespec)
+                        if not init_var:
+                            raise ValueError(f"Cannot safely init var {var.name} without init list size")
+                        self.emit_debug(f"init_var sizeof: {init_var.sizeof()}, var sizeof: {var.sizeof()}")
+                        self._emit_bulk_store(var, lvalue_reg='B', rvalue_reg='A', bytes=min(init_var.sizeof(), var.sizeof()))
+                    else:
+                        self.visit(c_ast.Assignment(op='=', lvalue=c_ast.ID(name=var.name), rvalue=node.init), mode='codegen')
+        else:
+            raise NotImplementedError(f"visit_Decl mode {mode} not yet supported")
 
-    def generate_FuncCall_print(self, node: c_ast.FuncCall, func: Function):
-        self.generate_FuncCall_printf(node, func)
+    def visit_FuncDecl(self, node, mode, **kwargs):
+        if mode == 'function_collection':
+            new_funcdef = Function()
+            new_funcdef.return_type = self.visit(node.type, mode='return_typespec')
+            new_funcdef.parameters = self.visit(node.args, mode='return_parameter_vars')
+            return new_funcdef
+        else:
+            raise NotImplementedError(f"visit_FuncDecl mode {mode} not yet supported")
 
-    def generate_FuncCall_putchar(self, node: c_ast.FuncCall, func: Function):
-        if self.context.verbose >= 1:
-            self.emit(f"# Begin special extern function call {func.c_str()}")
-        arg_nodes = [*enumerate(node.args.exprs)]
-        for idx, arg_node in reversed(arg_nodes):
-            if self.context.verbose >= 1:
-                self.emit(f"# Begin setting param idx {idx} in AL")
-            self.visit(arg_node) # char will be in AL
-            arg_ctx = self._pop_expr()
-            if self.context.verbose >= 1:
-                self.emit(f"# End setting param idx {idx} in AL")
-        self.emit(f"CALL {func.asm_name()}")
-        if self.context.verbose >= 1:
-            self.emit(f"# End special extern function call {func.c_str()}")
+    def visit_ParamList(self, node, mode, **kwargs):
+        if mode == 'return_parameter_vars':
+            params = []
+            for p in node.params:
+                new_param = self.visit(p, mode='return_var', register_var=False)
+                new_param.kind = 'param'
+                params.append(new_param)
+            return params
+        else:
+            raise NotImplementedError(f"visit_ParamList mode {mode} not yet supported")
 
-    def generate_FuncCall_putchar_direct(self, node: c_ast.FuncCall, func: Function):
-        self.generate_FuncCall_putchar(node, func)
+    def visit_EllipsisParam(self, node, mode, **kwargs):
+        if mode == 'return_var':
+           return Variable(typespec=TypeSpec(name='...', base_type = '...', _registry=self.context.typereg),
+                           name='...',
+                           kind='param')
+        else:
+            raise NotImplementedError(f"visit_EllipsisParam mode {mode} not yet supported")
+
+    def visit_FuncDef(self, node, mode, **kwargs):
+        if mode == 'function_collection':
+            self.visit(node.decl, mode=mode)
+            return
+        elif mode == 'codegen':
+            # Enter a new scope
+            self.context.vartable.push_scope()
+
+            # Function header and prologue
+            with self._debug_block(f"FuncDef Decl for {node.decl.name}"):
+                func = self.context.funcreg.lookup(node.decl.name)
+                if not func:
+                    raise ValueError("Cannot generate function that hasn't been registered")
+
+                if func.storage == 'static':
+                    self.emit(f'.{func.name}', func.c_str())
+                else:
+                    self.emit(f':{func.name}', func.c_str())
+                self.func_return_label = self._get_label(f"{func.name}_return")
+
+                # Save the current stack
+                self.emit_stackpush()
+
+                # Set frame pointer
+                self.emit("LD_DH $heap_ptr", "Set frame pointer")
+                self.emit("LD_DL $heap_ptr+1", "Set frame pointer")
+
+                # Local variable memory allocation
+                localvar_bytes = self._total_localvar_size(node)
+                if self.context.verbose >= 1:
+                    self.emit_debug(f"Found {localvar_bytes} bytes of local vars in this function")
+                # Advance stack pointer
+                self.param_offset = None
+                if localvar_bytes > 0:
+                    self.emit(f"LDI_BL {localvar_bytes}", "Bytes to allocate for local vars")
+                    self.emit(f"CALL :heap_advance_BL")
+                # Reset localvar offset so new registrations get correct offsets
+                self.context.vartable.localvar_offset = 0
+                # Register parameter variables and compute offsets
+                parameter_offset = 0
+                if func.parameters:
+                    for p in func.parameters:
+                        p.offset = parameter_offset
+                        parameter_offset -= p.sizeof()
+                        if self.context.verbose >= 1:
+                            self.emit_debug(f"Registered parameter {p.friendly_name()}, {p.sizeof()} bytes at offset {p.offset}")
+                        self.context.vartable.add(p)
+
+                # Compute retreat value (local vars + parameters)
+                retreat_bytes = localvar_bytes + (-1 * parameter_offset)
+
+                # Generate function body, registering local vars as we encounter them
+                for c in node:
+                    self.visit(c, mode='codegen')
+
+                # Function epilogue
+                self.emit(self.func_return_label)
+                self.func_return_label = None
+
+                # Retreat the stack pointer
+                if retreat_bytes:
+                    self.emit(f"LDI_BL {retreat_bytes}", "Bytes to free from local vars and parameters")
+                    self.emit(f"CALL :heap_retreat_BL")
+
+                # Set up return value
+                if func.return_type.sizeof() == 0:
+                    self.emit_debug("# void function, no push to heap")
+                elif func.return_type.sizeof() == 1:
+                    self.emit("CALL :heap_push_AL", "Return value")
+                elif func.return_type.sizeof() == 2:
+                    self.emit("CALL :heap_push_A", "Return value")
+                else:
+                    raise NotImplementedError("Unable to return from function with > 2 bytes")
+
+                # Unroll scope - this removes the local vars and
+                # parameter vars from the variable table
+                self.emit_stackpop()
+                self.context.vartable.pop_scope()
+
+                # Return
+                self.emit("RET")
+        else:
+            raise NotImplementedError(f"visit_FuncDef mode {mode} not yet supported")
+
+    def visit_Return(self, node, mode, **kwargs):
+        if mode == 'codegen':
+            self.visit(node.expr, mode='generate_rvalue', dest_reg='A')
+            self.emit(f"JMP {self.func_return_label}")
+        else:
+            raise NotImplementedError(f"visit_Return mode {mode} not yet supported")
+
+    def visit_FuncCall(self, node, mode, dest_reg='A', **kwargs):
+        if mode in ('codegen', 'generate_rvalue',):
+            func = self.visit(node.name, mode='return_function')
+            if not func:
+                raise ValueError(f"Function {node.name} not found in function registry")
+            with self._debug_block(f"FuncCall {func.name}"):
+                param_vars = reversed(func.parameters)
+                arg_nodes = reversed(self.visit(node.args, mode='return_nodes'))
+                for pv, an in zip(param_vars, arg_nodes):
+                    with self._debug_block(f"FuncCall {func.name} push parameter {pv.friendly_name()}"):
+                        rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_typespec=pv.typespec)
+                        if rvalue_var.sizeof() == 1:
+                            self.emit(f"CALL :heap_push_AL", f"Push parameter {pv.friendly_name()}")
+                        elif rvalue_var.sizeof() == 2:
+                            self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()}")
+                        else:
+                            raise ValueError("Unable to push parameters larger than 2 bytes")
+                self.emit(f"CALL {func.asm_name()}")
+                if func.return_type.sizeof() == 0:
+                    self.emit("# function returns nothing, not popping a return value")
+                elif func.return_type.sizeof() == 1:
+                    self.emit(f"CALL :heap_pop_{dest_reg}L")
+                elif func.return_type.sizeof() == 2:
+                    self.emit(f"CALL :heap_pop_{dest_reg}")
+                else:
+                    raise NotImplementedError("Unable to handle function calls that return more than 2 bytes")
+            if mode == 'generate_rvalue':
+                return Variable(typespec=func.return_type, name=func.name)
+        else:
+            raise NotImplementedError(f"visit_FuncCall mode {mode} not yet supported")
+
+    def visit_ExprList(self, node, mode, **kwargs):
+        if mode == 'return_nodes':
+            return node.exprs
+        else:
+            raise NotImplementedError(f"visit_ExprList mode {mode} not yet supported")
+
+    def _total_localvar_size(self, node) -> int:
+        """
+        Recursively descend into the entirety of node's AST searching for
+        local, non-static variable declarations (excluding parameters) and
+        total up their size.
+        """
+        # Don't count function parameters in local var size
+        if type(node) is c_ast.ParamList:
+            return 0
+        if type(node) is c_ast.Decl and type(node.type) is not c_ast.FuncDecl:
+            var = self.visit(node, mode='return_var', register_var=False)
+            if self.context.verbose >= 2:
+                self.emit_debug(f"_total_localvar_size: Computing size of {var.friendly_name()} = {var.sizeof()}")
+            return var.sizeof()
+        recursive_sum = 0
+        for child in node:
+            recursive_sum += self._total_localvar_size(child)
+        return recursive_sum
+
+    def visit_PtrDecl(self, node, mode, **kwargs):
+        if mode in ('type_collection', 'return_typespec',):
+            return self.visit(node.type, mode=mode, **kwargs)
+        elif mode == 'return_var':
+            new_var = self.visit(node.type, mode=mode, **kwargs)
+            new_var.is_pointer = True
+            new_var.pointer_depth += 1
+            return new_var
+        else:
+            raise NotImplementedError(f"visit_PtrDecl mode {mode} not yet supported")
+
+    def visit_ArrayDecl(self, node, mode, **kwargs):
+        if mode == 'return_typespec':
+            new_typespec = self.visit(node.type, mode=mode, **kwargs)
+            new_typespec.qualifiers.extend(node.dim_quals)
+            return new_typespec
+        elif mode == 'return_var':
+            new_var = self.visit(node.type, mode='return_var', **kwargs)
+            new_var.is_array = True
+            if node.dim:
+                new_var.array_dims.append(self.visit(node.dim, mode='get_value', **kwargs)[0])
+            return new_var
+        else:
+            raise NotImplementedError(f"visit_ArrayDecl mode {mode} not yet supported")
+
+    def visit_ArrayRef(self, node, mode, dest_reg='A', **kwargs):
+        var = self.visit(node.name, mode='return_var')
+        
+        # Compute element address
+        other_reg = 'B' if dest_reg == 'A' else 'A'
+        self.emit(f"ALUOP_PUSH %{other_reg}H%", f"ArrayRef {other_reg} backup")
+        self.emit(f"ALUOP_PUSH %{other_reg}L%", f"ArrayRef {other_reg} backup")
+            
+        with self._debug_block(f"Get base address of {var.friendly_name()} into {other_reg}"):
+            # Get base address into other_reg
+            self._get_var_base_address(var, other_reg)
+            # Save the base address on the stack, because computing
+            # the subscript may clobber other_reg if it's a complex
+            # operation.
+            self.emit(f"ALUOP_PUSH %{other_reg}H%", f"Save base address of {var.friendly_name()}")
+            self.emit(f"ALUOP_PUSH %{other_reg}L%", f"Save base address of {var.friendly_name()}")
+
+        # Load subscript, check return var to get type (might need sign extension)
+        with self._debug_block(f"Get subscript value (offset) into {dest_reg}"):
+            subscript_var = self.visit(node.subscript, mode='generate_rvalue', dest_reg=dest_reg)
+            if not subscript_var:
+                raise ValueError("Can't index array if generate_rvalue does not return a var")
+            if subscript_var.sizeof() == 1:
+                self.emit_sign_extend(dest_reg, subscript_var.typespec)
+
+        with self._debug_block(f"Compute subscripted address into {other_reg}"):
+            # Restore the base address first
+            self.emit(f"POP_{other_reg}L", f"Restore base address of {var.friendly_name()}")
+            self.emit(f"POP_{other_reg}H", f"Restore base address of {var.friendly_name()}")
+            self._add_array_offset(var, index_reg=dest_reg, addr_reg=other_reg) # Indexed address now in other_reg
+        
+        if mode == 'generate_lvalue_address':
+            # Copy address computed above in other_reg into dest_reg
+            with self._debug_block(f"Copy subscripted address into {dest_reg}"):
+                self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy subscripted address from {other_reg} to {dest_reg}")
+                self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy subscripted address from {other_reg} to {dest_reg}")
+            self.emit(f"POP_{other_reg}L", f"ArrayRef {other_reg} restore")
+            self.emit(f"POP_{other_reg}H", f"ArrayRef {other_reg} restore")
+            return var
+        
+        elif mode == 'generate_rvalue':
+            with self._debug_block(f"Load value at subscripted address into {dest_reg}"):
+                if var.sizeof_element() <= 2:
+                    self._deref_load(var.sizeof_element(), addr_reg=other_reg, dest_reg=dest_reg)
+                else:
+                    # Return address for large elements
+                    self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy subscripted address from {other_reg} to {dest_reg}")
+                    self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy subscripted address from {other_reg} to {dest_reg}")
+            self.emit(f"POP_{other_reg}L", f"ArrayRef {other_reg} restore")
+            self.emit(f"POP_{other_reg}H", f"ArrayRef {other_reg} restore")
+        else:
+            raise NotImplementedError(f"visit_ArrayRef mode {mode} not yet supported")
+
+    def visit_Constant(self, node, mode, dest_reg='A', dest_typespec=None, **kwargs):
+        if mode == 'return_typespec':
+            if dest_typespec:
+                return dest_typespec
+            elif node.type == 'string':
+                return TypeSpec('string', 'char')
+            elif node.type == 'int':
+                return TypeSpec('int', 'int')
+            elif node.type == 'char':
+                return TypeSpec('char', 'char')
+            else:
+                raise NotImplementedError(f"Unrecognized constant type: {node.type}")
+        elif mode == 'get_value':
+            if node.type == 'int':
+                return (int(node.value, base=0), node.value)
+            elif node.type == 'char':
+                return (ord(ast.literal_eval(node.value)), node.value)
+            elif node.type == 'string':
+                return (self.context.literalreg.lookup_by_content(node.value, 'string').label, node.value)
+            else:
+                raise NotImplementedError(f"Unrecognized constant type: {node.type}")
+        elif mode == 'return_array_dim':
+            if node.type == 'string':
+                return [ len(node.value) - 1 ] # Rough estimate, actual size depends on escapes
+            else:
+                raise ValueError(f"I don't know what to do with a Constant {node.type} node for setting array dims")
+        elif mode == 'generate_rvalue':
+            # Register string literals as we encounter them, and
+            # for these, the rvalue is the address (label) of the string.
+            if node.type == 'string':
+                # Remove quotes from the string value
+                content = node.value
+                # Calculate size (including null terminator)
+                # The value includes quotes, so we need to process escape sequences
+                size = len(content) - 1  # Rough estimate, actual size depends on escapes
+                self.context.literalreg.register(content, 'string', size)
+                # Now that it's registered, return the address
+                # of the literal in the dest_reg
+                literal = self.context.literalreg.lookup_by_content(content, 'string')
+                self.emit(f"LDI_{dest_reg} {literal.label}", content)
+                # return fake Variable representing the constant
+                return Variable(typespec=TypeSpec('string', 'char'), name='init_string', is_array=True, array_dims=[size])
+            # For numeric constants, we load the value
+            # directly into the destination register.
+            elif node.type == 'int':
+                if not dest_typespec:
+                    self.emit(f"LDI_{dest_reg} {node.value}", "Constant assignment")
+                    return Variable(typespec=TypeSpec('int', 'int'), name='const')
+                elif dest_typespec.sizeof() == 1:
+                    self.emit(f"LDI_{dest_reg}L {node.value}", "Constant assignment")
+                    return Variable(typespec=dest_typespec, name='const')
+                elif dest_typespec.sizeof() == 2:
+                    self.emit(f"LDI_{dest_reg} {node.value}", "Constant assignment")
+                    return Variable(typespec=dest_typespec, name='const')
+                else:
+                    raise NotImplementedError(f"Unable to load integer constants larger than 16 bit")
+            elif node.type == 'char':
+                const_int = ord(ast.literal_eval(node.value))
+                if not dest_typespec:
+                    self.emit(f"LDI_{dest_reg} {node.value}", f"Constant char assignment {node.value}")
+                    return Variable(typespec=TypeSpec('int', 'int'), name='const')
+                elif dest_typespec.sizeof() == 1:
+                    self.emit(f"LDI_{dest_reg}L {node.value}", f"Constant char assignment {node.value}")
+                    return Variable(typespec=dest_typespec, name='const')
+                elif dest_typespec.sizeof() == 2:
+                    self.emit(f"LDI_{dest_reg} {node.value}", f"Constant char assignment {node.value}")
+                    return Variable(typespec=dest_typespec, name='const')
+                else:
+                    raise NotImplementedError(f"Unable to load char constants larger than 16 bit")
+            else:
+                raise NotImplementedError(f"Constant value for {node.type} types not yet supported")
+        else:
+            raise NotImplementedError(f"visit_Constant mode {mode} not yet supported")
+
+    def visit_InitList(self, node, mode, dest_reg='A', dest_typespec=None, **kwargs):
+        if mode == 'return_array_dim':
+            # Return the number of elements in the init list
+            return [len(node.exprs)]
+        elif mode == 'generate_rvalue':
+            # Recursively flatten the init list into bytes
+            def flatten_init_list(init_node, target_typespec):
+                """
+                Recursively process an InitList node and return:
+                - A list of hex byte strings (e.g., ["0x0a", "0x14"])
+                - A list of values for documentation
+                - A list of comment strings
+                - Total byte count
+                """
+                parts = []
+                vals = []
+                comments = []
+                byte_count = 0
+
+                if target_typespec and target_typespec.is_struct:
+                    # Processing struct initialization
+                    for expr, struct_member in zip(init_node.exprs, target_typespec.struct_members):
+                        if type(expr) is c_ast.InitList:
+                            # Recursively flatten nested init list
+                            sub_parts, sub_vals, sub_comments, sub_bytes = flatten_init_list(expr, struct_member.typespec)
+                            parts.extend(sub_parts)
+                            vals.extend(sub_vals)
+                            comments.append(f"<nested {struct_member.name}>")
+                            byte_count += sub_bytes
+                        else:
+                            # Simple constant value
+                            ts = self.visit(expr, mode='return_typespec', dest_typespec=struct_member.typespec, **kwargs)
+                            val, c_val = self.visit(expr, mode='get_value', dest_typespec=struct_member.typespec, **kwargs)
+                            comments.append(c_val)
+
+                            if ts.sizeof() == 1:
+                                parts.append(f"0x{val:02x}")
+                                vals.append(val & 0xff)
+                                byte_count += 1
+                            elif ts.sizeof() == 2:
+                                low = val & 0xff
+                                high = (val & 0xff00) >> 8
+                                parts.append(f"0x{low:02x}")
+                                parts.append(f"0x{high:02x}")
+                                vals.append(val & 0xffff)
+                                byte_count += 2
+                            else:
+                                raise ValueError(f"Unable to create data from value with size > 2: {ts}")
+                else:
+                    # Processing array initialization
+                    for expr in init_node.exprs:
+                        if type(expr) is c_ast.InitList:
+                            # Recursively flatten nested init list
+                            element_typespec = target_typespec if target_typespec else None
+                            sub_parts, sub_vals, sub_comments, sub_bytes = flatten_init_list(expr, element_typespec)
+                            parts.extend(sub_parts)
+                            vals.extend(sub_vals)
+                            comments.append("<nested>")
+                            byte_count += sub_bytes
+                        else:
+                            # Simple constant value
+                            ts = self.visit(expr, mode='return_typespec', dest_typespec=target_typespec, **kwargs)
+                            val, c_val = self.visit(expr, mode='get_value', dest_typespec=target_typespec, **kwargs)
+                            comments.append(c_val)
+
+                            if ts.sizeof() == 1:
+                                parts.append(f"0x{val:02x}")
+                                vals.append(val & 0xff)
+                                byte_count += 1
+                            elif ts.sizeof() == 2:
+                                low = val & 0xff
+                                high = (val & 0xff00) >> 8
+                                parts.append(f"0x{low:02x}")
+                                parts.append(f"0x{high:02x}")
+                                vals.append(val & 0xffff)
+                                byte_count += 2
+                            else:
+                                raise ValueError(f"Unable to create data from value with size > 2: {ts}")
+
+                return parts, vals, comments, byte_count
+
+            # Flatten the entire init list
+            literal_parts, literal_vals, literal_comment, byte_count = flatten_init_list(node, dest_typespec)
+
+            # Create the literal
+            if dest_typespec and dest_typespec.is_struct:
+                comment_str = f"Struct {dest_typespec.name} initializer data: {{{', '.join(literal_comment)}}}"
+            else:
+                type_name = dest_typespec.name if dest_typespec else "byte"
+                comment_str = f"{type_name} initializer data: {{{', '.join(literal_comment)}}}"
+
+            self.context.literalreg.register(" ".join(literal_parts), 'bytes', len(literal_parts), comment=comment_str)
+
+            # Get the literal we just registered and load its address
+            literal = self.context.literalreg.lookup_by_content(" ".join(literal_parts), 'bytes')
+            self.emit(f"LDI_{dest_reg} {literal.label}", literal_vals if literal_vals else literal_parts)
+
+            # Return a fake variable representing the initialized data
+            retvar = Variable(typespec=TypeSpec('byte', 'unsigned char'),
+                             name='initlist', is_array=True, array_dims=[byte_count])
+            return retvar
+        else:
+            raise NotImplementedError(f"visit_InitList mode {mode} not yet supported")
+
+    def visit_ID(self, node, mode, dest_reg='A', **kwargs):
+        if mode == 'return_var':
+            return self.context.vartable.lookup(node.name)
+        if mode == 'return_function':
+            return self.context.funcreg.lookup(node.name)
+        elif mode == 'generate_lvalue_address':
+            # generate the address of the identifier and place the value in dest_reg
+            var = self.context.vartable.lookup(node.name)
+            if not var:
+                raise ValueError(f"Unable to find variable {node.name} in variable table")
+            self._get_var_base_address(var, dest_reg)
+            return var
+        elif mode == 'generate_rvalue':
+            # Get the value of the identifier and place the value in dest_reg
+            var = self.context.vartable.lookup(node.name)
+            if not var:
+                raise ValueError(f"Unable to find variable {node.name} in variable table")
+            if var.is_array:
+                # Array decays to pointer
+                self._get_var_base_address(var, dest_reg)
+            elif var.is_pointer:
+                # Load pointer value
+                self._get_var_base_address(var, dest_reg)
+                self._deref_load(2, addr_reg=dest_reg, dest_reg=dest_reg)  # Load 2-byte pointer
+            else:
+                # Load simple value
+                self._get_var_base_address(var, dest_reg)
+                self._deref_load(var.sizeof(), addr_reg=dest_reg, dest_reg=dest_reg)
+            return var
+        else:
+            raise NotImplementedError(f"visit_ID mode {mode} not yet supported")
+
+    def visit_Compound(self, node, mode, **kwargs):
+        if mode in ('literal_collection',):
+            for c in node:
+                self.visit(c, mode=mode, **kwargs)
+        elif mode == 'codegen':
+            self.context.vartable.push_scope()
+            for c in node:
+                self.visit(c, mode=mode, **kwargs)
+            self.context.vartable.pop_scope()
+        else:
+            raise NotImplementedError(f"visit_Compound mode {mode} not yet supported")
+
+    def visit_Assignment(self, node, mode, **kwargs):
+        if mode == 'codegen':
+            if node.op == '=':
+                # Set up the destination address, where we will store the result
+                # of the rvalue expression, into B. Returns the Variable on the
+                # left side of the assignment.
+                with self._debug_block(f"Assign op {node.op}: Generate lvalue address"):
+                    var = self.visit(node.lvalue, mode='generate_lvalue_address', dest_reg='B')
+
+                # Generate the value we are going to store, into register A (or AL)
+                with self._debug_block(f"Assign op {node.op}: Generate rvalue"):
+                    if var.typespec.is_struct:
+                        self.visit(node.rvalue, mode='generate_rvalue_address', dest_reg='A', dest_typespec=var.typespec)
+                    else:
+                        self.visit(node.rvalue, mode='generate_rvalue', dest_reg='A', dest_typespec=var.typespec)
+
+                # Store the value
+                with self._debug_block(f"Assign op {node.op}: Store rvalue to lvalue"):
+                    self._emit_store(var, lvalue_reg='B', rvalue_reg='A')
+            else:
+                raise NotImplementedError(f"visit_Assignment mode {mode} not yet supported for op {node.op}")
+        else:
+            raise NotImplementedError(f"visit_Assignment mode {mode} not yet supported")
+
+    def visit_UnaryOp(self, node, mode, dest_reg='A', dest_typespec=None, **kwargs):
+        if mode == 'generate_rvalue':
+            if node.op == '-':
+                with self._debug_block(f"UnaryOp {node.op}: load rvalue into {dest_reg}"):
+                    var = self.visit(node.expr, mode=mode, dest_reg=dest_reg, dest_typespec=dest_typespec)
+                with self._debug_block(f"UnaryOp {node.op}: invert value in {dest_reg}"):
+                    if var.typespec.sizeof() == 1:
+                        self.emit(f"ALUOP_{dest_reg}L %-{dest_reg}_signed%+%{dest_reg}L%", "Unary negation")
+                    else:
+                        self.emit(f"CALL :signed_invert_{dest_reg.lower()}", "Unary negation")
+                return var
+            elif node.op == '&':
+                with self._debug_block(f"UnaryOp {node.op}: load lvalue into {dest_reg}"):
+                    var = self.visit(node.expr, mode='generate_lvalue_address', dest_reg=dest_reg, dest_typespec=dest_typespec)
+                    var.is_pointer = True
+                    var.pointer_depth += 1
+                return var
+            else:
+                raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
+        else:
+            raise NotImplementedError(f"visit_UnaryOp mode {mode} not yet supported")
+
+
+    def _get_var_base_address(self, var, dest_reg='A'):
+        """Get base address of a variable into dest_reg."""
+        if var.kind == 'global' or (var.kind == 'local' and var.storage_class == 'static'):
+            prefix = self._get_static_prefix()
+            self.emit(f"LDI_{dest_reg} {prefix}{var.padded_name()}", f"Load base address of {var.name} into {dest_reg}")
+        else:
+            other_reg = 'B'
+            if dest_reg == 'B':
+                other_reg='A'
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"MOV_DH_{dest_reg}H", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"MOV_DL_{dest_reg}L", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"LDI_{other_reg} {var.offset}", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"CALL :add16_to_{dest_reg.lower()}", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"POP_%{other_reg}H%", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"POP_%{other_reg}L%", f"Load base address of {var.name} into {dest_reg}")
+
+    def _add_array_offset(self, var, index_reg='B', addr_reg='A'):
+        """Add array[index] offset to address in addr_reg. Destroys index_reg."""
+        if index_reg not in ('A', 'B',):
+            raise ValueError("index_reg must be A or B")
+        if addr_reg not in ('A', 'B',):
+            raise ValueError("addr_reg must be A or B")
+        element_size = var.sizeof_element()
+        if element_size == 1:
+            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}")
+        elif element_size == 2:
+            self.emit(f"CALL :shift16_{index_reg.lower()}_left", f"Add array offset in {index_reg} to address reg {addr_reg}")
+            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}")
+        elif element_size in (4, 8, 16):
+            shifts = {4: 2, 8: 3, 16: 4}[element_size]
+            for _ in range(shifts):
+                self.emit(f"CALL :shift16_{index_reg.lower()}_left", f"Add array offset in {index_reg} to address reg {addr_reg}")
+            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}")
+        else:
+            # Fallback to multiplication
+            self.emit(f"CALL :heap_push_{index_reg}", f"Add array offset in {index_reg} to address reg {addr_reg}")
+            self.emit(f"LDI_{index_reg} {element_size}", f"Add array offset in {index_reg} to address reg {addr_reg}")
+            self.emit(f"CALL :mul16", f"Add array offset in {index_reg} to address reg {addr_reg}")
+            self.emit(f"CALL :heap_pop_{index_reg}", f"Add array offset in {index_reg} to address reg {addr_reg}")
+            self.emit(f"CALL :heap_pop_word", f"Add array offset in {index_reg} to address reg {addr_reg}")
+            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}")
+
+    def _add_member_offset(self, member_var, addr_reg):
+        """Add struct member offset to address in addr_reg."""
+        if addr_reg not in ('A', 'B',):
+            raise ValueError("addr_reg must be A or B")
+        if member_var.offset > 0:
+            other_reg = 'B'
+            if addr_reg == 'B':
+                other_reg='A'
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            self.emit(f"LDI_{other_reg} {member_var.offset}", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            self.emit(f"POP_%{other_reg}H%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            self.emit(f"POP_%{other_reg}L%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+
+    def _deref_load(self, size, addr_reg, dest_reg):
+        """Load 'size' bytes from address in addr_reg into dest_reg. Destroys addr_reg."""
+        if size == 1:
+            self.emit(f"LDA_{addr_reg}_{dest_reg}L", f"Dereferenced load")
+        elif size == 2:
+            self.emit(f"LDA_{addr_reg}_{dest_reg}H", f"Dereferenced load")
+            if addr_reg in ('A', 'B',):
+                self.emit(f"CALL :incr16_{addr_reg.lower()}", f"Dereferenced load")
+            else:
+                self.emit(f"INCR_{addr_reg}", f"Dereferenced load")
+            self.emit(f"LDA_{addr_reg}_{dest_reg}L", f"Dereferenced load")
+            if addr_reg in ('A', 'B',):
+                self.emit(f"CALL :decr16_{addr_reg.lower()}", f"Dereferenced load")
+            else:
+                self.emit(f"DECR_{addr_reg}", f"Dereferenced load")
+        else:
+            raise ValueError(f"Cannot deref load size > 2 into register")
+
+    def _emit_bulk_store(self, var, lvalue_reg, rvalue_reg, bytes=None):
+        """
+        Performs a bulk copy memory-to-memory, from the rvalue_reg
+        (which should be a memory address of the source value), to
+        the lvalue_reg (which should also be a memory address. The
+        variable representing the lvalue_reg's address is passed in,
+        and determines the number of bytes to be copied from the
+        rvalue_reg. If `bytes` is provided, it overrides the var.sizeof()
+        value.
+        """
+        with self._debug_block(f"Bulk copy from address in {rvalue_reg} to address in {lvalue_reg} ({var.friendly_name()})"):
+            if bytes:
+                self.emit_debug(f"Bulk copy limited to {bytes} bytes")
+            self.emit(f"PUSH_DH", "Save frame pointer")
+            self.emit(f"PUSH_DL", "Save frame pointer")
+            self.emit(f"PUSH_CH", "Save C register")
+            self.emit(f"PUSH_CL", "Save C register")
+            self.emit(f"ALUOP_CH %{rvalue_reg}H%", "Copy source pointer to C")
+            self.emit(f"ALUOP_CL %{rvalue_reg}L%", "Copy source pointer to C")
+            self.emit(f"ALUOP_DH %{lvalue_reg}H%", "Set destination pointer in D")
+            self.emit(f"ALUOP_DL %{lvalue_reg}L%", "Set destination pointer in D")
+            byte=0
+            if bytes:
+                bytecount = bytes
+            else:
+                bytecount = var.sizeof()
+            four, one = divmod(bytecount, 4)
+            for _ in range(four):
+                newbyte = byte + 4
+                self.emit("MEMCPY4_C_D", f"Copy bytes {byte}-{newbyte-1} from C to D")
+                byte = newbyte
+            for byte in range(byte, byte+one):
+                self.emit("MEMCPY_C_D", f"Copy byte {byte} from C to D")
+                byte = byte + 1
+            self.emit(f"POP_CL", "Restore C register")
+            self.emit(f"POP_CH", "Restore C register")
+            self.emit(f"POP_DL", "Restore frame pointer")
+            self.emit(f"POP_DH", "Restore frame pointer")
+
+    def _emit_store(self, var, lvalue_reg, rvalue_reg):
+        """
+        lvalue_reg contains the address we need to write, representing var.
+        rvalue_reg contains the value we need to write.
+        If var is a struct, rvalue_reg must contain a pointer to the source data,
+        and a bulk store is performed.  For any other data type, the value in
+        rvalue_reg is the actual data value (not a pointer).
+        """
+        if var.typespec.is_struct:
+            self._emit_bulk_store(var, lvalue_reg, rvalue_reg)
+        else:
+            if var.typespec.sizeof() == 1:
+                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L", f"Store to {var.friendly_name()}")
+            elif var.typespec.sizeof() == 2:
+                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}H", f"Store to {var.friendly_name()}")
+                self.emit(f"CALL :incr16_{lvalue_reg.lower()}", f"Store to {var.typespec.base_type}")
+                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L", f"Store to {var.friendly_name()}")
+                self.emit(f"CALL :decr16_{lvalue_reg.lower()}", f"Store to {var.typespec.base_type}")
+            else:
+                raise NotImplementedError(f"_emit_store can't store simple values larger than 16 bit")
+

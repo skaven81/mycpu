@@ -1,26 +1,24 @@
 from typespec import TypeSpec
-from typecollection import TypeRegistry
+from variable import Variable
 from dataclasses import dataclass, field
-from typing import Optional, Dict
+from typing import Optional, List
 
 @dataclass
 class Function:
     """Represents a C function definition with its signature."""
-    name: str
+    name: Optional[str] = None
     return_type: Optional[TypeSpec] = None
-    parameters: Dict[str, TypeSpec] = field(default_factory=dict)
+    parameters: List[Variable] = field(default_factory=list)
     storage: Optional[str] = ""
     
-    # Reference to type registry for looking up types
-    type_registry: Optional[TypeRegistry] = field(default=None, repr=False)
-
     def c_str(self):
         ret = ""
         if self.storage:
-            ret = f"{self.storage} "
-        ret += self.return_type.c_str()
+            ret = self.storage + " "
+        ret += str(self.return_type.name + " ")
         ret += f'{self.name}('
-        ret += ", ".join([ p.c_str() for p in self.parameters.values() ])
+        if self.parameters:
+            ret += ", ".join([ p.friendly_name() for p in self.parameters ])
         ret += ')'
         return ret
 
