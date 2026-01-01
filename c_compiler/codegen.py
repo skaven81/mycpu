@@ -265,16 +265,19 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 with self._debug_block(f"Load value for {member_var.name} into {dest_reg}"):
                     other_reg = 'B' if dest_reg == 'A' else 'A'
                     self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load struct member value")
-                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load struct member value")
+                    if member_var.sizeof() == 2:
+                        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load struct member value")
                     self._deref_load(member_var.sizeof(), addr_reg=dest_reg, dest_reg=other_reg)
-                    self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Transfer value to {dest_reg}")
+                    if member_var.sizeof() == 2:
+                        self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Transfer value to {dest_reg}")
                     self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Transfer value to {dest_reg}")
                     self.emit(f"POP_{other_reg}L", f"Restore {other_reg} after loading struct member value")
-                    self.emit(f"POP_{other_reg}H", f"Restore {other_reg} after loading struct member value")
-                return
+                    if member_var.sizeof() == 2:
+                        self.emit(f"POP_{other_reg}H", f"Restore {other_reg} after loading struct member value")
+                return member_var
             else:
                 # address is already in dest_reg, we're done
-                return
+                return member_var
         else:
             raise NotImplementedError(f"visit_StructRef mode {mode} not yet supported")
 
@@ -361,7 +364,22 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         if mode == 'function_collection':
             new_funcdef = Function()
             new_funcdef.return_type = self.visit(node.type, mode='return_typespec')
-            new_funcdef.parameters = self.visit(node.args, mode='return_parameter_vars')
+            offset = 0
+            for p in self.visit(node.args, mode='return_parameter_vars'):
+                if p.is_array or p.typespec.is_struct:
+                    p.offset = offset - 1
+                    offset -= 2
+                elif p.sizeof() == 2:
+                    p.offset = offset - 1
+                    offset -= 2
+                elif p.sizeof() == 1:
+                    p.offset = offset
+                    offset -= 1
+                elif p.sizeof() == 0:
+                    pass # void or variadic parameter
+                else:
+                    raise ValueError("Cannot register function parameter larger than two bytes")
+                new_funcdef.parameters.append(p)
             return new_funcdef
         else:
             raise NotImplementedError(f"visit_FuncDecl mode {mode} not yet supported")
@@ -423,18 +441,19 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"CALL :heap_advance_BL")
                 # Reset localvar offset so new registrations get correct offsets
                 self.context.vartable.localvar_offset = 1
-                # Register parameter variables and compute offsets
-                parameter_offset = 0
+                # Register parameter variables; offsets were computed in function_collection pass
+                parameter_bytes = 0
                 if func.parameters:
                     for p in func.parameters:
-                        p.offset = parameter_offset
-                        parameter_offset -= p.sizeof()
+                        self.context.vartable.add(p)
+                        parameter_bytes += p.sizeof()
                         if self.context.verbose >= 1:
                             self.emit_debug(f"Registered parameter {p.friendly_name()}, {p.sizeof()} bytes at offset {p.offset}")
-                        self.context.vartable.add(p)
+                if self.context.verbose >= 1:
+                    self.emit_debug(f"Found {parameter_bytes} bytes of parameter vars in this function")
 
                 # Compute retreat value (local vars + parameters)
-                retreat_bytes = localvar_bytes + (-1 * parameter_offset)
+                retreat_bytes = localvar_bytes + parameter_bytes
 
                 # Generate function body, registering local vars as we encounter them
                 for c in node:
@@ -482,17 +501,34 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             if not func:
                 raise ValueError(f"Function {node.name} not found in function registry")
             with self._debug_block(f"FuncCall {func.name}"):
+                # Check for custom function call override, for external library
+                # functions that don't conform to our standard call semantics
+                custom_func_call = getattr(self, f"custom_FuncCall_{func.name}", None)
+                if custom_func_call and func.storage == 'extern':
+                    custom_func_call(node, mode, func=func, dest_reg=dest_reg, **kwargs)
+                    if mode == 'generate_rvalue':
+                        return Variable(typespec=func.return_type, name=func.name)
+                    return
+
+                # Otherwise, it's a function with standard call semantics (heap_push
+                # arguments in reverse order, call, heap_pop return value)
                 param_vars = reversed(func.parameters)
                 arg_nodes = reversed(self.visit(node.args, mode='return_nodes'))
                 for pv, an in zip(param_vars, arg_nodes):
                     with self._debug_block(f"FuncCall {func.name} push parameter {pv.friendly_name()}"):
-                        rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_typespec=pv.typespec)
-                        if rvalue_var.sizeof() == 1:
-                            self.emit(f"CALL :heap_push_AL", f"Push parameter {pv.friendly_name()}")
-                        elif rvalue_var.sizeof() == 2:
-                            self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()}")
+                        if pv.is_pointer or pv.is_array or pv.typespec.is_struct:
+                            rvalue_var = self.visit(an, mode='generate_lvalue_address', dest_reg='A', dest_typespec=pv.typespec)
+                            self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
                         else:
-                            raise ValueError("Unable to push parameters larger than 2 bytes")
+                            rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_typespec=pv.typespec)
+                            if rvalue_var.is_array or rvalue_var.typespec.is_struct:
+                                self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
+                            elif rvalue_var.sizeof() == 1:
+                                self.emit(f"CALL :heap_push_AL", f"Push parameter {pv.friendly_name()}")
+                            elif rvalue_var.sizeof() == 2:
+                                self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()}")
+                            else:
+                                raise ValueError("Unable to push parameters larger than 2 bytes")
                 self.emit(f"CALL {func.asm_name()}")
                 if func.return_type.sizeof() == 0:
                     self.emit("# function returns nothing, not popping a return value")
@@ -607,6 +643,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy subscripted address from {other_reg} to {dest_reg}")
             self.emit(f"POP_{other_reg}L", f"ArrayRef {other_reg} restore")
             self.emit(f"POP_{other_reg}H", f"ArrayRef {other_reg} restore")
+            return Variable(typespec=var.typespec, name=f"{var.name}_element")
         else:
             raise NotImplementedError(f"visit_ArrayRef mode {mode} not yet supported")
 
@@ -805,10 +842,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             var = self.context.vartable.lookup(node.name)
             if not var:
                 raise ValueError(f"Unable to find variable {node.name} in variable table")
-            if var.is_array:
-                # Array decays to pointer
-                self._get_var_base_address(var, dest_reg)
-            elif var.is_pointer:
+            if var.is_array or var.is_pointer or var.typespec.is_struct:
+                # Arrays and Structs decay to pointers
                 # Load pointer value
                 other_reg = 'B' if dest_reg == 'A' else 'A'
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load pointer")
@@ -885,6 +920,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 return var
             else:
                 raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
+        elif mode == 'generate_lvalue_address':
+            if node.op == '&':
+                with self._debug_block(f"UnaryOp {node.op}: load lvalue into {dest_reg}"):
+                    var = self.visit(node.expr, mode='generate_lvalue_address', dest_reg=dest_reg, dest_typespec=dest_typespec)
+                    var.is_pointer = True
+                    var.pointer_depth += 1
+                return var
         else:
             raise NotImplementedError(f"visit_UnaryOp mode {mode} not yet supported")
 
@@ -985,10 +1027,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"PUSH_DL", "Save frame pointer")
             self.emit(f"PUSH_CH", "Save C register")
             self.emit(f"PUSH_CL", "Save C register")
-            self.emit(f"ALUOP_CH %{rvalue_reg}H%", "Copy source pointer to C")
-            self.emit(f"ALUOP_CL %{rvalue_reg}L%", "Copy source pointer to C")
-            self.emit(f"ALUOP_DH %{lvalue_reg}H%", "Set destination pointer in D")
-            self.emit(f"ALUOP_DL %{lvalue_reg}L%", "Set destination pointer in D")
+            self.emit(f"ALUOP_CH %{rvalue_reg}%+%{rvalue_reg}H%", "Copy source pointer to C")
+            self.emit(f"ALUOP_CL %{rvalue_reg}%+%{rvalue_reg}L%", "Copy source pointer to C")
+            self.emit(f"ALUOP_DH %{lvalue_reg}%+%{lvalue_reg}H%", "Set destination pointer in D")
+            self.emit(f"ALUOP_DL %{lvalue_reg}%+%{lvalue_reg}L%", "Set destination pointer in D")
             byte=0
             if bytes:
                 bytecount = bytes
