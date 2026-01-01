@@ -33,6 +33,10 @@ class Variable:
         # Pointer size
         if self.is_pointer:
             return 2
+
+        # variadic parameter
+        if self.typespec.base_type == '...':
+            return 0
         
         # Array size
         if self.is_array:
