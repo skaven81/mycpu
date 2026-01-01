@@ -421,7 +421,7 @@ class CodeGenerator(c_ast.NodeVisitor):
                     self.emit(f"LDI_BL {localvar_bytes}", "Bytes to allocate for local vars")
                     self.emit(f"CALL :heap_advance_BL")
                 # Reset localvar offset so new registrations get correct offsets
-                self.context.vartable.localvar_offset = 0
+                self.context.vartable.localvar_offset = 1
                 # Register parameter variables and compute offsets
                 parameter_offset = 0
                 if func.parameters:

@@ -13,7 +13,7 @@ class VariableTable:
         self.globals = {}
         self.scopes = []
         self.local_statics = {}
-        self.localvar_offset = 0
+        self.localvar_offset = 1
     
     def push_scope(self):
         """Enter a new scope"""
@@ -48,8 +48,8 @@ class VariableTable:
 
         # assign offset to local non-static vars
         if variable.kind == 'local' and variable.storage_class != 'static':
-            self.localvar_offset += variable.sizeof()
             variable.offset = self.localvar_offset
+            self.localvar_offset += variable.sizeof()
 
         # register the variable in the current scope
         scope[variable.name] = variable
