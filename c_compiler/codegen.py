@@ -4,9 +4,10 @@ from pycparser import c_ast
 from typespec import TypeSpec
 from function import Function
 from variable import Variable
+from special_functions import SpecialFunctions
 import ast
 
-class CodeGenerator(c_ast.NodeVisitor):
+class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
     def __init__(self, context, output=sys.stdout):
         self.context = context
         self.output = output
