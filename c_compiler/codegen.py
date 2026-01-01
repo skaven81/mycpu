@@ -390,6 +390,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             for p in node.params:
                 new_param = self.visit(p, mode='return_var', var_kind='param', register_var=False)
                 new_param.kind = 'param'
+                if (new_param.typespec.is_struct or new_param.is_array) and not new_param.is_pointer:
+                    raise ValueError(
+                        f"Parameter '{new_param.name}' cannot be passed by value. "
+                        f"Structs and arrays must be passed by pointer (use {new_param.typespec.name}* or {new_param.typespec.name}[])"
+                    )
                 params.append(new_param)
             return params
         else:
@@ -850,6 +855,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load pointer")
                 self._get_var_base_address(var, other_reg)
                 self._deref_load(2, addr_reg=other_reg, dest_reg=dest_reg)  # Load 2-byte pointer
+                if var.is_pointer:
+                    var.pointer_depth -= 1
+                    if var.pointer_depth == 0:
+                        var.is_pointer = False
                 self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, pointer is in {dest_reg}")
                 self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, pointer is in {dest_reg}")
             else:
@@ -902,8 +911,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             raise NotImplementedError(f"visit_Assignment mode {mode} not yet supported")
 
     def visit_UnaryOp(self, node, mode, dest_reg='A', dest_typespec=None, **kwargs):
-        if mode == 'generate_rvalue':
-            if node.op == '-':
+        if node.op == '-':
+            if mode == 'generate_rvalue':
                 with self._debug_block(f"UnaryOp {node.op}: load rvalue into {dest_reg}"):
                     var = self.visit(node.expr, mode=mode, dest_reg=dest_reg, dest_typespec=dest_typespec)
                 with self._debug_block(f"UnaryOp {node.op}: invert value in {dest_reg}"):
@@ -912,7 +921,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     else:
                         self.emit(f"CALL :signed_invert_{dest_reg.lower()}", "Unary negation")
                 return var
-            elif node.op == '&':
+        elif node.op == '&':
+            if mode in ('generate_rvalue', 'generate_lvalue_address',):
                 with self._debug_block(f"UnaryOp {node.op}: load lvalue into {dest_reg}"):
                     var = self.visit(node.expr, mode='generate_lvalue_address', dest_reg=dest_reg, dest_typespec=dest_typespec)
                     var.is_pointer = True
@@ -920,16 +930,23 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 return var
             else:
                 raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
-        elif mode == 'generate_lvalue_address':
-            if node.op == '&':
+        elif node.op == '*':
+            if mode in ('generate_rvalue', 'generate_lvalue_address',):
                 with self._debug_block(f"UnaryOp {node.op}: load lvalue into {dest_reg}"):
-                    var = self.visit(node.expr, mode='generate_lvalue_address', dest_reg=dest_reg, dest_typespec=dest_typespec)
-                    var.is_pointer = True
-                    var.pointer_depth += 1
+                    other_reg = 'B' if dest_reg == 'A' else 'A'
+                    # generate_rvalue places the pointer value into other_reg
+                    var = self.visit(node.expr, mode='generate_rvalue', dest_reg=other_reg, dest_typespec=dest_typespec)
+                    if mode == 'generate_lvalue_address':
+                        return var
+                    self._deref_load(var.sizeof(), addr_reg=other_reg, dest_reg=dest_reg)
+                    var.pointer_depth -= 1
+                    if var.pointer_depth == 0:
+                        var.is_pointer = False
                 return var
+            else:
+                raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
         else:
-            raise NotImplementedError(f"visit_UnaryOp mode {mode} not yet supported")
-
+            raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
 
     def _get_var_base_address(self, var, dest_reg='A'):
         """Get base address of a variable into dest_reg."""
@@ -937,9 +954,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             prefix = self._get_static_prefix()
             self.emit(f"LDI_{dest_reg} {prefix}{var.padded_name()}", f"Load base address of {var.name} into {dest_reg}")
         else:
-            other_reg = 'B'
-            if dest_reg == 'B':
-                other_reg='A'
+            other_reg = 'A' if dest_reg == 'B' else 'B'
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} into {dest_reg}")
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Load base address of {var.name} into {dest_reg}")
             self.emit(f"MOV_DH_{dest_reg}H", f"Load base address of {var.name} into {dest_reg}")
