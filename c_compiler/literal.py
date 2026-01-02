@@ -11,6 +11,6 @@ class Literal:
 
     def asm(self):
         if self.literal_type == 'string':
-            return f'{self.content[:-1]}\\0"'
+            return '"' + ascii(self.content)[1:-1] + '\\0"'
         else:
             return self.content

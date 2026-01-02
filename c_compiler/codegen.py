@@ -246,38 +246,59 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             raise NotImplementedError(f"visit_Struct mode {mode} not yet supported")
 
     def visit_StructRef(self, node, mode, dest_reg='A', **kwargs):
+        """
+        Visit a struct member access: struct.member or ptr->member
+
+        generate_lvalue: Returns address of member in dest_reg
+        generate_rvalue: Returns value of member in dest_reg
+                         (large members/nested structs return address)
+        """
+        # Get struct base address
         with self._debug_block(f"Get base address of struct into {dest_reg}"):
             if node.type == '.':
-                base_var = self.visit(node.name, mode='generate_lvalue_address', dest_reg=dest_reg)
+                # struct.member - get address of struct
+                base_var = self.visit(node.name, mode='generate_lvalue', dest_reg=dest_reg)
             else:  # '->'
+                # ptr->member - get value of pointer (which is an address)
                 base_var = self.visit(node.name, mode='generate_rvalue', dest_reg=dest_reg)
-        
-        # dest_reg now has struct base address
+
+        # Get member metadata
         member_var = base_var.typespec.struct_member(node.field.name)
-        with self._debug_block(f"Add member {member_var.name} offset {member_var.offset} to struct address"):
+
+        # Add member offset to base address
+        with self._debug_block(f"Add member offset {member_var.offset} to struct address"):
             self._add_member_offset(member_var, dest_reg)
-        
-        if mode == 'generate_lvalue_address':
-            # address is already in dest_reg, we're done
+
+        if mode == 'generate_lvalue':
+            # Address is already in dest_reg
             return member_var
+
         elif mode == 'generate_rvalue':
-            if member_var.sizeof() <= 2 and not member_var.is_array:
-                with self._debug_block(f"Load value for {member_var.name} into {dest_reg}"):
+            # Check if we should load value or return address
+            if member_var.sizeof() <= 2 and not member_var.is_array and not member_var.typespec.is_struct:
+                # Load small value
+                with self._debug_block(f"Load member value into {dest_reg}"):
                     other_reg = 'B' if dest_reg == 'A' else 'A'
-                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load struct member value")
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg}")
                     if member_var.sizeof() == 2:
-                        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load struct member value")
+                        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg}")
+
                     self._deref_load(member_var.sizeof(), addr_reg=dest_reg, dest_reg=other_reg)
+
+                    # Transfer to dest_reg
                     if member_var.sizeof() == 2:
-                        self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Transfer value to {dest_reg}")
-                    self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Transfer value to {dest_reg}")
-                    self.emit(f"POP_{other_reg}L", f"Restore {other_reg} after loading struct member value")
+                        self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Transfer value")
+                    self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Transfer value")
+
+                    self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
                     if member_var.sizeof() == 2:
-                        self.emit(f"POP_{other_reg}H", f"Restore {other_reg} after loading struct member value")
+                        self.emit(f"POP_{other_reg}H", f"Restore {other_reg}")
+
                 return member_var
             else:
-                # address is already in dest_reg, we're done
+                # Return address for large members, arrays, or nested structs
                 return member_var
+
         else:
             raise NotImplementedError(f"visit_StructRef mode {mode} not yet supported")
 
@@ -349,8 +370,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             if node.init:
                 with self._debug_block(f"Initialize var {var.name}"):
                     if var.is_array or var.typespec.is_struct:
-                        self.visit(c_ast.ID(name=var.name), mode='generate_lvalue_address', dest_reg='B')
-                        init_var = self.visit(node.init, mode='generate_rvalue', dest_reg='A', dest_typespec=var.typespec)
+                        self.visit(c_ast.ID(name=var.name), mode='generate_lvalue', dest_reg='B')
+                        init_var = self.visit(node.init, mode='generate_rvalue', dest_reg='A', dest_var=var)
                         if not init_var:
                             raise ValueError(f"Cannot safely init var {var.name} without init list size")
                         self.emit_debug(f"init_var sizeof: {init_var.sizeof()}, var sizeof: {var.sizeof()}")
@@ -399,6 +420,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             return params
         else:
             raise NotImplementedError(f"visit_ParamList mode {mode} not yet supported")
+
+    def visit_Typename(self, node, mode, **kwargs):
+        if mode == 'return_var':
+            typespec = self.visit(node.type, mode='return_typespec')
+            return Variable(typespec=typespec, name=typespec.name)
 
     def visit_EllipsisParam(self, node, mode, **kwargs):
         if mode == 'return_var':
@@ -522,10 +548,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 for pv, an in zip(param_vars, arg_nodes):
                     with self._debug_block(f"FuncCall {func.name} push parameter {pv.friendly_name()}"):
                         if pv.is_pointer or pv.is_array or pv.typespec.is_struct:
-                            rvalue_var = self.visit(an, mode='generate_lvalue_address', dest_reg='A', dest_typespec=pv.typespec)
+                            rvalue_var = self.visit(an, mode='generate_lvalue', dest_reg='A', dest_var=pv)
                             self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
                         else:
-                            rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_typespec=pv.typespec)
+                            rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_var=pv)
                             if rvalue_var.is_array or rvalue_var.typespec.is_struct:
                                 self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
                             elif rvalue_var.sizeof() == 1:
@@ -599,63 +625,133 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             raise NotImplementedError(f"visit_ArrayDecl mode {mode} not yet supported")
 
     def visit_ArrayRef(self, node, mode, dest_reg='A', **kwargs):
-        var = self.visit(node.name, mode='return_var')
-        
-        # Compute element address
+        """
+        Visit an array subscript operation: arr[index]
+
+        return_var: Returns Variable metadata for the subscripted element
+        generate_lvalue: Returns address of arr[index] element in dest_reg
+        generate_rvalue: Returns value of arr[index] element in dest_reg
+                         (large elements return address)
+        """
+
+        if mode == 'return_var':
+            # Recursively get the base array variable
+            base_var = self.visit(node.name, mode='return_var')
+            if not base_var:
+                raise ValueError(f"Cannot get variable info for array subscript")
+
+            # Create element variable with reduced dimensionality
+            element_var = Variable(
+                typespec=base_var.typespec,
+                name=f"{base_var.name}_element",
+                is_array=len(base_var.array_dims) > 1,  # Still array if multi-dimensional
+                array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else [],
+                is_pointer=base_var.is_pointer,
+                pointer_depth=base_var.pointer_depth
+            )
+            return element_var
+
+        # For generate_lvalue and generate_rvalue modes:
+        # We need to know the array dimensions at THIS level (before subscripting)
+        # So we get the variable info for the base (node.name), not for this ArrayRef
+        base_var = self.visit(node.name, mode='return_var')
+
+        # Save other_reg
         other_reg = 'B' if dest_reg == 'A' else 'A'
         self.emit(f"ALUOP_PUSH %{other_reg}H%", f"ArrayRef {other_reg} backup")
         self.emit(f"ALUOP_PUSH %{other_reg}L%", f"ArrayRef {other_reg} backup")
-            
-        with self._debug_block(f"Get base address of {var.friendly_name()} into {other_reg}"):
-            # Get base address into other_reg
-            self._get_var_base_address(var, other_reg)
-            # Save the base address on the stack, because computing
-            # the subscript may clobber other_reg if it's a complex
-            # operation.
-            self.emit(f"ALUOP_PUSH %{other_reg}H%", f"Save base address of {var.friendly_name()}")
-            self.emit(f"ALUOP_PUSH %{other_reg}L%", f"Save base address of {var.friendly_name()}")
 
-        # Load subscript, check return var to get type (might need sign extension)
-        with self._debug_block(f"Get subscript value (offset) into {dest_reg}"):
+        # Get base address into other_reg
+        # For nested ArrayRef, this recursively computes the address
+        with self._debug_block(f"Get base address of {base_var.friendly_name()} into {other_reg}"):
+            self.visit(node.name, mode='generate_lvalue', dest_reg=other_reg)
+
+            # Save base address (computing subscript may clobber other_reg)
+            self.emit(f"ALUOP_PUSH %{other_reg}H%", f"Save base address")
+            self.emit(f"ALUOP_PUSH %{other_reg}L%", f"Save base address")
+
+        # Compute subscript (offset) into dest_reg
+        with self._debug_block(f"Get subscript value into {dest_reg}"):
             subscript_var = self.visit(node.subscript, mode='generate_rvalue', dest_reg=dest_reg)
             if not subscript_var:
-                raise ValueError("Can't index array if generate_rvalue does not return a var")
+                raise ValueError("Cannot index array: subscript expression returned no variable")
             if subscript_var.sizeof() == 1:
                 self.emit_sign_extend(dest_reg, subscript_var.typespec)
 
-        with self._debug_block(f"Compute subscripted address into {other_reg}"):
-            # Restore the base address first
-            self.emit(f"POP_{other_reg}L", f"Restore base address of {var.friendly_name()}")
-            self.emit(f"POP_{other_reg}H", f"Restore base address of {var.friendly_name()}")
-            self._add_array_offset(var, index_reg=dest_reg, addr_reg=other_reg) # Indexed address now in other_reg
-        
-        if mode == 'generate_lvalue_address':
-            # Copy address computed above in other_reg into dest_reg
-            with self._debug_block(f"Copy subscripted address into {dest_reg}"):
-                self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy subscripted address from {other_reg} to {dest_reg}")
-                self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy subscripted address from {other_reg} to {dest_reg}")
-            self.emit(f"POP_{other_reg}L", f"ArrayRef {other_reg} restore")
-            self.emit(f"POP_{other_reg}H", f"ArrayRef {other_reg} restore")
-            return var
-        
+        # Compute element address: base + (index * element_size)
+        with self._debug_block(f"Compute element address into {other_reg}"):
+            # Restore base address
+            self.emit(f"POP_{other_reg}L", f"Restore base address")
+            self.emit(f"POP_{other_reg}H", f"Restore base address")
+
+            # Calculate element size at THIS level
+            # base_var.array_dims tells us the dimensions of the thing being indexed
+            # For arr[3][3], when processing outer [2]:
+            #   - base_var is the original arr with array_dims=[3,3]
+            #   - element_size = sizeof(char) * 3 = 3
+            # When processing inner [0] of the result:
+            #   - base_var is the result of arr[2] with array_dims=[3]
+            #   - element_size = sizeof(char) * 1 = 1
+
+            if len(base_var.array_dims) > 1:
+                # Multi-dimensional: element is a sub-array
+                # Size = base_element_size * product of remaining dimensions (after this subscript)
+                element_size = base_var.typespec.sizeof()
+                for dim in base_var.array_dims[1:]:  # Skip first dimension, multiply rest
+                    element_size *= dim
+            else:
+                # Single dimension (or final dimension): use base element size
+                element_size = base_var.typespec.sizeof()
+
+            self.emit_debug(f"Element size for dimension: {element_size} bytes")
+
+            # Add offset using the correct element size
+            self._add_array_offset(
+                element_size,
+                index_reg=dest_reg,
+                addr_reg=other_reg
+            )
+
+        # Create result variable (one dimension removed)
+        element_var = Variable(
+            typespec=base_var.typespec,
+            name=f"{base_var.name}_element",
+            is_array=len(base_var.array_dims) > 1,
+            array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else []
+        )
+
+        if mode == 'generate_lvalue':
+            # Copy element address from other_reg to dest_reg
+            with self._debug_block(f"Copy element address to {dest_reg}"):
+                self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy address")
+                self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy address")
+
+            self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
+            self.emit(f"POP_{other_reg}H", f"Restore {other_reg}")
+            return element_var
+
         elif mode == 'generate_rvalue':
-            with self._debug_block(f"Load value at subscripted address into {dest_reg}"):
-                if var.sizeof_element() <= 2:
-                    self._deref_load(var.sizeof_element(), addr_reg=other_reg, dest_reg=dest_reg)
+            # Load value at element address into dest_reg
+            with self._debug_block(f"Load element value into {dest_reg}"):
+                if element_var.sizeof() <= 2 and not element_var.is_array:
+                    # Load small value
+                    self._deref_load(element_var.sizeof(), addr_reg=other_reg, dest_reg=dest_reg)
                 else:
-                    # Return address for large elements
-                    self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy subscripted address from {other_reg} to {dest_reg}")
-                    self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy subscripted address from {other_reg} to {dest_reg}")
-            self.emit(f"POP_{other_reg}L", f"ArrayRef {other_reg} restore")
-            self.emit(f"POP_{other_reg}H", f"ArrayRef {other_reg} restore")
-            return Variable(typespec=var.typespec, name=f"{var.name}_element")
+                    # Return address for large elements or nested arrays
+                    self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy address")
+                    self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy address")
+
+            self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
+            self.emit(f"POP_{other_reg}H", f"Restore {other_reg}")
+            return element_var
+
         else:
             raise NotImplementedError(f"visit_ArrayRef mode {mode} not yet supported")
 
-    def visit_Constant(self, node, mode, dest_reg='A', dest_typespec=None, **kwargs):
+    def visit_Constant(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
         if mode == 'return_typespec':
-            if dest_typespec:
-                return dest_typespec
+            if dest_var:
+                return dest_var.typespec
             elif node.type == 'string':
                 return TypeSpec('string', 'char')
             elif node.type == 'int':
@@ -670,12 +766,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             elif node.type == 'char':
                 return (ord(ast.literal_eval(node.value)), node.value)
             elif node.type == 'string':
-                return (self.context.literalreg.lookup_by_content(node.value, 'string').label, node.value)
+                return (self.context.literalreg.lookup_by_content(ast.literal_eval(node.value), 'string').label, node.value)
             else:
                 raise NotImplementedError(f"Unrecognized constant type: {node.type}")
         elif mode == 'return_array_dim':
             if node.type == 'string':
-                return [ len(node.value) - 1 ] # Rough estimate, actual size depends on escapes
+                return [ len(ast.literal_eval(node.value)) + 1 ] # Rough estimate, actual size depends on escapes
             else:
                 raise ValueError(f"I don't know what to do with a Constant {node.type} node for setting array dims")
         elif mode == 'generate_rvalue':
@@ -683,50 +779,40 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             # for these, the rvalue is the address (label) of the string.
             if node.type == 'string':
                 # Remove quotes from the string value
-                content = node.value
+                content = ast.literal_eval(node.value)
                 # Calculate size (including null terminator)
                 # The value includes quotes, so we need to process escape sequences
-                size = len(content) - 1  # Rough estimate, actual size depends on escapes
+                size = len(content) + 1  # account for null terminator
                 self.context.literalreg.register(content, 'string', size)
                 # Now that it's registered, return the address
                 # of the literal in the dest_reg
                 literal = self.context.literalreg.lookup_by_content(content, 'string')
-                self.emit(f"LDI_{dest_reg} {literal.label}", content)
+                self.emit(f"LDI_{dest_reg} {literal.label}", node.value)
                 # return fake Variable representing the constant
                 return Variable(typespec=TypeSpec('string', 'char'), name='init_string', is_array=True, array_dims=[size])
             # For numeric constants, we load the value
             # directly into the destination register.
-            elif node.type == 'int':
-                if not dest_typespec:
-                    self.emit(f"LDI_{dest_reg} {node.value}", "Constant assignment")
-                    return Variable(typespec=TypeSpec('int', 'int'), name='const')
-                elif dest_typespec.sizeof() == 1:
-                    self.emit(f"LDI_{dest_reg}L {node.value}", "Constant assignment")
-                    return Variable(typespec=dest_typespec, name='const')
-                elif dest_typespec.sizeof() == 2:
-                    self.emit(f"LDI_{dest_reg} {node.value}", "Constant assignment")
-                    return Variable(typespec=dest_typespec, name='const')
+            elif node.type in ('int', 'char',):
+                parsed_value = ast.literal_eval(node.value)
+                if node.type == 'char':
+                    parsed_value = f"'{parsed_value}'"
+                if not dest_var:
+                    self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} as {node.type}")
+                    return Variable(typespec=TypeSpec(node.type, node.type), name='const')
+                elif dest_var.typespec.sizeof() == 1:
+                    self.emit(f"LDI_{dest_reg}L {parsed_value}", f"Constant assignment {node.value} for {dest_var.friendly_name()}")
+                    return Variable(typespec=dest_var.typespec, name='const')
+                elif dest_var.typespec.sizeof() == 2:
+                    self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} for {dest_var.friendly_name()}")
+                    return Variable(typespec=dest_var.typespec, name='const')
                 else:
                     raise NotImplementedError(f"Unable to load integer constants larger than 16 bit")
-            elif node.type == 'char':
-                const_int = ord(ast.literal_eval(node.value))
-                if not dest_typespec:
-                    self.emit(f"LDI_{dest_reg} {node.value}", f"Constant char assignment {node.value}")
-                    return Variable(typespec=TypeSpec('int', 'int'), name='const')
-                elif dest_typespec.sizeof() == 1:
-                    self.emit(f"LDI_{dest_reg}L {node.value}", f"Constant char assignment {node.value}")
-                    return Variable(typespec=dest_typespec, name='const')
-                elif dest_typespec.sizeof() == 2:
-                    self.emit(f"LDI_{dest_reg} {node.value}", f"Constant char assignment {node.value}")
-                    return Variable(typespec=dest_typespec, name='const')
-                else:
-                    raise NotImplementedError(f"Unable to load char constants larger than 16 bit")
             else:
                 raise NotImplementedError(f"Constant value for {node.type} types not yet supported")
         else:
             raise NotImplementedError(f"visit_Constant mode {mode} not yet supported")
 
-    def visit_InitList(self, node, mode, dest_reg='A', dest_typespec=None, **kwargs):
+    def visit_InitList(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
         if mode == 'return_array_dim':
             # Return the number of elements in the init list
             return [len(node.exprs)]
@@ -757,8 +843,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                             byte_count += sub_bytes
                         else:
                             # Simple constant value
-                            ts = self.visit(expr, mode='return_typespec', dest_typespec=struct_member.typespec, **kwargs)
-                            val, c_val = self.visit(expr, mode='get_value', dest_typespec=struct_member.typespec, **kwargs)
+                            ts = self.visit(expr, mode='return_typespec', dest_var=struct_member, **kwargs)
+                            val, c_val = self.visit(expr, mode='get_value', dest_var=struct_member, **kwargs)
                             comments.append(c_val)
 
                             if ts.sizeof() == 1:
@@ -787,8 +873,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                             byte_count += sub_bytes
                         else:
                             # Simple constant value
-                            ts = self.visit(expr, mode='return_typespec', dest_typespec=target_typespec, **kwargs)
-                            val, c_val = self.visit(expr, mode='get_value', dest_typespec=target_typespec, **kwargs)
+                            ts = self.visit(expr, mode='return_typespec', dest_var=Variable(typespec=target_typespec, name='init_element'), **kwargs)
+                            val, c_val = self.visit(expr, mode='get_value', dest_var=Variable(typespec=target_typespec, name='init_element'), **kwargs)
                             comments.append(c_val)
 
                             if ts.sizeof() == 1:
@@ -808,13 +894,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 return parts, vals, comments, byte_count
 
             # Flatten the entire init list
-            literal_parts, literal_vals, literal_comment, byte_count = flatten_init_list(node, dest_typespec)
+            literal_parts, literal_vals, literal_comment, byte_count = flatten_init_list(node, dest_var.typespec)
 
             # Create the literal
-            if dest_typespec and dest_typespec.is_struct:
-                comment_str = f"Struct {dest_typespec.name} initializer data: {{{', '.join(literal_comment)}}}"
+            if dest_var and dest_var.typespec.is_struct:
+                comment_str = f"Struct {dest_var.typespec.name} initializer data: {{{', '.join(literal_comment)}}}"
             else:
-                type_name = dest_typespec.name if dest_typespec else "byte"
+                type_name = dest_var.typespec.name if dest_var else "byte"
                 comment_str = f"{type_name} initializer data: {{{', '.join(literal_comment)}}}"
 
             self.context.literalreg.register(" ".join(literal_parts), 'bytes', len(literal_parts), comment=comment_str)
@@ -831,48 +917,155 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             raise NotImplementedError(f"visit_InitList mode {mode} not yet supported")
 
     def visit_ID(self, node, mode, dest_reg='A', **kwargs):
+        """
+        Visit an identifier (variable reference).
+
+        generate_lvalue: Returns address of variable in dest_reg
+        generate_rvalue: Returns value of variable in dest_reg (arrays/structs decay to pointer)
+        """
         if mode == 'return_var':
             return self.context.vartable.lookup(node.name)
-        if mode == 'return_function':
+
+        elif mode == 'return_function':
             return self.context.funcreg.lookup(node.name)
-        elif mode == 'generate_lvalue_address':
-            # generate the address of the identifier and place the value in dest_reg
+
+        elif mode == 'generate_lvalue':
+            # Get the address of the identifier
             var = self.context.vartable.lookup(node.name)
             if not var:
                 raise ValueError(f"Unable to find variable {node.name} in variable table")
             self._get_var_base_address(var, dest_reg)
             return var
+
         elif mode == 'generate_rvalue':
-            # Get the value of the identifier and place the value in dest_reg
+            # Get the value of the identifier
             var = self.context.vartable.lookup(node.name)
             if not var:
                 raise ValueError(f"Unable to find variable {node.name} in variable table")
-            if var.is_array or var.is_pointer or var.typespec.is_struct:
-                # Arrays and Structs decay to pointers
-                # Load pointer value
+
+            # Arrays and structs decay to pointer-like address
+            if var.is_array or var.typespec.is_struct:
+                # Just return the address (array/struct decay)
+                self._get_var_base_address(var, dest_reg)
+                return var
+
+            elif var.is_pointer:
+                # Dereference the pointer: load the address value stored in the pointer
                 other_reg = 'B' if dest_reg == 'A' else 'A'
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load pointer")
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load pointer")
+
                 self._get_var_base_address(var, other_reg)
                 self._deref_load(2, addr_reg=other_reg, dest_reg=dest_reg)  # Load 2-byte pointer
-                if var.is_pointer:
-                    var.pointer_depth -= 1
-                    if var.pointer_depth == 0:
-                        var.is_pointer = False
-                self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, pointer is in {dest_reg}")
-                self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, pointer is in {dest_reg}")
+
+                self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, pointer value in {dest_reg}")
+                self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, pointer value in {dest_reg}")
+
+                # Return modified variable reflecting the dereference
+                result_var = Variable(
+                    typespec=var.typespec,
+                    name=f"{var.name}_deref",
+                    is_pointer=var.pointer_depth > 1,
+                    pointer_depth=var.pointer_depth - 1
+                )
+                return result_var
+
             else:
-                # Load simple value
+                # Simple value: load it
                 other_reg = 'B' if dest_reg == 'A' else 'A'
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load value")
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load value")
+
                 self._get_var_base_address(var, other_reg)
                 self._deref_load(var.sizeof(), addr_reg=other_reg, dest_reg=dest_reg)
-                self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, value is in {dest_reg}")
-                self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, value is in {dest_reg}")
-            return var
+
+                self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, value in {dest_reg}")
+                self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, value in {dest_reg}")
+
+                return var
         else:
             raise NotImplementedError(f"visit_ID mode {mode} not yet supported")
+
+    def visit_UnaryOp(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
+        """
+        Visit unary operators: -, &, *
+        """
+        if node.op == '-':
+            if mode == 'generate_rvalue':
+                with self._debug_block(f"UnaryOp {node.op}: load value into {dest_reg}"):
+                    var = self.visit(node.expr, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
+
+                with self._debug_block(f"UnaryOp {node.op}: negate value"):
+                    if var.typespec.sizeof() == 1:
+                        self.emit(f"ALUOP_{dest_reg}L %-{dest_reg}_signed%+%{dest_reg}L%", "Unary negation")
+                    else:
+                        self.emit(f"CALL :signed_invert_{dest_reg.lower()}", "Unary negation")
+
+                return var
+            else:
+                raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
+
+        elif node.op == '&':
+            # Address-of operator: always returns address
+            if mode in ('generate_rvalue', 'generate_lvalue'):
+                with self._debug_block(f"UnaryOp {node.op}: get address into {dest_reg}"):
+                    var = self.visit(node.expr, mode='generate_lvalue', dest_reg=dest_reg, dest_var=dest_var)
+
+                    # Return pointer to the variable
+                    result_var = Variable(
+                        typespec=var.typespec,
+                        name=f"ptr_to_{var.name}",
+                        is_pointer=True,
+                        pointer_depth=var.pointer_depth + 1
+                    )
+                    return result_var
+            else:
+                raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
+
+        elif node.op == '*':
+            # Dereference operator
+            if mode == 'generate_lvalue':
+                # Get pointer value (which is an address)
+                with self._debug_block(f"UnaryOp {node.op}: load pointer into {dest_reg}"):
+                    var = self.visit(node.expr, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
+
+                # Return dereferenced variable
+                result_var = Variable(
+                    typespec=var.typespec,
+                    name=f"{var.name}_deref",
+                    is_pointer=var.pointer_depth > 1,
+                    pointer_depth=max(0, var.pointer_depth - 1)
+                )
+                return result_var
+
+            elif mode == 'generate_rvalue':
+                # Get pointer value into other_reg, then load from that address
+                other_reg = 'B' if dest_reg == 'A' else 'A'
+
+                with self._debug_block(f"UnaryOp {node.op}: load pointer into {other_reg}"):
+                    var = self.visit(node.expr, mode='generate_rvalue', dest_reg=other_reg, dest_var=dest_var)
+
+                with self._debug_block(f"UnaryOp {node.op}: load value at pointer into {dest_reg}"):
+                    if var.sizeof() <= 2:
+                        self._deref_load(var.sizeof(), addr_reg=other_reg, dest_reg=dest_reg)
+                    else:
+                        # For large values, return the address
+                        self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy address")
+                        self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy address")
+
+                result_var = Variable(
+                    typespec=var.typespec,
+                    name=f"{var.name}_deref",
+                    is_pointer=var.pointer_depth > 1,
+                    pointer_depth=max(0, var.pointer_depth - 1)
+                )
+                return result_var
+
+            else:
+                raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
+
+        else:
+            raise NotImplementedError(f"visit_UnaryOp op {node.op} not yet supported")
 
     def visit_Compound(self, node, mode, **kwargs):
         if mode in ('literal_collection',):
@@ -889,64 +1082,25 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
     def visit_Assignment(self, node, mode, **kwargs):
         if mode == 'codegen':
             if node.op == '=':
-                # Set up the destination address, where we will store the result
-                # of the rvalue expression, into B. Returns the Variable on the
-                # left side of the assignment.
-                with self._debug_block(f"Assign op {node.op}: Generate lvalue address"):
-                    var = self.visit(node.lvalue, mode='generate_lvalue_address', dest_reg='B')
+                # Get destination address into B
+                with self._debug_block(f"Assign: Generate lvalue address"):
+                    var = self.visit(node.lvalue, mode='generate_lvalue', dest_reg='B')
 
-                # Generate the value we are going to store, into register A (or AL)
-                with self._debug_block(f"Assign op {node.op}: Generate rvalue"):
+                # Generate value into A
+                with self._debug_block(f"Assign: Generate rvalue"):
                     if var.typespec.is_struct:
-                        self.visit(node.rvalue, mode='generate_rvalue_address', dest_reg='A', dest_typespec=var.typespec)
+                        # For structs, we need the source address
+                        self.visit(node.rvalue, mode='generate_lvalue', dest_reg='A', dest_var=var)
                     else:
-                        self.visit(node.rvalue, mode='generate_rvalue', dest_reg='A', dest_typespec=var.typespec)
+                        self.visit(node.rvalue, mode='generate_rvalue', dest_reg='A', dest_var=var)
 
-                # Store the value
-                with self._debug_block(f"Assign op {node.op}: Store rvalue to lvalue"):
+                # Store value
+                with self._debug_block(f"Assign: Store rvalue to lvalue"):
                     self._emit_store(var, lvalue_reg='B', rvalue_reg='A')
             else:
-                raise NotImplementedError(f"visit_Assignment mode {mode} not yet supported for op {node.op}")
+                raise NotImplementedError(f"visit_Assignment op {node.op} not yet supported")
         else:
             raise NotImplementedError(f"visit_Assignment mode {mode} not yet supported")
-
-    def visit_UnaryOp(self, node, mode, dest_reg='A', dest_typespec=None, **kwargs):
-        if node.op == '-':
-            if mode == 'generate_rvalue':
-                with self._debug_block(f"UnaryOp {node.op}: load rvalue into {dest_reg}"):
-                    var = self.visit(node.expr, mode=mode, dest_reg=dest_reg, dest_typespec=dest_typespec)
-                with self._debug_block(f"UnaryOp {node.op}: invert value in {dest_reg}"):
-                    if var.typespec.sizeof() == 1:
-                        self.emit(f"ALUOP_{dest_reg}L %-{dest_reg}_signed%+%{dest_reg}L%", "Unary negation")
-                    else:
-                        self.emit(f"CALL :signed_invert_{dest_reg.lower()}", "Unary negation")
-                return var
-        elif node.op == '&':
-            if mode in ('generate_rvalue', 'generate_lvalue_address',):
-                with self._debug_block(f"UnaryOp {node.op}: load lvalue into {dest_reg}"):
-                    var = self.visit(node.expr, mode='generate_lvalue_address', dest_reg=dest_reg, dest_typespec=dest_typespec)
-                    var.is_pointer = True
-                    var.pointer_depth += 1
-                return var
-            else:
-                raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
-        elif node.op == '*':
-            if mode in ('generate_rvalue', 'generate_lvalue_address',):
-                with self._debug_block(f"UnaryOp {node.op}: load lvalue into {dest_reg}"):
-                    other_reg = 'B' if dest_reg == 'A' else 'A'
-                    # generate_rvalue places the pointer value into other_reg
-                    var = self.visit(node.expr, mode='generate_rvalue', dest_reg=other_reg, dest_typespec=dest_typespec)
-                    if mode == 'generate_lvalue_address':
-                        return var
-                    self._deref_load(var.sizeof(), addr_reg=other_reg, dest_reg=dest_reg)
-                    var.pointer_depth -= 1
-                    if var.pointer_depth == 0:
-                        var.is_pointer = False
-                return var
-            else:
-                raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
-        else:
-            raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
 
     def _get_var_base_address(self, var, dest_reg='A'):
         """Get base address of a variable into dest_reg."""
@@ -964,31 +1118,30 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"POP_{other_reg}H", f"Load base address of {var.name} into {dest_reg}")
             self.emit(f"POP_{other_reg}L", f"Load base address of {var.name} into {dest_reg}")
 
-    def _add_array_offset(self, var, index_reg='B', addr_reg='A'):
+    def _add_array_offset(self, var_or_size, index_reg='B', addr_reg='A'):
         """Add array[index] offset to address in addr_reg. Destroys index_reg."""
         if index_reg not in ('A', 'B',):
             raise ValueError("index_reg must be A or B")
         if addr_reg not in ('A', 'B',):
             raise ValueError("addr_reg must be A or B")
-        element_size = var.sizeof_element()
-        if element_size == 1:
-            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}")
-        elif element_size == 2:
-            self.emit(f"CALL :shift16_{index_reg.lower()}_left", f"Add array offset in {index_reg} to address reg {addr_reg}")
-            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}")
-        elif element_size in (4, 8, 16):
-            shifts = {4: 2, 8: 3, 16: 4}[element_size]
+        if type(var_or_size) is Variable:
+            element_size = var_or_size.sizeof_element()
+        else:
+            element_size = var_or_size
+
+        if element_size in (2, 4, 8, 16, 32, 64, 128):
+            shifts = {2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6, 128: 7}[element_size]
             for _ in range(shifts):
-                self.emit(f"CALL :shift16_{index_reg.lower()}_left", f"Add array offset in {index_reg} to address reg {addr_reg}")
-            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}")
+                self.emit(f"CALL :shift16_{index_reg.lower()}_left", f"Multiply array offset in {index_reg} by element size {element_size}")
+            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
         else:
             # Fallback to multiplication
-            self.emit(f"CALL :heap_push_{index_reg}", f"Add array offset in {index_reg} to address reg {addr_reg}")
-            self.emit(f"LDI_{index_reg} {element_size}", f"Add array offset in {index_reg} to address reg {addr_reg}")
-            self.emit(f"CALL :mul16", f"Add array offset in {index_reg} to address reg {addr_reg}")
-            self.emit(f"CALL :heap_pop_{index_reg}", f"Add array offset in {index_reg} to address reg {addr_reg}")
-            self.emit(f"CALL :heap_pop_word", f"Add array offset in {index_reg} to address reg {addr_reg}")
-            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}")
+            self.emit(f"CALL :heap_push_{index_reg}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
+            self.emit(f"LDI_{index_reg} {element_size}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
+            self.emit(f"CALL :mul16", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
+            self.emit(f"CALL :heap_pop_{index_reg}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
+            self.emit(f"CALL :heap_pop_word", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
+            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
 
     def _add_member_offset(self, member_var, addr_reg):
         """Add struct member offset to address in addr_reg."""
@@ -1075,13 +1228,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         if var.typespec.is_struct:
             self._emit_bulk_store(var, lvalue_reg, rvalue_reg)
         else:
-            if var.typespec.sizeof() == 1:
-                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
-            elif var.typespec.sizeof() == 2:
+            if var.is_pointer or var.typespec.sizeof() == 2:
                 self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}H%", f"Store to {var.friendly_name()}")
                 self.emit(f"CALL :incr16_{lvalue_reg.lower()}", f"Store to {var.friendly_name()}")
                 self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
                 self.emit(f"CALL :decr16_{lvalue_reg.lower()}", f"Store to {var.friendly_name()}")
+            elif var.typespec.sizeof() == 1:
+                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
             else:
                 raise NotImplementedError(f"_emit_store can't store simple values larger than 16 bit")
 
