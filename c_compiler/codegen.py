@@ -992,14 +992,31 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         """
         if node.op == '-':
             if mode == 'generate_rvalue':
-                with self._debug_block(f"UnaryOp {node.op}: load value into {dest_reg}"):
-                    var = self.visit(node.expr, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
-
-                with self._debug_block(f"UnaryOp {node.op}: negate value"):
-                    if var.typespec.sizeof() == 1:
-                        self.emit(f"ALUOP_{dest_reg}L %-{dest_reg}_signed%+%{dest_reg}L%", "Unary negation")
+                # try optimized path where we directly load constant negative values. If the
+                # AST under node.expr doesn't support 'get_value', continue with the traditional path.
+                value = None
+                try:
+                    value = self.visit(node.expr, mode='get_value', **kwargs)
+                except NotImplementedError:
+                    pass
+                if value:
+                    if dest_var.sizeof() == 1:
+                        self.emit(f"LDI_{dest_reg}L -{value[0]}", f"Load constant value, inverted {value[1]}")
+                    elif dest_var.sizeof() == 2:
+                        self.emit(f"LDI_{dest_reg} -{value[0]}", f"Load constant value, inverted {value[1]}")
                     else:
-                        self.emit(f"CALL :signed_invert_{dest_reg.lower()}", "Unary negation")
+                        raise ValueError("Cannot invert non-simple types")
+                    var = dest_var
+                # traditional option
+                else:
+                    with self._debug_block(f"UnaryOp {node.op}: load value into {dest_reg}"):
+                        var = self.visit(node.expr, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
+
+                    with self._debug_block(f"UnaryOp {node.op}: negate value"):
+                        if var.typespec.sizeof() == 1:
+                            self.emit(f"ALUOP_{dest_reg}L %-{dest_reg}_signed%+%{dest_reg}L%", "Unary negation")
+                        else:
+                            self.emit(f"CALL :signed_invert_{dest_reg.lower()}", "Unary negation")
 
                 return var
             else:
