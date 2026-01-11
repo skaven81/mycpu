@@ -1207,14 +1207,36 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"LDI_{dest_reg} {prefix}{var.padded_name()}", f"Load base address of {var.name} into {dest_reg}")
         else:
             other_reg = 'A' if dest_reg == 'B' else 'B'
-            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} into {dest_reg}")
-            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Load base address of {var.name} into {dest_reg}")
-            self.emit(f"MOV_DH_{dest_reg}H", f"Load base address of {var.name} into {dest_reg}")
-            self.emit(f"MOV_DL_{dest_reg}L", f"Load base address of {var.name} into {dest_reg}")
-            self.emit(f"LDI_{other_reg} {var.offset}", f"Load base address of {var.name} into {dest_reg}")
-            self.emit(f"CALL :add16_to_{dest_reg.lower()}", f"Load base address of {var.name} into {dest_reg}")
-            self.emit(f"POP_{other_reg}H", f"Load base address of {var.name} into {dest_reg}")
-            self.emit(f"POP_{other_reg}L", f"Load base address of {var.name} into {dest_reg}")
+            # The naiive approach loading the offset into a register and calling :add16_to_reg
+            #  ALUOP_PUSH -> 4 clocks
+            #  POP -> 2 clocks
+            #  LDI -> 4 clocks
+            #  CALL :add16_to_reg -> 8 (CALL) + 4+4+4 + 2 (RET) -> 22 clocks
+            # Total 43 clocks for the naiive method - expensive!
+
+            # We can load values much faster using INCR_D/DECR_D for small offsets.
+            #
+            # For offset mode:
+            #  INCR/DECR (2 clocks for each abs(offset))
+            #  MOV_DH/MOV_DL (4 clocks total)
+            #  DECR/INCR (2 clocks for each abs(offset))
+            # We can go up to +/- 10 and still finish with fewer clocks than the naiive approach
+            if abs(var.offset) <= 10:
+                for _ in range(var.offset):
+                    self.emit(f"{'INCR' if var.offset > 0 else 'DECR'}_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"MOV_DH_{dest_reg}H", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"MOV_DL_{dest_reg}L", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                for _ in range(var.offset):
+                    self.emit(f"{'DECR' if var.offset > 0 else 'INCR'}_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+            else:
+                self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"MOV_DH_{dest_reg}H", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"MOV_DL_{dest_reg}L", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"LDI_{other_reg} {var.offset}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"CALL :add16_to_{dest_reg.lower()}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"POP_{other_reg}H", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"POP_{other_reg}L", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
 
     def _add_array_offset(self, var_or_size, index_reg='B', addr_reg='A'):
         """Add array[index] offset to address in addr_reg. Destroys index_reg."""
