@@ -1065,6 +1065,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 # Get pointer value into other_reg, then load from that address
                 other_reg = 'B' if dest_reg == 'A' else 'A'
 
+                self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"UnaryOp {node.op}: Save {other_reg} before generating expr value")
+                self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"UnaryOp {node.op}: Save {other_reg} before generating expr value")
                 with self._debug_block(f"UnaryOp {node.op} rvalue: load pointer into {other_reg}"):
                     var = self.visit(node.expr, mode='generate_rvalue', dest_reg=other_reg, dest_var=dest_var)
 
@@ -1075,6 +1077,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         # For large values, return the address
                         self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy address")
                         self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy address")
+
+                self.emit(f"POP_{other_reg}L", f"UnaryOp {node.op}: Restore {other_reg}, dereferenced rvalue in {dest_reg}")
+                self.emit(f"POP_{other_reg}H", f"UnaryOp {node.op}: Restore {other_reg}, dereferenced rvalue in {dest_reg}")
 
                 result_var = Variable(
                     typespec=var.typespec,
@@ -1106,9 +1111,6 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     pass
                 right_var = self.visit(node.right, mode='generate_rvalue', dest_reg=other_reg, dest_var=dest_var)
 
-            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"BinaryOp {node.op}: Save {other_reg} before generating lhs")
-            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"BinaryOp {node.op}: Save {other_reg} before generating lhs")
-
             with self._debug_block(f"BinaryOp {node.op}: Generate lhs into {dest_reg}"):
                 left_var_val = None
                 try:
@@ -1116,9 +1118,6 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 except NotImplementedError:
                     pass
                 left_var = self.visit(node.left, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
-
-            self.emit(f"POP_{other_reg}L", f"BinaryOp {node.op}: Restore {other_reg} (rhs) after lhs loading")
-            self.emit(f"POP_{other_reg}H", f"BinaryOp {node.op}: Restore {other_reg} (rhs) after lhs loading")
 
             # If we have a constant value on either side, and the other side is
             # a byte, then treat both as bytes.
