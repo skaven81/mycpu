@@ -290,9 +290,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Transfer value")
                     self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Transfer value")
 
-                    self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
                     if member_var.sizeof() == 2:
                         self.emit(f"POP_{other_reg}H", f"Restore {other_reg}")
+                    self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
 
                 return member_var
             else:
@@ -425,6 +425,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         if mode == 'return_var':
             typespec = self.visit(node.type, mode='return_typespec')
             return Variable(typespec=typespec, name=typespec.name)
+        elif mode == 'return_typespec':
+            return self.visit(node.type, mode='return_typespec')
+        else:
+            raise NotImplementedError(f"visit_Typename mode {mode} not yet supported")
 
     def visit_EllipsisParam(self, node, mode, **kwargs):
         if mode == 'return_var':
@@ -476,6 +480,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 parameter_bytes = 0
                 if func.parameters:
                     for p in func.parameters:
+                        if p.offset is None:
+                            continue
                         self.context.vartable.add(p)
                         parameter_bytes += p.sizeof()
                         if self.context.verbose >= 1:
@@ -667,8 +673,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.visit(node.name, mode='generate_lvalue', dest_reg=other_reg)
 
             # Save base address (computing subscript may clobber other_reg)
-            self.emit(f"ALUOP_PUSH %{other_reg}H%", f"Save base address")
-            self.emit(f"ALUOP_PUSH %{other_reg}L%", f"Save base address")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save base address")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save base address")
 
         # Compute subscript (offset) into dest_reg
         with self._debug_block(f"Get subscript value into {dest_reg}"):
@@ -943,13 +949,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             if not var:
                 raise ValueError(f"Unable to find variable {node.name} in variable table")
 
-            # Arrays and structs decay to pointer-like address
-            if var.is_array or var.typespec.is_struct:
-                # Just return the address (array/struct decay)
-                self._get_var_base_address(var, dest_reg)
-                return var
-
-            elif var.is_pointer:
+            if var.is_pointer:
                 # Dereference the pointer: load the address value stored in the pointer
                 other_reg = 'B' if dest_reg == 'A' else 'A'
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load pointer")
@@ -969,6 +969,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     pointer_depth=var.pointer_depth - 1
                 )
                 return result_var
+
+            # Arrays and structs decay to pointer-like address
+            elif var.is_array or var.typespec.is_struct:
+                # Just return the address (array/struct decay)
+                self._get_var_base_address(var, dest_reg)
+                return var
 
             else:
                 # Simple value: load it
@@ -1043,7 +1049,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             # Dereference operator
             if mode == 'generate_lvalue':
                 # Get pointer value (which is an address)
-                with self._debug_block(f"UnaryOp {node.op}: load pointer into {dest_reg}"):
+                with self._debug_block(f"UnaryOp {node.op} lvalue: load pointer into {dest_reg}"):
                     var = self.visit(node.expr, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
 
                 # Return dereferenced variable
@@ -1059,10 +1065,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 # Get pointer value into other_reg, then load from that address
                 other_reg = 'B' if dest_reg == 'A' else 'A'
 
-                with self._debug_block(f"UnaryOp {node.op}: load pointer into {other_reg}"):
+                with self._debug_block(f"UnaryOp {node.op} rvalue: load pointer into {other_reg}"):
                     var = self.visit(node.expr, mode='generate_rvalue', dest_reg=other_reg, dest_var=dest_var)
 
-                with self._debug_block(f"UnaryOp {node.op}: load value at pointer into {dest_reg}"):
+                with self._debug_block(f"UnaryOp {node.op} rvalue: load value at pointer into {dest_reg}"):
                     if var.sizeof() <= 2:
                         self._deref_load(var.sizeof(), addr_reg=other_reg, dest_reg=dest_reg)
                     else:
@@ -1084,6 +1090,69 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             raise NotImplementedError(f"visit_UnaryOp op {node.op} not yet supported")
 
+
+    def visit_BinaryOp(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
+        if mode == 'generate_rvalue':
+            # node.left = dest_reg
+            # node.right = other_reg
+            other_reg = 'B' if dest_reg == 'A' else 'A'
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"BinaryOp {node.op}: Save {other_reg} before generating rhs")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"BinaryOp {node.op}: Save {other_reg} before generating rhs")
+            with self._debug_block(f"BinaryOp {node.op}: Generate rhs into {other_reg}"):
+                right_var_val = None
+                try:
+                    right_var_val = self.visit(node.right, mode='get_value', **kwargs)
+                except NotImplementedError:
+                    pass
+                right_var = self.visit(node.right, mode='generate_rvalue', dest_reg=other_reg, dest_var=dest_var)
+
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"BinaryOp {node.op}: Save {other_reg} before generating lhs")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"BinaryOp {node.op}: Save {other_reg} before generating lhs")
+
+            with self._debug_block(f"BinaryOp {node.op}: Generate lhs into {dest_reg}"):
+                left_var_val = None
+                try:
+                    left_var_val = self.visit(node.left, mode='get_value', **kwargs)
+                except NotImplementedError:
+                    pass
+                left_var = self.visit(node.left, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
+
+            self.emit(f"POP_{other_reg}L", f"BinaryOp {node.op}: Restore {other_reg} (rhs) after lhs loading")
+            self.emit(f"POP_{other_reg}H", f"BinaryOp {node.op}: Restore {other_reg} (rhs) after lhs loading")
+
+            # If we have a constant value on either side, and the other side is
+            # a byte, then treat both as bytes.
+            right_var_size = right_var.sizeof()
+            left_var_size = left_var.sizeof()
+            if right_var_val and left_var_size == 1:
+                right_var_size = 1
+            if left_var_val and right_var_size == 1:
+                left_var_size = 1
+
+            # Compute the resulting op size
+            if left_var_size == right_var_size == 1:
+                op_size = 1
+            elif left_var_size == right_var_size == 2:
+                op_size = 2
+            elif left_var_size != right_var_size:
+                raise ValueError(f"BinaryOp with incompatible types, left={left_var.friendly_name()}, right={right_var.friendly_name()}")
+            else:
+                raise ValueError(f"BinaryOp {node.op}: unsure what to do with these types > 2 bytes, left={left_var.friendly_name()}, right={right_var.friendly_name()}")
+
+            if node.op == '+':
+                if op_size == 1:
+                    self.emit(f"ALUOP_{dest_reg}L %A+B%+%{dest_reg}L%+%{other_reg}L%", f"BinaryOp {node.op} {op_size} byte")
+                elif op_size == 2:
+                    self.emit(f"CALL :add16_to_{dest_reg.lower()}", f"BinaryOp {node.op} {op_size} bytes")
+            else:
+                raise NotImplementedError(f"BinaryOp mode {mode} op {node.op} not implemented")
+                
+            self.emit(f"POP_{other_reg}L", f"BinaryOp {node.op}: Restore {other_reg} after computation")
+            self.emit(f"POP_{other_reg}H", f"BinaryOp {node.op}: Restore {other_reg} after computation")
+
+        else:
+            raise NotImplementedError(f"visit_BinaryOp op {node.op} not yet supported")
+
     def visit_Compound(self, node, mode, **kwargs):
         if mode in ('literal_collection',):
             for c in node:
@@ -1095,6 +1164,19 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.context.vartable.pop_scope()
         else:
             raise NotImplementedError(f"visit_Compound mode {mode} not yet supported")
+
+    def visit_Cast(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
+        if mode == 'generate_rvalue':
+            var = self.visit(node.expr, mode=mode, dest_reg=dest_reg, dest_var=dest_var, **kwargs)
+            new_var = self.visit(node.to_type, mode='return_var', dest_reg=dest_reg, dest_var=dest_var, **kwargs)
+            if not new_var:
+                raise ValueError(f"Could not return var for {node.to_type}")
+            new_var.name = var.name
+            new_var.storage_class = var.storage_class
+            new_var.offset = var.offset
+            new_var.kind = var.kind
+            self.emit(f"# Cast {var.friendly_name()} to {new_var.friendly_name()}")
+            return new_var
 
     def visit_Assignment(self, node, mode, **kwargs):
         if mode == 'codegen':
@@ -1146,11 +1228,16 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             element_size = var_or_size
 
-        if element_size in (2, 4, 8, 16, 32, 64, 128):
+        if element_size == 1:
+            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
+        elif element_size in (2, 4, 8, 16, 32, 64, 128):
             shifts = {2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6, 128: 7}[element_size]
             for _ in range(shifts):
                 self.emit(f"CALL :shift16_{index_reg.lower()}_left", f"Multiply array offset in {index_reg} by element size {element_size}")
             self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
+        elif element_size <= 8:
+            for _ in range(element_size):
+                self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
         else:
             # Fallback to multiplication
             self.emit(f"CALL :heap_push_{index_reg}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
