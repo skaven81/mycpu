@@ -997,9 +997,53 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
     def visit_UnaryOp(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
         """
-        Visit unary operators: -, &, *
+        Visit unary operators: -, ~, !, &, *, ++, p++, --, p--
         """
-        if node.op in ('-', '~', '!'):
+        if node.op in ('++', 'p++', '--', 'p--'):
+            if mode in ('generate_rvalue', 'codegen'):
+                other_reg = 'B' if dest_reg == 'A' else 'A'
+                if node.op.endswith('-'):
+                    word_op = 'decr'
+                    byte_op = '-'
+                    descr = 'decrement'
+                else:
+                    word_op = 'incr'
+                    byte_op = '+'
+                    descr = 'increment'
+                # Load current value
+                with self._debug_block(f"UnaryOp {node.op}: load current value into {dest_reg}"):
+                    var = self.visit(node.expr, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
+                # Save current value if we'll be returning it (prefixed increment/decrement)
+                if node.op.startswith('p') and mode == 'generate_rvalue': # codegen mode means we're discarding the value, so no need to preserve it
+                    if var.typespec.sizeof() == 2:
+                        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}H%", f"UnaryOp {node.op}: preserve previous value before {descr}ing")
+                    self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}L%", f"UnaryOp {node.op}: preserve previous value before {descr}ing")
+                # Perform increment/decrement
+                with self._debug_block(f"UnaryOp {node.op}: compute {descr}ed value into {dest_reg}"):
+                    if var.typespec.sizeof() == 1:
+                        self.emit(f"ALUOP_{dest_reg}L %{dest_reg}{byte_op}1%+%{dest_reg}L%", f"UnaryOp {node.op}: {descr} 1-byte value")
+                    else:
+                        self.emit(f"CALL :{word_op}16_{dest_reg.lower()}", f"UnaryOp {node.op}: {descr} 2-byte value")
+                # Get destination address into other_reg
+                with self._debug_block(f"UnaryOp {node.op}: Store value in {dest_reg} back to {var.friendly_name()}"):
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"UnaryOp {node.op}: Save {other_reg} before generating lvalue")
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"UnaryOp {node.op}: Save {other_reg} before generating lvalue")
+                    with self._debug_block(f"UnaryOp {node.op}: Generate lvalue address"):
+                        var = self.visit(node.expr, mode='generate_lvalue', dest_reg=other_reg, dest_var=dest_var)
+                    # Store updated value
+                    with self._debug_block(f"UnaryOp {node.op}: Store {descr}ed value to lvalue"):
+                        self._emit_store(var, lvalue_reg=other_reg, rvalue_reg=dest_reg)
+                    self.emit(f"POP_{other_reg}L", f"UnaryOp {node.op}: Restore {other_reg}, return rvalue in {dest_reg}")
+                    self.emit(f"POP_{other_reg}H", f"UnaryOp {node.op}: Restore {other_reg}, return rvalue in {dest_reg}")
+                # If prefixed operation, restore original value
+                if node.op.startswith('p') and mode == 'generate_rvalue':
+                    self.emit(f"POP_{dest_reg}L", f"UnaryOp {node.op}: restore original value for return")
+                    if var.typespec.sizeof() == 2:
+                        self.emit(f"POP_{dest_reg}H", f"UnaryOp {node.op}: restore original value for return")
+            else:
+                raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
+
+        elif node.op in ('-', '~', '!'):
             if mode == 'generate_rvalue':
                 # try optimized path where we directly load constant negative values. If the
                 # AST under node.expr doesn't support 'get_value', continue with the traditional path.
