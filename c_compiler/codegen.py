@@ -1034,12 +1034,27 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                                 self.emit(f"ALUOP_{dest_reg}H %~{dest_reg}%+%{dest_reg}H%", "Unary bitwise NOT")
                     elif node.op == '!':
                         with self._debug_block(f"UnaryOp {node.op}: boolean NOT"):
-                            label = self._get_label("unarynot_wasfalse")
+                            label_wastrue = self._get_label("unarynot_wastrue")
+                            label_done = self._get_label("unarynot_done")
+
                             self.emit(f"ALUOP_FLAGS %{dest_reg}%+%{dest_reg}L%", "Unary boolean NOT")
-                            self.emit(f"LDI_{dest_reg} 1", "Unary boolean NOT: assume false->true")
-                            self.emit(f"JZ {label}", "Unary boolean NOT")
-                            self.emit(f"LDI_{dest_reg} 0", "Unary boolean NOT: was actually true->false")
-                            self.emit(f"{label}", "Unary boolean NOT done")
+                            self.emit(f"JNZ {label_wastrue}", "Unary boolean NOT, jump if true")
+                            if var.typespec.sizeof() == 2:
+                                self.emit(f"ALUOP_FLAGS %{dest_reg}%+%{dest_reg}H%", "Unary boolean NOT")
+                                self.emit(f"JNZ {label_wastrue}", "Unary boolean NOT, jump if true")
+                            if var.typespec.sizeof() == 2:
+                                self.emit(f"LDI_{dest_reg} 1", "Unary boolan NOT, is false: return true")
+                            else:
+                                self.emit(f"LDI_{dest_reg}L 1", "Unary boolan NOT, is false: return true")
+                            self.emit(f"JMP {label_done}", "Unary boolean NOT: done")
+
+                            self.emit(f"{label_wastrue}")
+                            if var.typespec.sizeof() == 2:
+                                self.emit(f"LDI_{dest_reg} 0", "Unary boolan NOT, is true: return false")
+                            else:
+                                self.emit(f"LDI_{dest_reg}L 0", "Unary boolan NOT, is true: return false")
+                            self.emit(f"{label_done}")
+
                 return var
             else:
                 raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
