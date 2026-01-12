@@ -1026,7 +1026,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
     def visit_UnaryOp(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
         """
-        Visit unary operators: -, ~, !, &, *, ++, p++, --, p--
+        Visit unary operators: +, -, ~, !, &, *, ++, p++, --, p--
         """
         if node.op in ('++', 'p++', '--', 'p--'):
             if mode in ('generate_rvalue', 'codegen'):
@@ -1074,7 +1074,31 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             else:
                 raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
 
-        elif node.op in ('-', '~', '!'):
+        elif node.op == 'sizeof':
+            if mode == 'generate_rvalue':
+                sizeof_var = Variable(typespec=TypeSpec('uint', 'unsigned int'), name='sizeof', is_virtual=True)
+                try:
+                    var = self.visit(node.expr, mode='return_var')
+                except NotImplementedError:
+                    pass
+                if var:
+                    if var.is_type_wrapper:
+                        self.emit(f"LDI_{dest_reg} {var.sizeof()}", f"sizeof type {var.friendly_name()}")
+                    else:
+                        self.emit(f"LDI_{dest_reg} {var.sizeof()}", f"sizeof var {var.friendly_name()}")
+                    return sizeof_var
+                try:
+                    ts = self.visit(node.expr, mode='return_typespec')
+                except NotImplementedError:
+                    pass
+                if ts:
+                    self.emit(f"LDI_{dest_reg} {ts.sizeof()}", f"sizeof type {ts.name} ({ts.base_type})")
+                    return sizeof_var
+                raise ValueError(f"Unable to get var or typespec from {node.expr}")
+            else:
+                raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
+
+        elif node.op in ('+', '-', '~', '!'):
             if mode == 'generate_rvalue':
                 # try optimized path where we directly load constant negative values. If the
                 # AST under node.expr doesn't support 'get_value', continue with the traditional path.
@@ -1129,7 +1153,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                             else:
                                 self.emit(f"LDI_{dest_reg}L 0", "Unary boolan NOT, is true: return false")
                             self.emit(f"{label_done}")
-
+                    elif node.op == '+':
+                        self.emit_verbose(f"UnaryOp {node.op} does not change value, {dest_reg} contains return value")
+                    else:
+                        raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
                 return var
             else:
                 raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
