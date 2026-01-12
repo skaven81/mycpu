@@ -1239,6 +1239,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             other_reg = 'B' if dest_reg == 'A' else 'A'
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"BinaryOp {node.op}: Save {other_reg} before generating rhs")
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"BinaryOp {node.op}: Save {other_reg} before generating rhs")
+            return_var = None
             with self._debug_block(f"BinaryOp {node.op}: Generate rhs into {other_reg}"):
                 right_var_val = None
                 try:
@@ -1254,6 +1255,18 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 except NotImplementedError:
                     pass
                 left_var = self.visit(node.left, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
+
+            # If given a var and a constant, return the var, not the constant
+            if right_var_val and not left_var_val:
+                return_var = left_var
+            elif left_var_val and not right_var_val:
+                return_var = right_var
+            elif left_var:
+                return_var = left_var
+            elif right_var:
+                return_var = right_var
+            else:
+                raise ValueError("Cannot determine which BinaryOp side to return var from")
 
             # If we have a constant value on either side, and the other side is
             # a byte, then treat both as bytes.
@@ -1274,17 +1287,90 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             else:
                 raise ValueError(f"BinaryOp {node.op}: unsure what to do with these types > 2 bytes, left={left_var.friendly_name()}, right={right_var.friendly_name()}")
 
-            if node.op == '+':
+            alu_map = {
+                '+': {'byte':f'ALUOP_{dest_reg}L %A+B%+%AL%+%BL%', 'word':[f'CALL :add16_to_{dest_reg.lower()}']},
+                '-': {'byte':f'ALUOP_{dest_reg}L %{dest_reg}-{other_reg}%+%AL%+%BL%', 'word':[f'CALL :sub16_{dest_reg.lower()}_minus_{other_reg.lower()}']},
+                '&': {'byte':f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', f'ALUOP_{dest_reg}H %A&B%+%AH%+%BH%']},
+                '&&': {'byte':f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', f'ALUOP_{dest_reg}H %A&B%+%AH%+%BH%']},
+                '|': {'byte':f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', f'ALUOP_{dest_reg}H %A|B%+%AH%+%BH%']},
+                '||': {'byte':f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', f'ALUOP_{dest_reg}H %A|B%+%AH%+%BH%']},
+                '^': {'byte':f'ALUOP_{dest_reg}L %AxB%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %AxB%+%AL%+%BL%', f'ALUOP_{dest_reg}H %AxB%+%AH%+%BH%']},
+            }
+
+            if node.op in alu_map:
                 if op_size == 1:
-                    self.emit(f"ALUOP_{dest_reg}L %A+B%+%{dest_reg}L%+%{other_reg}L%", f"BinaryOp {node.op} {op_size} byte")
+                    self.emit(alu_map[node.op]['byte'], f"BinaryOp {node.op} {op_size} byte")
                 elif op_size == 2:
-                    self.emit(f"CALL :add16_to_{dest_reg.lower()}", f"BinaryOp {node.op} {op_size} bytes")
+                    for o in alu_map[node.op]['word']:
+                        self.emit(o, f"BinaryOp {node.op} {op_size} byte")
+            elif node.op in ('==', '!='):
+                ne = ('false', 0)
+                eq = ('true', 1)
+                if node.op == '!=':
+                    ne = ('true', 1)
+                    eq = ('false', 0)
+
+                label = self._get_label(f'binarybool_is{ne[0]}')
+                label_done = self._get_label('binarybool_done')
+                self.emit(f"ALUOP_FLAGS %A&B%+%AL%+%BL%", f"BinaryOp {node.op} {op_size} byte check equality")
+                self.emit(f"JNE {label}", f"BinaryOp {node.op} is {ne[0]}")
+                if op_size == 2:
+                    self.emit(f"ALUOP_FLAGS %A&B%+%AH%+%BH%", f"BinaryOp {node.op} {op_size} byte check equality")
+                    self.emit(f"JNE {label}", f"BinaryOp {node.op} is {ne[0]}")
+                if op_size == 1:
+                    self.emit(f"LDI_{dest_reg}L {eq[1]}", f"BinaryOp {node.op} was {eq[0]}")
+                else:
+                    self.emit(f"LDI_{dest_reg} {eq[1]}", f"BinaryOp {node.op} was {eq[0]}")
+                self.emit(f"JMP {label_done}")
+                self.emit(f"{label}")
+                if op_size == 1:
+                    self.emit(f"LDI_{dest_reg}L {ne[1]}", f"BinaryOp {node.op} was {ne[0]}")
+                else:
+                    self.emit(f"LDI_{dest_reg} {ne[1]}", f"BinaryOp {node.op} was {ne[0]}")
+                self.emit(f"{label_done}")
+            elif node.op in ('<<', '>>'):
+                if right_var_val:
+                    if (op_size == 1 and right_var_val[0] > 8) or (op_size == 2 and right_var_val[0] > 16):
+                        raise SyntaxError(f"Constant shifting {node.op} {right_var_val[0]} positions is pointless")
+                    for _ in range(right_var_val[0]):
+                        if op_size == 1:
+                            self.emit(f"ALUOP_{dest_reg}L %{dest_reg}{node.op}1%+%{dest_reg}L%", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                        else:
+                            if node.op == '<<':
+                                self.emit(f"CALL :shift16_{dest_reg.lower()}_left", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                            else:
+                                self.emit(f"CALL :shift16_{dest_reg.lower()}_right", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                else:
+                    raise NotImplementedError(f"BinaryOp mode {mode} op {node.op} not implemented for non-constant shifts")
+            elif node.op in ('<', '<=', '>', '>='):
+                raise NotImplementedError(f"BinaryOp mode {mode} op {node.op} not implemented")
             else:
                 raise NotImplementedError(f"BinaryOp mode {mode} op {node.op} not implemented")
+
+            # Some Boolean ops require an extra step to convert the result into a Boolean 1 instead of any non-zero value,
+            # since all that happened above is a bitwise AND or OR operation.
+            if node.op in ('&&', '||'):
+                label_wastrue = self._get_label("binarybool_wastrue")
+                label_done = self._get_label("binarybool_done")
+
+                self.emit(f"ALUOP_FLAGS %{dest_reg}%+%{dest_reg}L%", "Binary boolean format check")
+                self.emit(f"JNZ {label_wastrue}", "Binary boolean format check, jump if true")
+                if var.typespec.sizeof() == 2:
+                    self.emit(f"ALUOP_FLAGS %{dest_reg}%+%{dest_reg}H%", "Binary boolean format check")
+                    self.emit(f"JNZ {label_wastrue}", "Binary boolean format check, jump if true")
+                self.emit(f"JMP {label_done}", "Binary boolean format check: done")
+
+                self.emit(f"{label_wastrue}")
+                if var.typespec.sizeof() == 2:
+                    self.emit(f"LDI_{dest_reg} 1", "Binary boolean format check, is true")
+                else:
+                    self.emit(f"LDI_{dest_reg}L 1", "Binary boolean format check, is true")
+                self.emit(f"{label_done}")
                 
             self.emit(f"POP_{other_reg}L", f"BinaryOp {node.op}: Restore {other_reg} after computation")
             self.emit(f"POP_{other_reg}H", f"BinaryOp {node.op}: Restore {other_reg} after computation")
 
+            return return_var
         else:
             raise NotImplementedError(f"visit_BinaryOp op {node.op} not yet supported")
 
@@ -1331,6 +1417,24 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 # Store value
                 with self._debug_block(f"Assign: Store rvalue to lvalue"):
                     self._emit_store(var, lvalue_reg='B', rvalue_reg='A')
+            elif node.op.endswith('='): # +=, -=, etc.
+                # Generate rvalue through a synthetic BinaryOp
+
+                # Get destination address into B
+                with self._debug_block(f"Compound Assign {node.op}: Generate lvalue address"):
+                    var = self.visit(node.lvalue, mode='generate_lvalue', dest_reg='B')
+
+                # Generate value into A
+                with self._debug_block(f"Compound Assign {node.op}: Generate rvalue"):
+                    binaryop = node.op[0]
+                    if binaryop in ('<', '>',):
+                        binaryop += binaryop
+                    self.visit(c_ast.BinaryOp(left=node.lvalue, right=node.rvalue, op=binaryop), mode='generate_rvalue', dest_reg='A', dest_var=var)
+
+                # Store value
+                with self._debug_block(f"Compound Assign {node.op}: Store rvalue to lvalue"):
+                    self._emit_store(var, lvalue_reg='B', rvalue_reg='A')
+
             else:
                 raise NotImplementedError(f"visit_Assignment op {node.op} not yet supported")
         else:
