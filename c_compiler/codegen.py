@@ -783,9 +783,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 return [ len(ast.literal_eval(node.value)) + 1 ] # Rough estimate, actual size depends on escapes
             else:
                 raise ValueError(f"I don't know what to do with a Constant {node.type} node for setting array dims")
-        elif mode == 'generate_rvalue':
+        elif mode in ('generate_rvalue', 'generate_lvalue'):
             # Register string literals as we encounter them, and
-            # for these, the rvalue is the address (label) of the string.
+            # for these, the rvalue/lvalue is the address (label) of the string.
             if node.type == 'string':
                 # Remove quotes from the string value
                 content = ast.literal_eval(node.value)
@@ -801,7 +801,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 return Variable(typespec=TypeSpec('string', 'char'), name='init_string', is_array=True, array_dims=[size])
             # For numeric constants, we load the value
             # directly into the destination register.
-            elif node.type in ('int', 'char',):
+            elif node.type in ('int', 'char',) and mode == 'generate_rvalue':
                 parsed_value = ast.literal_eval(node.value)
                 if node.type == 'char':
                     parsed_value = f"'{parsed_value}'"
@@ -817,7 +817,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 else:
                     raise NotImplementedError(f"Unable to load integer constants larger than 16 bit")
             else:
-                raise NotImplementedError(f"Constant value for {node.type} types not yet supported")
+                raise NotImplementedError(f"Constant value for {node.type} types using mode {mode} not yet supported")
         else:
             raise NotImplementedError(f"visit_Constant mode {mode} not yet supported")
 
