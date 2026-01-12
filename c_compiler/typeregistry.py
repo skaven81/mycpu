@@ -11,7 +11,12 @@ class TypeRegistry:
     
     def _add_builtins(self):
         """Add built-in C types to the registry."""
-        builtins = ['int', 'char', 'short', 'void', 'signed', 'unsigned']
+        builtins = [ 'char', 'signed char', 'unsigned char',    # 8 bit types
+                     'short', 'signed short', 'unsigned short', # 16 bit types
+                     'int', 'signed int', 'unsigned int',       # 16 bit types
+                     'unsigned', 'signed',                      # 16 bit int by default
+                     'void',                                    # 0 bytes
+                   ]
         for typename in builtins:
             spec = TypeSpec(name=typename, base_type=typename, _registry=self)
             self._types[typename] = spec
