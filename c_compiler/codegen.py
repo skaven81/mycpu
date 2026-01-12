@@ -324,8 +324,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             var = self.context.vartable.lookup(node.name)
             if var:
                 return var
-            if type(node.type) in (c_ast.Struct, c_ast.FuncDecl,):
-                raise ValueError(f"return_var for Struct or FuncDecl type Decl node doesn't make sense")
+            if type(node.type) is c_ast.FuncDecl:
+                raise ValueError(f"return_var for FuncDecl type Decl node doesn't make sense")
+            if type(node.type) is c_ast.Struct:
+                raise ValueError(f"return_var for Struct type Decl node should not happen: declare structs at top level, not locally")
             # New Variable declaration and storage allocation
             if type(node.type) in (c_ast.TypeDecl, c_ast.PtrDecl, c_ast.ArrayDecl):
                 new_typespec = self.visit(node.type, mode='return_typespec', init=getattr(node, 'init'))
