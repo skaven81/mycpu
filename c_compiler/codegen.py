@@ -32,7 +32,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 node_name = node.name
             elif type(getattr(getattr(node, 'name', None), 'name', None)) is str:
                 node_name = node.name.name
-            with self._debug_block(f"Visiting {node.__class__.__name__} {node_name if node_name else ''}"):
+            with self._debug_block(f"Visiting {node.__class__.__name__} {node_name if node_name else ''} mode {mode}"):
                 ret = visitor(node, mode, **kwargs)
         else:
             ret = visitor(node, mode, **kwargs)
