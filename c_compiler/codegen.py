@@ -386,7 +386,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             new_funcdef = Function()
             new_funcdef.return_type = self.visit(node.type, mode='return_typespec')
             offset = 0
-            for p in self.visit(node.args, mode='return_parameter_vars'):
+            params = []
+            if node.args:
+                params = self.visit(node.args, mode='return_parameter_vars')
+            for p in params:
                 if p.is_array or p.typespec.is_struct:
                     p.offset = offset - 1
                     offset -= 2
