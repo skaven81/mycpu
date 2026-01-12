@@ -1045,6 +1045,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"POP_{dest_reg}L", f"UnaryOp {node.op}: restore original value for return")
                     if var.typespec.sizeof() == 2:
                         self.emit(f"POP_{dest_reg}H", f"UnaryOp {node.op}: restore original value for return")
+                # Return the var
+                return var
             else:
                 raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
 
