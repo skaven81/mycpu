@@ -996,7 +996,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         """
         Visit unary operators: -, &, *
         """
-        if node.op == '-':
+        if node.op in ('-', '~', '!'):
             if mode == 'generate_rvalue':
                 # try optimized path where we directly load constant negative values. If the
                 # AST under node.expr doesn't support 'get_value', continue with the traditional path.
@@ -1005,7 +1005,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     value = self.visit(node.expr, mode='get_value', **kwargs)
                 except NotImplementedError:
                     pass
-                if value:
+                if value and node.op == '-':
                     if dest_var.sizeof() == 1:
                         self.emit(f"LDI_{dest_reg}L -{value[0]}", f"Load constant value, inverted {value[1]}")
                     elif dest_var.sizeof() == 2:
@@ -1013,17 +1013,30 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     else:
                         raise ValueError("Cannot invert non-simple types")
                     var = dest_var
-                # traditional option
+                # traditional option, or operations other than '-'
                 else:
                     with self._debug_block(f"UnaryOp {node.op}: load value into {dest_reg}"):
                         var = self.visit(node.expr, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
 
-                    with self._debug_block(f"UnaryOp {node.op}: negate value"):
-                        if var.typespec.sizeof() == 1:
-                            self.emit(f"ALUOP_{dest_reg}L %-{dest_reg}_signed%+%{dest_reg}L%", "Unary negation")
-                        else:
-                            self.emit(f"CALL :signed_invert_{dest_reg.lower()}", "Unary negation")
-
+                    if node.op == '-':
+                        with self._debug_block(f"UnaryOp {node.op}: negate value"):
+                            if var.typespec.sizeof() == 1:
+                                self.emit(f"ALUOP_{dest_reg}L %-{dest_reg}_signed%+%{dest_reg}L%", "Unary negation")
+                            else:
+                                self.emit(f"CALL :signed_invert_{dest_reg.lower()}", "Unary negation")
+                    elif node.op == '~':
+                        with self._debug_block(f"UnaryOp {node.op}: bitwise-not value"):
+                            self.emit(f"ALUOP_{dest_reg}L %~{dest_reg}%+%{dest_reg}L%", "Unary bitwise NOT")
+                            if var.typespec.sizeof() == 2:
+                                self.emit(f"ALUOP_{dest_reg}H %~{dest_reg}%+%{dest_reg}H%", "Unary bitwise NOT")
+                    elif node.op == '!':
+                        with self._debug_block(f"UnaryOp {node.op}: boolean NOT"):
+                            label = self._get_label("unarynot_wasfalse")
+                            self.emit(f"ALUOP_FLAGS %{dest_reg}%+%{dest_reg}L%", "Unary boolean NOT")
+                            self.emit(f"LDI_{dest_reg} 1", "Unary boolean NOT: assume false->true")
+                            self.emit(f"JZ {label}", "Unary boolean NOT")
+                            self.emit(f"LDI_{dest_reg} 0", "Unary boolean NOT: was actually true->false")
+                            self.emit(f"{label}", "Unary boolean NOT done")
                 return var
             else:
                 raise NotImplementedError(f"visit_UnaryOp mode {mode} op {node.op} not yet supported")
