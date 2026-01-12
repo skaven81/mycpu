@@ -952,7 +952,16 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         generate_rvalue: Returns value of variable in dest_reg (arrays/structs decay to pointer)
         """
         if mode == 'return_var':
-            return self.context.vartable.lookup(node.name)
+            var = self.context.vartable.lookup(node.name)
+            if not var:
+                raise SyntaxError(f"Variable {node.name} used without declaration")
+            return var
+
+        elif mode == 'return_typespec':
+            var = self.context.vartable.lookup(node.name)
+            if not var:
+                raise SyntaxError(f"Type/Var {node.name} used without declaration")
+            return var.typespec
 
         elif mode == 'return_function':
             return self.context.funcreg.lookup(node.name)
