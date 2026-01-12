@@ -10,7 +10,6 @@ class TypeSpec:
     is_struct: bool = False
     struct_name: Optional[str] = None
     struct_members: List['Variable'] = field(default_factory=list)
-    qualifiers: List[str] = field(default_factory=list)  # const, volatile, etc.
     
     # Reference to registry for looking up dependent types
     _registry: 'TypeRegistry' = field(default=None, repr=False)

@@ -201,7 +201,6 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             if registered_type:
                 return registered_type
             new_type = self.visit(node.type, mode=mode, **kwargs)
-            new_type.qualifiers.extend(node.quals)
             if not new_type.name:
                 new_type.name = node.declname
             return new_type
@@ -209,7 +208,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             return self.visit(node.type, mode=mode, **kwargs)
         elif mode == 'return_var':
             return Variable(name=node.declname,
-                            typespec=self.visit(node.type, mode='return_typespec', **kwargs))
+                            typespec=self.visit(node.type, mode='return_typespec', **kwargs),
+                            qualifiers=node.quals)
         else:
             raise NotImplementedError(f"visit_TypeDecl mode {mode} not yet supported")
        
@@ -222,6 +222,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             else:
                 return TypeSpec(base_type = ' '.join(node.names), _registry=self.context.typereg)
         elif mode == 'return_typespec':
+            if not registered_type:
+                raise ValueError(f"Type {type_name} not registered during type collection")
             return registered_type
         else:
             raise NotImplementedError(f"visit_IdentifierType mode {mode} not yet supported")
@@ -328,11 +330,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             if type(node.type) in (c_ast.TypeDecl, c_ast.PtrDecl, c_ast.ArrayDecl):
                 new_typespec = self.visit(node.type, mode='return_typespec', init=getattr(node, 'init'))
                 new_var = self.visit(node.type, mode='return_var', var_kind=var_kind, register_var=register_var, **kwargs)
+                assert new_var is not None
                 if node.storage:
                     new_var.storage = node.storage[0]
                 if not new_var.name:
                     new_var.name = node.name
-                new_var.typespec.qualifiers.extend(node.quals)
+                new_var.qualifiers.extend(node.quals)
                 if new_var.is_array and not new_var.array_dims:
                     if not node.init:
                         raise ValueError("Cannot declare dimensionless array without intiializer")
@@ -622,11 +625,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
     def visit_ArrayDecl(self, node, mode, **kwargs):
         if mode == 'return_typespec':
             new_typespec = self.visit(node.type, mode=mode, **kwargs)
-            new_typespec.qualifiers.extend(node.dim_quals)
             return new_typespec
         elif mode == 'return_var':
             new_var = self.visit(node.type, mode='return_var', **kwargs)
             new_var.is_array = True
+            new_var.qualifiers.extend(node.dim_quals)
             if node.dim:
                 new_var.array_dims.append(self.visit(node.dim, mode='get_value', **kwargs)[0])
             return new_var

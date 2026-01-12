@@ -12,6 +12,7 @@ class Variable:
     typespec: TypeSpec
     name: str = None
     storage_class: str = 'auto'  # auto, static, register, etc.
+    qualifiers: List[str] = field(default_factory=list)  # const, volatile, etc.
     offset: Optional[int] = None # only for non-static locals and parameter vars
     kind: Optional[str] = None   # global, param, struct_member, or local
     is_array: bool = False
