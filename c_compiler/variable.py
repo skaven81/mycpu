@@ -20,6 +20,8 @@ class Variable:
     is_pointer: bool = False
     pointer_depth: int = 0
     is_struct_member: bool = False
+    is_type_wrapper: bool = False
+    is_virtual: bool = False
 
     # the assembler can't handle labels shorter than 4 characters, so
     # make sure all variable names get padded out when converted to labels
@@ -27,7 +29,7 @@ class Variable:
         return f"var_{self.name}"
 
     def friendly_name(self):
-        return f"{'*'*self.pointer_depth}{self.typespec.name}{'[]' if self.is_array else ''} {self.name}"
+        return f"{'struct ' if self.typespec.is_struct else ''}{self.typespec.name} {'*'*self.pointer_depth}{'' if self.is_type_wrapper else self.name}{'[]' if self.is_array else ''}{' (virtual)' if self.is_virtual else ''}"
 
     def sizeof(self) -> int:
         """Calculate the size of this type in bytes."""

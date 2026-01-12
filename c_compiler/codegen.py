@@ -209,7 +209,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         elif mode == 'return_var':
             return Variable(name=node.declname,
                             typespec=self.visit(node.type, mode='return_typespec', **kwargs),
-                            qualifiers=node.quals)
+                            qualifiers=node.quals,
+                            is_virtual=True)
         else:
             raise NotImplementedError(f"visit_TypeDecl mode {mode} not yet supported")
        
@@ -338,6 +339,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 if not new_var.name:
                     new_var.name = node.name
                 new_var.qualifiers.extend(node.quals)
+                # return_var above will have returned a "fake" variable with
+                # is_virtual set.  But we know this is a real declared variable
+                # and so we mark it as not-virtual here before registering.
+                new_var.is_virtual = False
                 if new_var.is_array and not new_var.array_dims:
                     if not node.init:
                         raise ValueError("Cannot declare dimensionless array without intiializer")
@@ -432,7 +437,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
     def visit_Typename(self, node, mode, **kwargs):
         if mode == 'return_var':
             typespec = self.visit(node.type, mode='return_typespec')
-            return Variable(typespec=typespec, name=typespec.name)
+            return Variable(typespec=typespec, name=typespec.name, is_type_wrapper=True)
         elif mode == 'return_typespec':
             return self.visit(node.type, mode='return_typespec')
         else:
@@ -442,7 +447,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         if mode == 'return_var':
            return Variable(typespec=TypeSpec(name='...', base_type = '...', _registry=self.context.typereg),
                            name='...',
-                           kind='param')
+                           kind='param',
+                           is_virtual=True)
         else:
             raise NotImplementedError(f"visit_EllipsisParam mode {mode} not yet supported")
 
@@ -552,7 +558,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 if custom_func_call and func.storage == 'extern':
                     custom_func_call(node, mode, func=func, dest_reg=dest_reg, **kwargs)
                     if mode == 'generate_rvalue':
-                        return Variable(typespec=func.return_type, name=func.name)
+                        return Variable(typespec=func.return_type, name=func.name, is_virtual=True)
                     return
 
                 # Otherwise, it's a function with standard call semantics (heap_push
@@ -584,7 +590,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 else:
                     raise NotImplementedError("Unable to handle function calls that return more than 2 bytes")
             if mode == 'generate_rvalue':
-                return Variable(typespec=func.return_type, name=func.name)
+                return Variable(typespec=func.return_type, name=func.name, is_virtual=True)
         else:
             raise NotImplementedError(f"visit_FuncCall mode {mode} not yet supported")
 
@@ -661,7 +667,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 is_array=len(base_var.array_dims) > 1,  # Still array if multi-dimensional
                 array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else [],
                 is_pointer=base_var.is_pointer,
-                pointer_depth=base_var.pointer_depth
+                pointer_depth=base_var.pointer_depth,
+                is_virtual=True,
             )
             return element_var
 
@@ -731,7 +738,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             typespec=base_var.typespec,
             name=f"{base_var.name}_element",
             is_array=len(base_var.array_dims) > 1,
-            array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else []
+            array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else [],
+            is_virtual=True,
         )
 
         if mode == 'generate_lvalue':
@@ -803,7 +811,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 literal = self.context.literalreg.lookup_by_content(content, 'string')
                 self.emit(f"LDI_{dest_reg} {literal.label}", node.value)
                 # return fake Variable representing the constant
-                return Variable(typespec=TypeSpec('string', 'char'), name='init_string', is_array=True, array_dims=[size])
+                return Variable(typespec=TypeSpec('string', 'char'), name='init_string', is_array=True, array_dims=[size], is_virtual=True)
             # For numeric constants, we load the value
             # directly into the destination register.
             elif node.type in ('int', 'char',) and mode == 'generate_rvalue':
@@ -812,13 +820,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     parsed_value = f"'{parsed_value}'"
                 if not dest_var:
                     self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} as {node.type}")
-                    return Variable(typespec=TypeSpec(node.type, node.type), name='const')
+                    return Variable(typespec=TypeSpec(node.type, node.type), name='const', qualifiers=['const'], is_virtual=True)
                 elif dest_var.typespec.sizeof() == 1:
                     self.emit(f"LDI_{dest_reg}L {parsed_value}", f"Constant assignment {node.value} for {dest_var.friendly_name()}")
-                    return Variable(typespec=dest_var.typespec, name='const')
+                    return Variable(typespec=dest_var.typespec, name='const', qualifiers=['const'], is_virtual=True)
                 elif dest_var.typespec.sizeof() == 2:
                     self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} for {dest_var.friendly_name()}")
-                    return Variable(typespec=dest_var.typespec, name='const')
+                    return Variable(typespec=dest_var.typespec, name='const', qualifiers=['const'], is_virtual=True)
                 else:
                     raise NotImplementedError(f"Unable to load integer constants larger than 16 bit")
             else:
@@ -887,8 +895,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                             byte_count += sub_bytes
                         else:
                             # Simple constant value
-                            ts = self.visit(expr, mode='return_typespec', dest_var=Variable(typespec=target_typespec, name='init_element'), **kwargs)
-                            val, c_val = self.visit(expr, mode='get_value', dest_var=Variable(typespec=target_typespec, name='init_element'), **kwargs)
+                            ts = self.visit(expr, mode='return_typespec', dest_var=Variable(typespec=target_typespec, name='init_element', is_virtual=True), **kwargs)
+                            val, c_val = self.visit(expr, mode='get_value', dest_var=Variable(typespec=target_typespec, name='init_element', is_virtual=True), **kwargs)
                             comments.append(c_val)
 
                             if ts.sizeof() == 1:
@@ -925,7 +933,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
             # Return a fake variable representing the initialized data
             retvar = Variable(typespec=TypeSpec('byte', 'unsigned char'),
-                             name='initlist', is_array=True, array_dims=[byte_count])
+                             name='initlist', is_array=True, array_dims=[byte_count], is_virtual=True)
             return retvar
         else:
             raise NotImplementedError(f"visit_InitList mode {mode} not yet supported")
@@ -974,7 +982,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     typespec=var.typespec,
                     name=f"{var.name}_deref",
                     is_pointer=var.pointer_depth > 1,
-                    pointer_depth=var.pointer_depth - 1
+                    pointer_depth=var.pointer_depth - 1,
+                    is_virtual=True,
                 )
                 return result_var
 
@@ -1121,7 +1130,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         typespec=var.typespec,
                         name=f"ptr_to_{var.name}",
                         is_pointer=True,
-                        pointer_depth=var.pointer_depth + 1
+                        pointer_depth=var.pointer_depth + 1,
+                        is_virtual=True,
                     )
                     return result_var
             else:
@@ -1139,7 +1149,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     typespec=var.typespec,
                     name=f"{var.name}_deref",
                     is_pointer=var.pointer_depth > 1,
-                    pointer_depth=max(0, var.pointer_depth - 1)
+                    pointer_depth=max(0, var.pointer_depth - 1),
+                    is_virtual=True,
                 )
                 return result_var
 
@@ -1167,7 +1178,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     typespec=var.typespec,
                     name=f"{var.name}_deref",
                     is_pointer=var.pointer_depth > 1,
-                    pointer_depth=max(0, var.pointer_depth - 1)
+                    pointer_depth=max(0, var.pointer_depth - 1),
+                    is_virtual=True,
                 )
                 return result_var
 
