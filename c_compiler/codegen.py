@@ -594,9 +594,15 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             raise NotImplementedError(f"visit_FuncCall mode {mode} not yet supported")
 
-    def visit_ExprList(self, node, mode, **kwargs):
+    def visit_ExprList(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
         if mode == 'return_nodes':
             return node.exprs
+        elif mode == 'generate_rvalue':
+            # Comma operator: evaluate all nodes but return the value of the last one
+            last_var = None
+            for c in node.exprs:
+                last_var = self.visit(c, mode=mode, dest_reg=dest_reg, dest_var=dest_var, **kwargs)
+            return last_var
         else:
             raise NotImplementedError(f"visit_ExprList mode {mode} not yet supported")
 
