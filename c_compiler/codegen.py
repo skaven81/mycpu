@@ -1355,13 +1355,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
                 self.emit(f"ALUOP_FLAGS %{dest_reg}%+%{dest_reg}L%", "Binary boolean format check")
                 self.emit(f"JNZ {label_wastrue}", "Binary boolean format check, jump if true")
-                if var.typespec.sizeof() == 2:
+                if op_size == 2:
                     self.emit(f"ALUOP_FLAGS %{dest_reg}%+%{dest_reg}H%", "Binary boolean format check")
                     self.emit(f"JNZ {label_wastrue}", "Binary boolean format check, jump if true")
                 self.emit(f"JMP {label_done}", "Binary boolean format check: done")
 
                 self.emit(f"{label_wastrue}")
-                if var.typespec.sizeof() == 2:
+                if op_size == 2:
                     self.emit(f"LDI_{dest_reg} 1", "Binary boolean format check, is true")
                 else:
                     self.emit(f"LDI_{dest_reg}L 1", "Binary boolean format check, is true")
