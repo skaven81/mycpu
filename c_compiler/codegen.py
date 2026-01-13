@@ -1462,11 +1462,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             #  DECR/INCR (2 clocks for each abs(offset))
             # We can go up to +/- 10 and still finish with fewer clocks than the naiive approach
             if abs(var.offset) <= 10:
-                for _ in range(var.offset):
+                for _ in range(abs(var.offset)):
                     self.emit(f"{'INCR' if var.offset > 0 else 'DECR'}_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"MOV_DH_{dest_reg}H", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"MOV_DL_{dest_reg}L", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
-                for _ in range(var.offset):
+                for _ in range(abs(var.offset)):
                     self.emit(f"{'DECR' if var.offset > 0 else 'INCR'}_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
             else:
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
