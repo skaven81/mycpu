@@ -174,14 +174,14 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             with self._debug_block("Static local vars"):
                 for var in self.context.vartable.get_all_local_statics():
                     if prefix == '$':
-                        if var.typespec.sizeof() == 1:
+                        if var.sizeof() == 1:
                             self.emit(f"VAR global byte ${var.padded_name()}")
-                        elif var.typespec.sizeof() == 2:
+                        elif var.sizeof() == 2:
                             self.emit(f"VAR global word ${var.padded_name()}")
                         else:
-                            self.emit(f"VAR global {var.typespec.sizeof()} ${var.padded_name()}")
+                            self.emit(f"VAR global {var.sizeof()} ${var.padded_name()}")
                     else:
-                        self.emit(f'.{var.padded_name()} "' + '\\0'*var.typespec.sizeof() + '"')
+                        self.emit(f'.{var.padded_name()} "' + '\\0'*var.sizeof() + '"')
         else:
             raise NotImplementedError(f"visit_FileAST mode {mode} not yet supported")
 
@@ -244,7 +244,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             new_typespec = TypeSpec(name=node.name, is_struct=True, struct_members=member_vars, _registry=self.context.typereg)
             return new_typespec
         elif mode == 'return_typespec':
-            return self.context.typereg.lookup(node.name)
+            ts = self.context.typereg.lookup(node.name)
+            if not ts:
+                raise SyntaxError(f"Struct type {node.name} used without declaration")
+            return ts
         else:
             raise NotImplementedError(f"visit_Struct mode {mode} not yet supported")
 
@@ -337,7 +340,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 new_var = self.visit(node.type, mode='return_var', var_kind=var_kind, register_var=register_var, **kwargs)
                 assert new_var is not None
                 if node.storage:
-                    new_var.storage = node.storage[0]
+                    new_var.storage_class = node.storage[0]
                 if not new_var.name:
                     new_var.name = node.name
                 new_var.qualifiers.extend(node.quals)
@@ -366,7 +369,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         self.context.vartable.add(new_var) # registration sets the offset
                         new_var = self.context.vartable.lookup(new_var.name)
                         self.emit_verbose(f"Registered {new_var.kind} variable {new_var.friendly_name()}, size {new_var.sizeof()} at offset {new_var.offset}")
-                        if not new_var.offset:
+                        if new_var.storage_class != 'static' and not new_var.offset:
                             raise ValueError(f"Local var {new_var.name} was not assigned an offset")
                     return new_var
             else:
@@ -620,8 +623,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         if type(node) is c_ast.Decl and type(node.type) is not c_ast.FuncDecl:
             var = self.visit(node, mode='return_var', register_var=False)
             if self.context.verbose >= 2:
-                self.emit_debug(f"_total_localvar_size: Computing size of {var.friendly_name()} = {var.sizeof()}")
-            return var.sizeof()
+                effective_size = var.sizeof() if var.storage_class != 'static' else 0
+                self.emit_debug(f"_total_localvar_size: Computed size of {var.friendly_name()} = {var.sizeof()} (effective={effective_size})")
+            return effective_size
         recursive_sum = 0
         for child in node:
             recursive_sum += self._total_localvar_size(child)
