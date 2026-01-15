@@ -33,10 +33,6 @@ class Variable:
 
     def sizeof(self) -> int:
         """Calculate the size of this type in bytes."""
-        # Pointer size
-        if self.is_pointer:
-            return 2
-
         # variadic parameter
         if self.typespec.base_type == '...':
             return 0
@@ -53,10 +49,18 @@ class Variable:
                     return 2
             return total_size
 
+        # Pointer size
+        if self.is_pointer:
+            return 2
+
         # Simple type or struct, return size of type
         return self.typespec.sizeof()
  
     def sizeof_element(self) -> int:
+        if self.is_pointer and self.pointer_depth > 1:
+            return 2 # elements are pointers
+        elif self.is_array and self.is_pointer:
+            return 2 # elements are pointers
         return self.typespec.sizeof()
 
     def pointer_arithmetic_size(self) -> Optional[int]:
