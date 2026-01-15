@@ -267,6 +267,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
         # Get member metadata
         member_var = base_var.typespec.struct_member(node.field.name)
+        if mode == 'return_var':
+            return member_var
 
         # Add member offset to base address
         with self._debug_block(f"Add member offset {member_var.offset} to struct address"):
@@ -1451,44 +1453,50 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"# Cast {var.friendly_name()} to {new_var.friendly_name()}")
             return new_var
 
-    def visit_Assignment(self, node, mode, **kwargs):
-        if mode == 'codegen':
+    def visit_Assignment(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
+        if mode == 'codegen' or mode == 'generate_rvalue':
+            other_reg = 'B' if dest_reg == 'A' else 'A'
+            return_var = None
             if node.op == '=':
                 # Get destination address into B
                 with self._debug_block(f"Assign: Generate lvalue address"):
-                    var = self.visit(node.lvalue, mode='generate_lvalue', dest_reg='B')
+                    var = self.visit(node.lvalue, mode='generate_lvalue', dest_reg=other_reg)
 
-                # Generate value into A
+                # Generate rvalue into A
                 with self._debug_block(f"Assign: Generate rvalue"):
                     if var.typespec.is_struct:
                         # For structs, we need the source address
-                        self.visit(node.rvalue, mode='generate_lvalue', dest_reg='A', dest_var=var)
+                        return_var = self.visit(node.rvalue, mode='generate_lvalue', dest_reg=dest_reg, dest_var=var)
                     else:
-                        self.visit(node.rvalue, mode='generate_rvalue', dest_reg='A', dest_var=var)
+                        return_var = self.visit(node.rvalue, mode='generate_rvalue', dest_reg=dest_reg, dest_var=var)
 
                 # Store value
                 with self._debug_block(f"Assign: Store rvalue to lvalue"):
-                    self._emit_store(var, lvalue_reg='B', rvalue_reg='A')
+                    self._emit_store(var, lvalue_reg=other_reg, rvalue_reg=dest_reg)
             elif node.op.endswith('='): # +=, -=, etc.
                 # Generate rvalue through a synthetic BinaryOp
 
                 # Get destination address into B
                 with self._debug_block(f"Compound Assign {node.op}: Generate lvalue address"):
-                    var = self.visit(node.lvalue, mode='generate_lvalue', dest_reg='B')
+                    var = self.visit(node.lvalue, mode='generate_lvalue', dest_reg=other_reg)
 
                 # Generate value into A
                 with self._debug_block(f"Compound Assign {node.op}: Generate rvalue"):
                     binaryop = node.op[0]
                     if binaryop in ('<', '>',):
                         binaryop += binaryop
-                    self.visit(c_ast.BinaryOp(left=node.lvalue, right=node.rvalue, op=binaryop), mode='generate_rvalue', dest_reg='A', dest_var=var)
+                    return_var = self.visit(c_ast.BinaryOp(left=node.lvalue, right=node.rvalue, op=binaryop), mode='generate_rvalue', dest_reg=dest_reg, dest_var=var)
 
                 # Store value
                 with self._debug_block(f"Compound Assign {node.op}: Store rvalue to lvalue"):
-                    self._emit_store(var, lvalue_reg='B', rvalue_reg='A')
+                    self._emit_store(var, lvalue_reg=other_reg, rvalue_reg=dest_reg)
 
             else:
                 raise NotImplementedError(f"visit_Assignment op {node.op} not yet supported")
+
+            if mode == 'generate_rvalue':
+                return return_var
+            return
         else:
             raise NotImplementedError(f"visit_Assignment mode {mode} not yet supported")
 
