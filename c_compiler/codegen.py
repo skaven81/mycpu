@@ -161,7 +161,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             # Generate data block: global vars
             with self._debug_block("Global vars"):
                 for var in self.context.vartable.get_all_globals():
-                    if prefix == '$':
+                    if var.storage_class == 'extern':
+                        self.emit_verbose(f"External global declaration: assuming ${var.padded_name()} exists")
+                    elif prefix == '$':
                         if var.sizeof() == 1:
                             self.emit(f"VAR global byte ${var.padded_name()}")
                         elif var.sizeof() == 2:
@@ -1001,13 +1003,20 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 raise ValueError(f"Unable to find variable {node.name} in variable table")
 
             if var.is_pointer:
-                # Dereference the pointer: load the address value stored in the pointer
                 other_reg = 'B' if dest_reg == 'A' else 'A'
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load pointer")
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load pointer")
 
-                self._get_var_base_address(var, other_reg)
-                self._deref_load(2, addr_reg=other_reg, dest_reg=dest_reg)  # Load 2-byte pointer
+                if var.kind == 'global' or (var.kind == 'local' and var.storage_class == 'static'):
+                    # For global and local static vars, the label is the pointer; there is
+                    # no need to dereference, just load the label value into the dest reg
+                    self._get_var_base_address(var, dest_reg)
+                    self.emit_verbose(f"No dereference for label-based pointer {var.friendly_name()}")
+                else:
+                    # Dereference the pointer: load the address value stored in the pointer
+                    self._get_var_base_address(var, other_reg)
+                    self.emit_verbose(f"Dereference to get base address for frame-based pointer {var.friendly_name()}")
+                    self._deref_load(2, addr_reg=other_reg, dest_reg=dest_reg)  # Load 2-byte pointer
 
                 self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, pointer value in {dest_reg}")
                 self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, pointer value in {dest_reg}")
@@ -1515,7 +1524,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
     def _get_var_base_address(self, var, dest_reg='A'):
         """Get base address of a variable into dest_reg."""
         if var.kind == 'global' or (var.kind == 'local' and var.storage_class == 'static'):
-            prefix = self._get_static_prefix()
+            if var.kind == 'global' and var.storage_class == 'extern':
+                prefix = '$'
+            else:
+                prefix = self._get_static_prefix()
             self.emit(f"LDI_{dest_reg} {prefix}{var.padded_name()}", f"Load base address of {var.name} into {dest_reg}")
         else:
             other_reg = 'A' if dest_reg == 'B' else 'B'
