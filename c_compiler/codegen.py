@@ -992,15 +992,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, pointer value in {dest_reg}")
                 self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, pointer value in {dest_reg}")
 
-                # Return modified variable reflecting the dereference
-                result_var = Variable(
-                    typespec=var.typespec,
-                    name=f"{var.name}_deref",
-                    is_pointer=var.pointer_depth > 1,
-                    pointer_depth=var.pointer_depth - 1,
-                    is_virtual=True,
-                )
-                return result_var
+                return var
 
             # Arrays and structs decay to pointer-like address
             elif var.is_array or var.typespec.is_struct:
@@ -1033,10 +1025,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 other_reg = 'B' if dest_reg == 'A' else 'A'
                 if node.op.endswith('-'):
                     word_op = 'decr'
+                    ptr_op = f'sub16_{dest_reg.lower()}_minus_{other_reg.lower()}'
                     byte_op = '-'
                     descr = 'decrement'
                 else:
                     word_op = 'incr'
+                    ptr_op = f'add16_to_{dest_reg.lower()}'
                     byte_op = '+'
                     descr = 'increment'
                 # Load current value
@@ -1049,7 +1043,18 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}L%", f"UnaryOp {node.op}: preserve previous value before {descr}ing")
                 # Perform increment/decrement
                 with self._debug_block(f"UnaryOp {node.op}: compute {descr}ed value into {dest_reg}"):
-                    if var.typespec.sizeof() == 1:
+                    # Pointer arithmetic requires +/- by the size of the referenced type, and all
+                    # operations are words because we're dealing in addresses
+                    if var.is_pointer:
+                        unit_size = var.pointer_arithmetic_size()
+                        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"UnaryOp {node.op}: preserve {other_reg} before pointer arithmetic")
+                        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"UnaryOp {node.op}: preserve {other_reg} before pointer arithmetic")
+                        self.emit(f"LDI_{other_reg} {unit_size}", f"UnaryOp {node.op}: pointed-at type size for {var.friendly_name()}")
+                        self.emit(f"CALL :{ptr_op}", f"UnaryOp {node.op}: move pointer by pointed-at type size for {var.friendly_name()}")
+                        self.emit(f"POP_{other_reg}L", f"UnaryOp {node.op}: Restore {other_reg} after pointer arithmetic")
+                        self.emit(f"POP_{other_reg}H", f"UnaryOp {node.op}: Restore {other_reg} after pointer arithmetic")
+                    # Standard value that might be one or two bytes
+                    elif var.typespec.sizeof() == 1:
                         self.emit(f"ALUOP_{dest_reg}L %{dest_reg}{byte_op}1%+%{dest_reg}L%", f"UnaryOp {node.op}: {descr} 1-byte value")
                     else:
                         self.emit(f"CALL :{word_op}16_{dest_reg.lower()}", f"UnaryOp {node.op}: {descr} 2-byte value")
