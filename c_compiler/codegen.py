@@ -685,8 +685,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
         # Save other_reg
         other_reg = 'B' if dest_reg == 'A' else 'A'
-        self.emit(f"ALUOP_PUSH %{other_reg}H%", f"ArrayRef {other_reg} backup")
-        self.emit(f"ALUOP_PUSH %{other_reg}L%", f"ArrayRef {other_reg} backup")
+        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"ArrayRef {other_reg} backup")
+        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"ArrayRef {other_reg} backup")
 
         # Get base address into other_reg
         # For nested ArrayRef, this recursively computes the address
