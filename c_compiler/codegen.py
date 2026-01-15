@@ -1237,6 +1237,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     pointer_depth=max(0, var.pointer_depth - 1),
                     is_virtual=True,
                 )
+                # special case for generic void* pointers, treat as referencing a char
+                if var.is_pointer and not result_var.is_pointer and result_var.typespec.base_type == 'void':
+                    result_var.typespec = TypeSpec('void_ptr_ref', 'char')
 
                 with self._debug_block(f"UnaryOp {node.op} rvalue: load value at pointer into {dest_reg}"):
                     if result_var.sizeof() <= 2:
