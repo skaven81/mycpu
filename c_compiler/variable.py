@@ -64,43 +64,47 @@ class Variable:
         return self.typespec.sizeof()
 
     def pointer_arithmetic_size(self) -> Optional[int]:
-      """
-      Calculate the size in bytes to advance/retreat for pointer arithmetic.
-      Returns None if this variable is not a pointer type.
+        """
+        Calculate the size in bytes to advance/retreat for pointer arithmetic.
+        Returns None if this variable is not a pointer type.
 
-      For pointer arithmetic (++, --, +=, -=, +, -), the pointer moves by
-      the size of the pointed-to type, not the size of the pointer itself.
+        For pointer arithmetic (++, --, +=, -=, +, -), the pointer moves by
+        the size of the pointed-to type, not the size of the pointer itself.
 
-      Examples:
-        int *p;           // moves by sizeof(int) = 2
-        char *p;          // moves by sizeof(char) = 1
-        struct foo *p;    // moves by sizeof(struct foo)
-        int **p;          // moves by sizeof(int*) = 2 (pointer size)
-        int (*p)[5];      // moves by sizeof(int[5]) = 5 * sizeof(int) = 10
-      """
-      # Only pointers participate in pointer arithmetic
-      if not self.is_pointer:
-        return None
+        Examples:
+          int *p;           // moves by sizeof(int) = 2
+          char *p;          // moves by sizeof(char) = 1
+          struct foo *p;    // moves by sizeof(struct foo)
+          int **p;          // moves by sizeof(int*) = 2 (pointer size)
+          int (*p)[5];      // moves by sizeof(int[5]) = 5 * sizeof(int) = 10
+        """
+        # Only pointers participate in pointer arithmetic
+        if not self.is_pointer:
+          return None
 
-      # For multi-level pointers (int**, char***, etc.), we move by pointer size
-      # because we're pointing to another pointer
-      if self.pointer_depth > 1:
-        return 2  # Size of a pointer
+        # For multi-level pointers (int**, char***, etc.), we move by pointer size
+        # because we're pointing to another pointer
+        if self.pointer_depth > 1:
+          return 2  # Size of a pointer
 
-      # For single-level pointers, check if pointing to an array
-      if self.is_array and self.array_dims:
-        # Pointer to array: moves by size of entire array
-        # e.g., int (*p)[5] moves by 5 * sizeof(int)
-        element_size = self.typespec.sizeof()
-        total_size = element_size
-        for dim in self.array_dims:
-          if dim is not None:
-            total_size *= dim
-          else:
-            # Unsized dimension - treat as pointer
-            return 2
-        return total_size
+        # For single-level pointers, check if pointing to an array
+        if self.is_array and self.array_dims:
+          # Pointer to array: moves by size of entire array
+          # e.g., int (*p)[5] moves by 5 * sizeof(int)
+          element_size = self.typespec.sizeof()
+          total_size = element_size
+          for dim in self.array_dims:
+            if dim is not None:
+              total_size *= dim
+            else:
+              # Unsized dimension - treat as pointer
+              return 2
+          return total_size
 
-      # Regular pointer to a type (including structs)
-      # Moves by the size of the pointed-to type
-      return self.typespec.sizeof()
+        # void *ptr gets single-byte behavior
+        if self.typespec.base_type == 'void':
+            return 1
+
+        # Regular pointer to a type (including structs)
+        # Moves by the size of the pointed-to type
+        return self.typespec.sizeof()
