@@ -428,6 +428,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             params = []
             for p in node.params:
                 new_param = self.visit(p, mode='return_var', var_kind='param', register_var=False)
+                if new_param.typespec.base_type == 'void' and not new_param.is_pointer:
+                    continue # skip lone 'void' parameters
                 new_param.kind = 'param'
                 if (new_param.typespec.is_struct or new_param.is_array) and not new_param.is_pointer:
                     raise ValueError(
@@ -568,23 +570,24 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
                 # Otherwise, it's a function with standard call semantics (heap_push
                 # arguments in reverse order, call, heap_pop return value)
-                param_vars = reversed(func.parameters)
-                arg_nodes = reversed(self.visit(node.args, mode='return_nodes'))
-                for pv, an in zip(param_vars, arg_nodes):
-                    with self._debug_block(f"FuncCall {func.name} push parameter {pv.friendly_name()}"):
-                        if pv.is_pointer or pv.is_array or pv.typespec.is_struct:
-                            rvalue_var = self.visit(an, mode='generate_lvalue', dest_reg='A', dest_var=pv)
-                            self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
-                        else:
-                            rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_var=pv)
-                            if rvalue_var.is_array or rvalue_var.typespec.is_struct:
+                if node.args:
+                    param_vars = reversed(func.parameters)
+                    arg_nodes = reversed(self.visit(node.args, mode='return_nodes'))
+                    for pv, an in zip(param_vars, arg_nodes):
+                        with self._debug_block(f"FuncCall {func.name} push parameter {pv.friendly_name()}"):
+                            if pv.is_pointer or pv.is_array or pv.typespec.is_struct:
+                                rvalue_var = self.visit(an, mode='generate_lvalue', dest_reg='A', dest_var=pv)
                                 self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
-                            elif rvalue_var.sizeof() == 1:
-                                self.emit(f"CALL :heap_push_AL", f"Push parameter {pv.friendly_name()}")
-                            elif rvalue_var.sizeof() == 2:
-                                self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()}")
                             else:
-                                raise ValueError("Unable to push parameters larger than 2 bytes")
+                                rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_var=pv)
+                                if rvalue_var.is_array or rvalue_var.typespec.is_struct:
+                                    self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
+                                elif rvalue_var.sizeof() == 1:
+                                    self.emit(f"CALL :heap_push_AL", f"Push parameter {pv.friendly_name()}")
+                                elif rvalue_var.sizeof() == 2:
+                                    self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()}")
+                                else:
+                                    raise ValueError("Unable to push parameters larger than 2 bytes")
                 self.emit(f"CALL {func.asm_name()}")
                 if func.return_type.sizeof() == 0:
                     self.emit("# function returns nothing, not popping a return value")
@@ -601,7 +604,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
     def visit_ExprList(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
         if mode == 'return_nodes':
-            return node.exprs
+            return node.exprs if node.exprs else []
         elif mode == 'generate_rvalue':
             # Comma operator: evaluate all nodes but return the value of the last one
             last_var = None
