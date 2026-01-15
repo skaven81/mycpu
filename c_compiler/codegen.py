@@ -686,6 +686,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             )
             return element_var
 
+        if mode not in ('generate_rvalue', 'generate_lvalue'):
+            raise NotImplementedError(f"visit_ArrayRef mode {mode} not yet supported")
+
         # For generate_lvalue and generate_rvalue modes:
         # We need to know the array dimensions at THIS level (before subscripting)
         # So we get the variable info for the base (node.name), not for this ArrayRef
@@ -1260,8 +1263,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             # node.left = dest_reg
             # node.right = other_reg
             other_reg = 'B' if dest_reg == 'A' else 'A'
-            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"BinaryOp {node.op}: Save {other_reg} before generating rhs")
-            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"BinaryOp {node.op}: Save {other_reg} before generating rhs")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"BinaryOp {node.op}: Save {other_reg} for generating rhs")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"BinaryOp {node.op}: Save {other_reg} for generating rhs")
             return_var = None
             with self._debug_block(f"BinaryOp {node.op}: Generate rhs into {other_reg}"):
                 right_var_val = None
@@ -1427,8 +1430,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"LDI_{dest_reg}L 1", "Binary boolean format check, is true")
                 self.emit(f"{label_done}")
                 
-            self.emit(f"POP_{other_reg}L", f"BinaryOp {node.op}: Restore {other_reg} after computation")
-            self.emit(f"POP_{other_reg}H", f"BinaryOp {node.op}: Restore {other_reg} after computation")
+            self.emit(f"POP_{other_reg}L", f"BinaryOp {node.op}: Restore {other_reg} after use for rhs")
+            self.emit(f"POP_{other_reg}H", f"BinaryOp {node.op}: Restore {other_reg} after use for rhs")
 
             return return_var
         else:
