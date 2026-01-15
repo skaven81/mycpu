@@ -287,9 +287,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 # Load small value
                 with self._debug_block(f"Load member value into {dest_reg}"):
                     other_reg = 'B' if dest_reg == 'A' else 'A'
-                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg}")
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"StructRef member value: Save {other_reg}")
                     if member_var.sizeof() == 2:
-                        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg}")
+                        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"StructRef member value: Save {other_reg}")
 
                     self._deref_load(member_var.sizeof(), addr_reg=dest_reg, dest_reg=other_reg)
 
@@ -299,9 +299,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Transfer value")
 
                     if member_var.sizeof() == 2:
-                        self.emit(f"POP_{other_reg}H", f"Restore {other_reg}")
-                    self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
-
+                        self.emit(f"POP_{other_reg}H", f"StructRef member value: Restore {other_reg}")
+                    self.emit(f"POP_{other_reg}L", f"StructRef member value: Restore {other_reg}")
                 return member_var
             else:
                 # Return address for large members, arrays, or nested structs
