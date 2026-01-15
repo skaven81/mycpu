@@ -693,23 +693,24 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         with self._debug_block(f"Get base address of {base_var.friendly_name()} into {other_reg}"):
             self.visit(node.name, mode='generate_lvalue', dest_reg=other_reg)
 
+        # Compute subscript (offset) into dest_reg
+        with self._debug_block(f"Get subscript value into {dest_reg}"):
             # Save base address (computing subscript may clobber other_reg)
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save base address")
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save base address")
 
-        # Compute subscript (offset) into dest_reg
-        with self._debug_block(f"Get subscript value into {dest_reg}"):
             subscript_var = self.visit(node.subscript, mode='generate_rvalue', dest_reg=dest_reg)
             if not subscript_var:
                 raise ValueError("Cannot index array: subscript expression returned no variable")
             if subscript_var.sizeof() == 1:
                 self.emit_sign_extend(dest_reg, subscript_var.typespec)
 
-        # Compute element address: base + (index * element_size)
-        with self._debug_block(f"Compute element address into {other_reg}"):
             # Restore base address
             self.emit(f"POP_{other_reg}L", f"Restore base address")
             self.emit(f"POP_{other_reg}H", f"Restore base address")
+
+        # Compute element address: base + (index * element_size)
+        with self._debug_block(f"Compute element address into {other_reg}"):
 
             # Calculate element size at THIS level
             # base_var.array_dims tells us the dimensions of the thing being indexed
@@ -726,6 +727,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 element_size = base_var.typespec.sizeof()
                 for dim in base_var.array_dims[1:]:  # Skip first dimension, multiply rest
                     element_size *= dim
+            elif base_var.is_pointer:
+                # Array of pointers, each element is 2 bytes
+                element_size = 2
             else:
                 # Single dimension (or final dimension): use base element size
                 element_size = base_var.typespec.sizeof()
@@ -743,8 +747,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         element_var = Variable(
             typespec=base_var.typespec,
             name=f"{base_var.name}_element",
-            is_array=len(base_var.array_dims) > 1,
+            is_array=len(base_var.array_dims) > 1,  # Still array if multi-dimensional
             array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else [],
+            is_pointer=base_var.is_pointer,
+            pointer_depth=base_var.pointer_depth,
             is_virtual=True,
         )
 
@@ -827,6 +833,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 if not dest_var:
                     self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} as {node.type}")
                     return Variable(typespec=TypeSpec(node.type, node.type), name='const', qualifiers=['const'], is_virtual=True)
+                elif dest_var.is_pointer:
+                    self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} for pointer {dest_var.friendly_name()}")
+                    return Variable(typespec=TypeSpec('int', 'int'), name='const', qualifiers=['const'], is_virtual=True)
                 elif dest_var.typespec.sizeof() == 1:
                     self.emit(f"LDI_{dest_reg}L {parsed_value}", f"Constant assignment {node.value} for {dest_var.friendly_name()}")
                     return Variable(typespec=dest_var.typespec, name='const', qualifiers=['const'], is_virtual=True)
@@ -834,7 +843,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} for {dest_var.friendly_name()}")
                     return Variable(typespec=dest_var.typespec, name='const', qualifiers=['const'], is_virtual=True)
                 else:
-                    raise NotImplementedError(f"Unable to load integer constants larger than 16 bit")
+                    raise NotImplementedError(f"Unable to load integer constants larger than 16 bit: {dest_var.friendly_name()}")
             else:
                 raise NotImplementedError(f"Constant value for {node.type} types using mode {mode} not yet supported")
         else:
@@ -1210,9 +1219,17 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 with self._debug_block(f"UnaryOp {node.op} rvalue: load pointer into {other_reg}"):
                     var = self.visit(node.expr, mode='generate_rvalue', dest_reg=other_reg, dest_var=dest_var)
 
+                result_var = Variable(
+                    typespec=var.typespec,
+                    name=f"{var.name}_deref",
+                    is_pointer=var.pointer_depth > 1,
+                    pointer_depth=max(0, var.pointer_depth - 1),
+                    is_virtual=True,
+                )
+
                 with self._debug_block(f"UnaryOp {node.op} rvalue: load value at pointer into {dest_reg}"):
-                    if var.sizeof() <= 2:
-                        self._deref_load(var.sizeof(), addr_reg=other_reg, dest_reg=dest_reg)
+                    if result_var.sizeof() <= 2:
+                        self._deref_load(result_var.sizeof(), addr_reg=other_reg, dest_reg=dest_reg)
                     else:
                         # For large values, return the address
                         self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy address")
@@ -1221,13 +1238,6 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 self.emit(f"POP_{other_reg}L", f"UnaryOp {node.op}: Restore {other_reg}, dereferenced rvalue in {dest_reg}")
                 self.emit(f"POP_{other_reg}H", f"UnaryOp {node.op}: Restore {other_reg}, dereferenced rvalue in {dest_reg}")
 
-                result_var = Variable(
-                    typespec=var.typespec,
-                    name=f"{var.name}_deref",
-                    is_pointer=var.pointer_depth > 1,
-                    pointer_depth=max(0, var.pointer_depth - 1),
-                    is_virtual=True,
-                )
                 return result_var
 
             else:
@@ -1283,7 +1293,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 left_var_size = 1
 
             # Compute the resulting op size
-            if left_var_size == right_var_size == 1:
+            if left_var.is_pointer or right_var.is_pointer:
+                op_size = 2
+            elif left_var_size == right_var_size == 1:
                 op_size = 1
             elif left_var_size == right_var_size == 2:
                 op_size = 2
@@ -1301,6 +1313,41 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 '||': {'byte':f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', f'ALUOP_{dest_reg}H %A|B%+%AH%+%BH%']},
                 '^': {'byte':f'ALUOP_{dest_reg}L %AxB%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %AxB%+%AL%+%BL%', f'ALUOP_{dest_reg}H %AxB%+%AH%+%BH%']},
             }
+
+            if node.op in ('+', '-') and (left_var.is_pointer or right_var.is_pointer):
+                # Pointer arithmetic requires +/- by the size of the referenced type, and all
+                # operations are words because we're dealing in addresses
+                if left_var.is_pointer:
+                    unit_size = left_var.pointer_arithmetic_size()
+                    scale_reg = other_reg
+                    ptr_reg = dest_reg
+                else:
+                    unit_size = right_var.pointer_arithmetic_size()
+                    scale_reg = dest_reg
+                    ptr_reg = other_reg
+                if unit_size == 1:
+                    self.emit_verbose(f"No operand scaling required for pointers to 1-byte types")
+                elif unit_size in (2, 4, 8, 16, 32, 64, 128):
+                    shifts = {2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6, 128: 7}[unit_size]
+                    for _ in range(shifts):
+                        self.emit(f"CALL :shift16_{scale_reg.lower()}_left", f"Multiply operand in {scale_reg} by pointer unit size {unit_size}")
+                elif unit_size <= 8:
+                    self.emit(f"ALUOP_PUSH %{ptr_reg}%+%{ptr_reg}H%", f"BinaryOp {node.op}: Save pointer in {ptr_reg} before scaling operand")
+                    self.emit(f"ALUOP_PUSH %{ptr_reg}%+%{ptr_reg}L%", f"BinaryOp {node.op}: Save pointer in {ptr_reg} before scaling operand")
+                    self.emit(f"ALUOP_{ptr_reg}H %{scale_reg}%+%{scale_reg}H%", f"BinaryOp {node.op}: Copy operand before scaling by unit size {unit_size}")
+                    self.emit(f"ALUOP_{ptr_reg}L %{scale_reg}%+%{scale_reg}L%", f"BinaryOp {node.op}: Copy operand before scaling by unit size {unit_size}")
+                    for _ in range(unit_size-1):
+                        self.emit(f"CALL :add16_to_{scale_reg.lower()}", f"Scale operand in {scale_reg} by unit size {unit_size}")
+                    self.emit(f"POP_{ptr_reg}L", f"BinaryOp {node.op}: Restore {ptr_reg} after scaling computation")
+                    self.emit(f"POP_{ptr_reg}H", f"BinaryOp {node.op}: Restore {ptr_reg} after scaling computation")
+                else:
+                    # Fallback to multiplication
+                    self.emit(f"CALL :heap_push_{scale_reg}", f"Multiply operand in {scale_reg} by unit size {unit_size}")
+                    self.emit(f"LDI_{scale_reg} {unit_size}", f"Multiply operand in {scale_reg} by unit size {unit_size}")
+                    self.emit(f"CALL :heap_push_{scale_reg}", f"Multiply operand in {scale_reg} by unit size {unit_size}")
+                    self.emit(f"CALL :mul16", f"Multiply operand in {scale_reg} by unit size {unit_size}")
+                    self.emit(f"CALL :heap_pop_{scale_reg}", f"Multiply operand in {scale_reg} by unit size {unit_size}")
+                    self.emit(f"CALL :heap_pop_word", f"Multiply operand in {scale_reg} by unit size {unit_size}")
 
             if node.op in alu_map:
                 if op_size == 1:
@@ -1508,6 +1555,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             # Fallback to multiplication
             self.emit(f"CALL :heap_push_{index_reg}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
             self.emit(f"LDI_{index_reg} {element_size}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
+            self.emit(f"CALL :heap_push_{index_reg}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
             self.emit(f"CALL :mul16", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
             self.emit(f"CALL :heap_pop_{index_reg}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
             self.emit(f"CALL :heap_pop_word", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
@@ -1595,7 +1643,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         and a bulk store is performed.  For any other data type, the value in
         rvalue_reg is the actual data value (not a pointer).
         """
-        if var.typespec.is_struct:
+        if var.typespec.is_struct and not var.is_pointer:
             self._emit_bulk_store(var, lvalue_reg, rvalue_reg)
         else:
             if var.is_pointer or var.typespec.sizeof() == 2:
