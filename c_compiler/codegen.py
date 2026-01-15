@@ -705,8 +705,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         # Compute subscript (offset) into dest_reg
         with self._debug_block(f"Get subscript value into {dest_reg}"):
             # Save base address (computing subscript may clobber other_reg)
-            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save base address")
-            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save base address")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"ArrayRef Save base address in {other_reg}")
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"ArrayRef Save base address in {other_reg}")
 
             subscript_var = self.visit(node.subscript, mode='generate_rvalue', dest_reg=dest_reg)
             if not subscript_var:
@@ -715,8 +715,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 self.emit_sign_extend(dest_reg, subscript_var.typespec)
 
             # Restore base address
-            self.emit(f"POP_{other_reg}L", f"Restore base address")
-            self.emit(f"POP_{other_reg}H", f"Restore base address")
+            self.emit(f"POP_{other_reg}L", f"ArrayRef Restore base address in {other_reg}")
+            self.emit(f"POP_{other_reg}H", f"ArrayRef Restore base address in {other_reg}")
 
         # Compute element address: base + (index * element_size)
         with self._debug_block(f"Compute element address into {other_reg}"):
@@ -769,8 +769,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy address")
                 self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy address")
 
-            self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
-            self.emit(f"POP_{other_reg}H", f"Restore {other_reg}")
+            self.emit(f"POP_{other_reg}L", f"ArrayRef Restore {other_reg}")
+            self.emit(f"POP_{other_reg}H", f"ArrayRef Restore {other_reg}")
             return element_var
 
         elif mode == 'generate_rvalue':
@@ -784,8 +784,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"ALUOP_{dest_reg}H %{other_reg}%+%{other_reg}H%", f"Copy address")
                     self.emit(f"ALUOP_{dest_reg}L %{other_reg}%+%{other_reg}L%", f"Copy address")
 
-            self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
-            self.emit(f"POP_{other_reg}H", f"Restore {other_reg}")
+            self.emit(f"POP_{other_reg}L", f"ArrayRef Restore {other_reg}")
+            self.emit(f"POP_{other_reg}H", f"ArrayRef Restore {other_reg}")
             return element_var
 
         else:
