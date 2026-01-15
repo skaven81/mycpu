@@ -29,7 +29,7 @@ class Variable:
         return f"var_{self.name}"
 
     def friendly_name(self):
-        return f"{'struct ' if self.typespec.is_struct else ''}{self.typespec.name} {'*'*self.pointer_depth}{'' if self.is_type_wrapper else self.name}{'[]' if self.is_array else ''}{' (virtual)' if self.is_virtual else ''}"
+        return f"{self.storage_class if self.storage_class != 'auto' else ''} {'struct ' if self.typespec.is_struct else ''}{self.typespec.name} {'*'*self.pointer_depth}{'' if self.is_type_wrapper else self.name}{'[]' if self.is_array else ''}{' (virtual)' if self.is_virtual else ''}"
 
     def sizeof(self) -> int:
         """Calculate the size of this type in bytes."""
