@@ -1007,16 +1007,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load pointer")
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} while we load pointer")
 
-                if var.kind == 'global' or (var.kind == 'local' and var.storage_class == 'static'):
-                    # For global and local static vars, the label is the pointer; there is
-                    # no need to dereference, just load the label value into the dest reg
-                    self._get_var_base_address(var, dest_reg)
-                    self.emit_verbose(f"No dereference for label-based pointer {var.friendly_name()}")
-                else:
-                    # Dereference the pointer: load the address value stored in the pointer
-                    self._get_var_base_address(var, other_reg)
-                    self.emit_verbose(f"Dereference to get base address for frame-based pointer {var.friendly_name()}")
-                    self._deref_load(2, addr_reg=other_reg, dest_reg=dest_reg)  # Load 2-byte pointer
+                # Dereference the pointer: load the address value stored in the pointer
+                self._get_var_base_address(var, other_reg)
+                self.emit_verbose(f"Dereference to get base address for frame-based pointer {var.friendly_name()}")
+                self._deref_load(2, addr_reg=other_reg, dest_reg=dest_reg)  # Load 2-byte pointer
 
                 self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, pointer value in {dest_reg}")
                 self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, pointer value in {dest_reg}")
