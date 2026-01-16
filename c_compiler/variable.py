@@ -26,6 +26,8 @@ class Variable:
     # the assembler can't handle labels shorter than 4 characters, so
     # make sure all variable names get padded out when converted to labels
     def padded_name(self):
+        if self.storage_class == 'extern':
+            return self.name
         return f"var_{self.name}"
 
     def friendly_name(self):
