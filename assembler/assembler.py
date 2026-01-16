@@ -298,6 +298,7 @@ assembly = [ ]
 labels = { }
 ext_labels = { }
 label_addrs = { }
+stack_balance = 0
 
 # Load labels from symbol table if present
 if args.symbols:
@@ -388,6 +389,12 @@ for input_file, line_num, line in concat_source:
         opcode = opcodes[match['opcode']]
         asm = [ {"val": opcode.code, "msg": opcode.name} ]
         arg_description = [ ]
+        if 'PUSH' in opcode.name:
+            stack_balance += 1
+        if 'POP' in opcode.name:
+            stack_balance -= 1
+        if stack_balance < 0:
+            raise SyntaxError("{} Line {}: Stack balance dropped below zero".format(input_file, line_num))
         if 'args' in match:
             if type(match['args']) is not list:
                 match['args'] = [ match['args'] ]
@@ -436,6 +443,9 @@ for input_file, line_num, line in concat_source:
 
         logging.debug("{:16.16s} {:3d}: {:04x}: {} [0x{:02x}] {}".format(input_file, line_num, len(assembly), opcode.name, opcode.code, arg_description))
         assembly.extend(asm)
+
+if stack_balance != 0:
+    raise SyntaxError("Stack imbalance after assembly")
 
 logging.info("Incomplete assembly")
 for idx, a in enumerate(assembly):
