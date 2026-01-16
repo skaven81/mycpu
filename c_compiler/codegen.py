@@ -187,6 +187,29 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             raise NotImplementedError(f"visit_FileAST mode {mode} not yet supported")
 
+    def visit_If(self, node, mode, **kwargs):
+        if mode == 'codegen':
+            true_label = self._get_label("condition_true")
+            done_label = self._get_label("end_if")
+            with self._debug_block("If block"):
+                with self._debug_block("If block: condition"):
+                    cond_var = self.visit(node.cond, mode='generate_rvalue', dest_reg='A', **kwargs)
+                    self.emit(f"ALUOP_FLAGS %A%+%AL%", f"Check if condition")
+                    self.emit(f"JNZ {true_label}", f"Condition was true")
+                    if cond_var.sizeof() == 2:
+                        self.emit(f"ALUOP_FLAGS %A%+%AH%", f"Check if condition")
+                        self.emit(f"JNZ {true_label}", f"Condition was true")
+                    self.emit_verbose("Condition was false")
+                with self._debug_block("If block: false condition"):
+                    self.visit(node.iffalse, mode='codegen', **kwargs)
+                    self.emit(f"JMP {done_label}", f"Done with false condition")
+                with self._debug_block("If block: true condition"):
+                    self.emit(f"{true_label}", f"Condition was true")
+                    self.visit(node.iftrue, mode='codegen', **kwargs)
+                self.emit(f"{done_label}", f"End If")
+        else:
+            raise NotImplementedError(f"visit_If mode {mode} not yet supported")
+
     def visit_Typedef(self, node, mode, **kwargs):
         if mode == 'type_collection':
             new_type = self.visit(node.type, mode=mode, **kwargs)
