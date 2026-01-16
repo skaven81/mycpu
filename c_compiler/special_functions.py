@@ -33,3 +33,13 @@ class SpecialFunctions():
         # no return value for printf, nothing to pop
         self.emit(f"POP_CL", "Restore C after printf")
         self.emit(f"POP_CH", "Restore C after printf")
+
+    def custom_FuncCall_print(self, node, mode, func, dest_reg='A', **kwargs):
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        self.emit(f"PUSH_CH", "Save C before printf")
+        self.emit(f"PUSH_CL", "Save C before printf")
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='C')
+        self.emit(f"CALL {func.asm_name()}")
+        # no return value for print, nothing to pop
+        self.emit(f"POP_CL", "Restore C after print")
+        self.emit(f"POP_CH", "Restore C after print")
