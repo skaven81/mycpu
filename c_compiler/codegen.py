@@ -991,10 +991,22 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         elif mode == 'generate_lvalue':
             # Get the address of the identifier
             var = self.context.vartable.lookup(node.name)
-            if not var:
-                raise ValueError(f"Unable to find variable {node.name} in variable table")
-            self._get_var_base_address(var, dest_reg)
-            return var
+            if var:
+                self._get_var_base_address(var, dest_reg)
+                return var
+
+            # See if it's a function reference
+            func = self.context.funcreg.lookup(node.name)
+            if func:
+                self._get_var_base_address(func, dest_reg)
+                # Return a fake Variable that behaves like a function reference (void pointer)
+                return Variable(name=node.name,
+                                typespec=TypeSpec('funcref', 'void'),
+                                is_pointer=True,
+                                pointer_depth=1,
+                                is_virtual=True)
+
+            raise ValueError(f"Unable to find {node.name} in variable or function table")
 
         elif mode == 'generate_rvalue':
             # Get the value of the identifier
@@ -1516,7 +1528,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             raise NotImplementedError(f"visit_Assignment mode {mode} not yet supported")
 
     def _get_var_base_address(self, var, dest_reg='A'):
-        """Get base address of a variable into dest_reg."""
+        """Get base address of a variable or function into dest_reg."""
+        if type(var) is Function:
+            self.emit(f"LDI_{dest_reg} {var.asm_name()}", f"Load base address of function {var.name} into {dest_reg}")
+            return
+
+        # otherwise, we're dealing with a variable
         if var.kind == 'global' or (var.kind == 'local' and var.storage_class == 'static'):
             if var.kind == 'global' and var.storage_class == 'extern':
                 prefix = '$'
