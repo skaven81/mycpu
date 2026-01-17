@@ -1788,16 +1788,26 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             # We can load values much faster using INCR_D/DECR_D for small offsets.
             #
             # For offset mode:
-            #  INCR/DECR (2 clocks for each abs(offset))
+            #  INCR/DECR (~1 clocks for each abs(offset))
             #  MOV_DH/MOV_DL (4 clocks total)
-            #  DECR/INCR (2 clocks for each abs(offset))
-            # We can go up to +/- 10 and still finish with fewer clocks than the naiive approach
-            if abs(var.offset) <= 10:
-                for _ in range(abs(var.offset)):
+            #  DECR/INCR (~1 clocks for each abs(offset))
+            # We can go up to +/- 20 and still finish with fewer clocks than the naiive approach
+            if abs(var.offset) <= 20:
+                eight, rest = divmod(abs(var.offset), 8)
+                four, one = divmod(rest, 4)
+                for _ in range(eight):
+                    self.emit(f"{'INCR' if var.offset > 0 else 'DECR'}8_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                for _ in range(four):
+                    self.emit(f"{'INCR' if var.offset > 0 else 'DECR'}4_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                for _ in range(one):
                     self.emit(f"{'INCR' if var.offset > 0 else 'DECR'}_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"MOV_DH_{dest_reg}H", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"MOV_DL_{dest_reg}L", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
-                for _ in range(abs(var.offset)):
+                for _ in range(eight):
+                    self.emit(f"{'DECR' if var.offset > 0 else 'INCR'}8_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                for _ in range(four):
+                    self.emit(f"{'DECR' if var.offset > 0 else 'INCR'}4_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                for _ in range(one):
                     self.emit(f"{'DECR' if var.offset > 0 else 'INCR'}_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
             else:
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
