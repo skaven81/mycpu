@@ -10,6 +10,8 @@ class FunctionRegistry:
     
     def register(self, name: str, function: Function) -> None:
         """Register a Function with the given name."""
+        if len(name) <= 3:
+            raise SyntaxError(f"Function names must be >= 4 characters ({name})")
         self._functions[name] = function
     
     def lookup(self, name: str) -> Optional[Function]:
