@@ -209,6 +209,145 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             raise NotImplementedError(f"visit_If mode {mode} not yet supported")
 
+    def visit_Break(self, node, mode, break_label, **kwargs):
+        if mode == 'codegen':
+            self.emit(f"JMP {break_label}", "Break out of loop/switch")
+        else:
+            raise NotImplementedError(f"visit_Break mode {mode} not yet supported")
+
+    def visit_Continue(self, node, mode, continue_label, **kwargs):
+        if mode == 'codegen':
+            self.emit(f"JMP {continue_label}", "Continue loop")
+        else:
+            raise NotImplementedError(f"visit_Continue mode {mode} not yet supported")
+
+    def visit_DoWhile(self, node, mode, **kwargs):
+        if mode == 'codegen':
+            top_label = self._get_label("dowhile_top")
+            cond_label = self._get_label("dowhile_condition")
+            done_label = self._get_label("dowhile_end")
+            # nested loops may carry the continue and break labels from an upstream
+            # loop.  We remove those from kwargs so that the body visit() doesn't
+            # duplicate the continue and break label args.
+            if 'continue_label' in kwargs:
+                del(kwargs['continue_label'])
+            if 'break_label' in kwargs:
+                del(kwargs['break_label'])
+            with self._debug_block("DoWhile block"):
+                self.emit(f"ALUOP_PUSH %A%+%AH%", "Preserve A for dowhile loop condition")
+                self.emit(f"ALUOP_PUSH %A%+%AL%", "Preserve A for dowhile loop condition")
+                self.emit(f"{top_label}", f"DoWhile loop begin")
+                with self._debug_block("DoWhile body"):
+                    self.visit(node.stmt, mode='codegen', continue_label=cond_label, break_label=done_label, **kwargs)
+                with self._debug_block("DoWhile condition"):
+                    self.emit(f"{cond_label}", "DoWhile condition")
+                    cond_var = self.visit(node.cond, mode='generate_rvalue', dest_reg='A', **kwargs)
+                    self.emit(f"ALUOP_FLAGS %A%+%AL%", f"Check dowhile condition")
+                    self.emit(f"JNZ {top_label}", f"Condition was true")
+                    if cond_var.sizeof() == 2:
+                        self.emit(f"ALUOP_FLAGS %A%+%AH%", f"Check dowhile condition")
+                        self.emit(f"JNZ {top_label}", f"Condition was true")
+                self.emit(f"{done_label}", f"Condition was false, end loop")
+                self.emit(f"POP_AL", "Restore A from dowhile loop condition")
+                self.emit(f"POP_AH", "Restore A from dowhile loop condition")
+        else:
+            raise NotImplementedError(f"visit_DoWhile mode {mode} not yet supported")
+
+    def visit_While(self, node, mode, **kwargs):
+        if mode == 'codegen':
+            top_label = self._get_label("while_top")
+            true_label = self._get_label("while_true")
+            done_label = self._get_label("while_end")
+            # nested loops may carry the continue and break labels from an upstream
+            # loop.  We remove those from kwargs so that the body visit() doesn't
+            # duplicate the continue and break label args.
+            if 'continue_label' in kwargs:
+                del(kwargs['continue_label'])
+            if 'break_label' in kwargs:
+                del(kwargs['break_label'])
+            with self._debug_block("While block"):
+                self.emit(f"ALUOP_PUSH %A%+%AH%", "Preserve A for while loop condition")
+                self.emit(f"ALUOP_PUSH %A%+%AL%", "Preserve A for while loop condition")
+                self.emit(f"{top_label}", f"While loop begin")
+                with self._debug_block("While condition"):
+                    cond_var = self.visit(node.cond, mode='generate_rvalue', dest_reg='A', **kwargs)
+                    self.emit(f"ALUOP_FLAGS %A%+%AL%", f"Check while condition")
+                    self.emit(f"JNZ {true_label}", f"Condition was true")
+                    if cond_var.sizeof() == 2:
+                        self.emit(f"ALUOP_FLAGS %A%+%AH%", f"Check while condition")
+                        self.emit(f"JNZ {true_label}", f"Condition was true")
+                    self.emit(f"JMP {done_label}", f"Condition was false, end loop")
+                with self._debug_block("While body"):
+                    self.emit(f"{true_label}", f"Begin while loop body")
+                    self.visit(node.stmt, mode='codegen', continue_label=top_label, break_label=done_label, **kwargs)
+                    self.emit(f"JMP {top_label}", f"Next While loop")
+                self.emit(f"{done_label}", "End while loop")
+                self.emit(f"POP_AL", "Restore A from while loop condition")
+                self.emit(f"POP_AH", "Restore A from while loop condition")
+        else:
+            raise NotImplementedError(f"visit_While mode {mode} not yet supported")
+
+    def visit_DeclList(self, node, mode, **kwargs):
+        if mode == 'generate_init':
+            for decl in node.decls:
+                self.visit(decl, mode='codegen', **kwargs)
+        else:
+            raise NotImplementedError(f"visit_DeclList mode {mode} not yet supported")
+
+    def visit_For(self, node, mode, **kwargs):
+        if mode == 'codegen':
+            # nested loops may carry the continue and break labels from an upstream
+            # loop.  We remove those from kwargs so that the body visit() doesn't
+            # duplicate the continue and break label args.
+            if 'continue_label' in kwargs:
+                del(kwargs['continue_label'])
+            if 'break_label' in kwargs:
+                del(kwargs['break_label'])
+
+            cond_label = self._get_label("for_condition")
+            incr_label = self._get_label("for_increment")
+            true_label = self._get_label("for_cond_true")
+            sub_true_label = self._get_label("for_cond_sub_true")
+            done_label = self._get_label("for_end")
+            with self._debug_block("For loop"):
+                with self._debug_block("For loop init"):
+                    self.visit(node.init, mode='generate_init', **kwargs)
+                with self._debug_block("For loop condition"):
+                    self.emit(f"{cond_label}", "For loop condition check")
+                    self.emit(f"ALUOP_PUSH %A%+%AH%", "Preserve A for loop condition")
+                    self.emit(f"ALUOP_PUSH %A%+%AL%", "Preserve A for loop condition")
+                    cond_var = self.visit(node.cond, mode='generate_rvalue', dest_reg='A', **kwargs)
+                    if cond_var.sizeof() == 1:
+                        self.emit(f"ALUOP_FLAGS %A%+%AL%", f"Check for condition")
+                        self.emit(f"POP_AL", "Restore A from for loop condition")
+                        self.emit(f"POP_AH", "Restore A from for loop condition")
+                        self.emit(f"JNZ {true_label}", f"Condition was true")
+                        self.emit(f"JMP {done_label}", f"Condition was false, end loop")
+                    elif cond_var.sizeof() == 2:
+                        self.emit(f"ALUOP_FLAGS %A%+%AL%", f"Check for condition")
+                        self.emit(f"JNZ {sub_true_label}", f"Condition was true")
+                        self.emit(f"ALUOP_FLAGS %A%+%AH%", f"Check for condition")
+                        self.emit(f"JNZ {sub_true_label}", f"Condition was true")
+                        self.emit(f"POP_AL", "Restore A from for loop condition")
+                        self.emit(f"POP_AH", "Restore A from for loop condition")
+                        self.emit(f"JMP {done_label}", f"Condition was false, end loop")
+                        self.emit(f"{sub_true_label}")
+                        self.emit(f"POP_AL", "Restore A from for loop condition")
+                        self.emit(f"POP_AH", "Restore A from for loop condition")
+                    else:
+                        raise ValueError(f"condition var has unexpected size: {cond_var.friendly_name()} {cond_var.sizeof()}")
+                with self._debug_block("For loop body"):
+                    self.emit(f"{true_label}", f"Begin for loop body")
+                    self.visit(node.stmt, mode='codegen', continue_label=incr_label, break_label=done_label, **kwargs)
+                with self._debug_block("For loop next"):
+                    self.emit(f"{incr_label}", f"Begin for loop increment")
+                    self.visit(node.next, mode='codegen', **kwargs)
+                    self.emit(f"JMP {cond_label}", "Next for loop iteration")
+                self.emit(f"{done_label}", "End for loop")
+            pass
+        else:
+            raise NotImplementedError(f"visit_For mode {mode} not yet supported")
+
     def visit_Typedef(self, node, mode, **kwargs):
         if mode == 'type_collection':
             new_type = self.visit(node.type, mode=mode, **kwargs)
