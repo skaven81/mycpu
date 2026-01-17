@@ -348,6 +348,73 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             raise NotImplementedError(f"visit_For mode {mode} not yet supported")
 
+    def visit_Switch(self, node, mode, **kwargs):
+        if mode == 'codegen':
+            done_label = self._get_label("switch_end")
+            cond_var = None
+            with self._debug_block("Switch"):
+                with self._debug_block("Switch: Load case statements and assign labels"):
+                    if type(node.stmt) is not c_ast.Compound:
+                        raise SyntaxError("Switch statements must contain a Compound with Case and Default statements")
+                    cases = []
+                    seen_values = set()
+                    for c in node.stmt.block_items or []:
+                        if type(c) is c_ast.Case:
+                            try:
+                                val = self.visit(c.expr, mode='get_value')
+                                if val[0] in seen_values:
+                                    raise SyntaxError(f"Duplicate case statement in switch: {val}")
+                                seen_values.add(val[0])
+                            except NotImplementedError as e:
+                                raise SyntaxError(f"Case statements must have constant integer expressions that are supported with the get_value mode: {e}")
+                            cases.append( (val[0], val[1], self._get_label('switch_case'), c.stmts or []) )
+                        elif type(c) is c_ast.Default:
+                            cases.append( (None, 'default', self._get_label('switch_case'), c.stmts or []) )
+                        else:
+                            raise SyntaxError("Switch statements may only contain Case and Default nodes")
+                    self.emit_debug("Cases: " + str([(c[0], c[1], c[2]) for c in cases]))
+                with self._debug_block("Switch: load condition into A"):
+                    cond_var = self.visit(node.cond, mode='generate_rvalue', dest_reg='A', **kwargs)
+                with self._debug_block("Switch: branch block"):
+                    for case in [c for c in cases if c[0] is not None]:
+                        with self._debug_block(f"Switch: case {case[1]}"):
+                            if cond_var.sizeof() == 1:
+                                self.emit(f"LDI_BL {case[0]}", f"case {case[1]}")
+                                self.emit(f"ALUOP_FLAGS %A&B%+%AL%+%BL%", "Check condition")
+                                self.emit(f"JEQ {case[2]}", "Jump if match")
+                            elif cond_var.sizeof() == 2:
+                                false_label = self._get_label("switch_case_false")
+                                self.emit(f"LDI_B {case[0]}", f"case {case[1]}")
+                                self.emit(f"ALUOP_FLAGS %A&B%+%AL%+%BL%", "Check condition")
+                                self.emit(f"JNE {false_label}", "Go to next case if no match")
+                                self.emit(f"ALUOP_FLAGS %A&B%+%AH%+%BH%", "Check condition")
+                                self.emit(f"JNE {false_label}", "Go to next case if no match")
+                                self.emit(f"JMP {case[2]}", "Jump if match")
+                                self.emit(f"{false_label}", "Jump here if condidtion did not match")
+                            else:
+                                raise ValueError("cond_var can't be more than 2 bytes")
+                    default_cases = [c for c in cases if c[0] is None]
+                    if len(default_cases) > 1:
+                        raise SyntaxError("Multiple default switch cases are not allowed")
+                    if default_cases:
+                        with self._debug_block(f"Switch: case {default_cases[0][1]}"):
+                            self.emit(f"JMP {default_cases[0][2]}", "Jump to default case")
+                    else:
+                        self.emit(f"JMP {done_label}", "No cases matched, and no default, exit switch")
+                with self._debug_block("Switch: case statements"):
+                    for case in cases:
+                        case_end = self._get_label("case_end")
+                        with self._debug_block(f"Switch: case {case[0]} {case[1]}"):
+                            self.emit(case[2], f"Case {case[1]} begin")
+                            for s in case[3]:
+                                self.visit(s, mode='codegen', break_label=done_label, **kwargs)
+                            self.emit(case_end, f"Case {case[1]} end")
+                with self._debug_block("Switch: epilogue"):
+                    self.emit(f"{done_label}", "End switch")
+
+        else:
+            raise NotImplementedError(f"visit_Switch mode {mode} not yet supported")
+
     def visit_Typedef(self, node, mode, **kwargs):
         if mode == 'type_collection':
             new_type = self.visit(node.type, mode=mode, **kwargs)
