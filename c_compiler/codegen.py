@@ -652,16 +652,18 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         # Don't count function parameters in local var size
         if type(node) is c_ast.ParamList:
             return 0
+
+        this_node_size = 0
         if type(node) is c_ast.Decl and type(node.type) is not c_ast.FuncDecl:
             var = self.visit(node, mode='return_var', register_var=False)
             if self.context.verbose >= 2:
-                effective_size = var.sizeof() if var.storage_class != 'static' else 0
-                self.emit_debug(f"_total_localvar_size: Computed size of {var.friendly_name()} = {var.sizeof()} (effective={effective_size})")
-            return effective_size
+                this_node_size = var.sizeof() if var.storage_class != 'static' else 0
+                self.emit_debug(f"_total_localvar_size: Computed size of {var.friendly_name()} = {var.sizeof()} (effective={this_node_size})")
+
         recursive_sum = 0
         for child in node:
             recursive_sum += self._total_localvar_size(child)
-        return recursive_sum
+        return recursive_sum + this_node_size
 
     def visit_PtrDecl(self, node, mode, **kwargs):
         if mode in ('type_collection', 'return_typespec',):
