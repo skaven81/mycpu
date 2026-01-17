@@ -13,7 +13,6 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         self.output = output
         self.label_num = 0
         self.debug_depth = 0
-        self.func_return_label = None
 
     def visit(self, node, mode, **kwargs):
         """
@@ -484,6 +483,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             raise NotImplementedError(f"visit_EllipsisParam mode {mode} not yet supported")
 
     def visit_FuncDef(self, node, mode, **kwargs):
+        # if kwargs contains a 'return_label' key, we have nested
+        # function definitions (which probably shouldn't happen but
+        # it's easy enough to add support for) and need to ensure
+        # that the body code generation doesn't duplicate that key.
+        if 'return_label' in kwargs:
+            del(kwargs['return_label'])
+
         if mode == 'function_collection':
             self.visit(node.decl, mode=mode)
             return
@@ -501,7 +507,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f'.{func.name}', func.c_str())
                 else:
                     self.emit(f':{func.name}', func.c_str())
-                self.func_return_label = self._get_label(f"{func.name}_return")
+                return_label = self._get_label(f"{func.name}_return")
 
                 # Save the current stack
                 self.emit_stackpush()
@@ -539,11 +545,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
                 # Generate function body, registering local vars as we encounter them
                 for c in node:
-                    self.visit(c, mode='codegen')
+                    self.visit(c, mode='codegen', return_label=return_label)
 
                 # Function epilogue
-                self.emit(self.func_return_label)
-                self.func_return_label = None
+                self.emit(return_label)
 
                 # Retreat the stack pointer
                 if retreat_bytes:
@@ -570,10 +575,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             raise NotImplementedError(f"visit_FuncDef mode {mode} not yet supported")
 
-    def visit_Return(self, node, mode, **kwargs):
+    def visit_Return(self, node, mode, return_label, **kwargs):
         if mode == 'codegen':
             self.visit(node.expr, mode='generate_rvalue', dest_reg='A')
-            self.emit(f"JMP {self.func_return_label}")
+            self.emit(f"JMP {return_label}")
         else:
             raise NotImplementedError(f"visit_Return mode {mode} not yet supported")
 
