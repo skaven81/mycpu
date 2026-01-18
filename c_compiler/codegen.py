@@ -288,7 +288,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             raise NotImplementedError(f"visit_While mode {mode} not yet supported")
 
     def visit_DeclList(self, node, mode, **kwargs):
-        if mode == 'generate_init':
+        if mode == 'codegen':
             for decl in node.decls:
                 self.visit(decl, mode='codegen', **kwargs)
         else:
@@ -311,7 +311,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             done_label = self._get_label("for_end")
             with self._debug_block("For loop"):
                 with self._debug_block("For loop init"):
-                    self.visit(node.init, mode='generate_init', **kwargs)
+                    self.visit(node.init, mode='codegen', **kwargs)
                 with self._debug_block("For loop condition"):
                     self.emit(f"{cond_label}", "For loop condition check")
                     self.emit(f"ALUOP_PUSH %A%+%AH%", "Preserve A for loop condition")
