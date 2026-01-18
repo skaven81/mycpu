@@ -141,6 +141,20 @@ x 0 IncrementPC UnmaskInterrupts
 x 1 NextInstruction
 EOF
 
+# Load the status register into a register
+opcode=$(hex_to_dec 06)
+for to_reg in AL BL; do
+offset=$((${#to_reg}-1))
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] STATUS_${to_reg}
+x 0 IncrementPC DataBusStatus Write${to_reg}
+x 1 NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+
+
 # Increment/decrement C and D
 cat <<EOF
 
@@ -871,14 +885,146 @@ EOF
 let "opcode = opcode + 1"
 done
 
-# Load the status register into a register
-for to_reg in ${WRITABLE_REGS[@]}; do
-offset=$((${#to_reg}-1))
+# Multi-value incr/decr for D register to support frame pointer manipulation
 cat <<EOF
 
-[0x$(printf "%02x" $opcode)] STATUS_${to_reg}
-x 0 IncrementPC DataBusStatus Write${to_reg}
-x 1 NextInstruction
+[0xe0] INCR4_D
+x 0 IncrementPC IncrementD
+x 1 IncrementD
+x 2 IncrementD
+x 3 IncrementD
+x 4 NextInstruction
+
+[0xe1] INCR8_D
+x 0 IncrementPC IncrementD
+x 1 IncrementD
+x 2 IncrementD
+x 3 IncrementD
+x 4 IncrementD
+x 5 IncrementD
+x 6 IncrementD
+x 7 IncrementD
+x 8 NextInstruction
+
+[0xe2] DECR4_D
+x 0 IncrementPC DecrementD
+x 1 DecrementD
+x 2 DecrementD
+x 3 DecrementD
+x 4 NextInstruction
+
+[0xe3] DECR8_D
+x 0 IncrementPC DecrementD
+x 1 DecrementD
+x 2 DecrementD
+x 3 DecrementD
+x 4 DecrementD
+x 5 DecrementD
+x 6 DecrementD
+x 7 DecrementD
+x 8 NextInstruction
+
+EOF
+
+# 16-bit ALU operation: unconditional lo then hi
+opcode=$(hex_to_dec e4)
+for to_reg in A B; do
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] ALUOP16_${to_reg} \$lo_op \$hi_op
+x 0 IncrementPC
+# PC now points to \$lo_op
+x 1 AddrBusPC WriteALUop IncrementPC
+# PC now points to \$hi_op
+x 2 DataBusALU Write${to_reg}L WriteStatus
+x 3 AddrBusPC WriteALUop IncrementPC
+# PC now points to next instruction
+x 4 DataBusALU Write${to_reg}H WriteStatus
+x 5 NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+
+# 16-bit ALU operation: overflow flag
+for to_reg in A B; do
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] ALUOP16O_${to_reg} \$lo_op \$hi_op_o \$hi_op_no
+x 0 IncrementPC
+# PC now points to \$lo_op
+x 1 AddrBusPC WriteALUop IncrementPC
+# PC now points to \$hi_op_o
+x 2 DataBusALU Write${to_reg}L WriteStatus
+# overflow condition: stay at \$hi_op_o
+O 3 AddrBusPC
+O 4 AddrBusPC WriteALUop IncrementPC
+# PC now points to \$hi_op_no
+O 5 DataBusALU Write${to_reg}H WriteStatus
+# no-overflow condition: move to \$hi_op_no
+o 3 IncrementPC
+# PC now points to \$hi_op_no
+o 4 AddrBusPC WriteALUop
+# PC now points to next instruction
+o 5 DataBusALU Write${to_reg}H WriteStatus
+x 6 IncrementPC
+# PC now points to next instruction
+x 7 NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+
+# 16-bit ALU operation: equal flag
+for to_reg in A B; do
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] ALUOP16E_${to_reg} \$lo_op \$hi_op_eq \$hi_op_ne
+x 0 IncrementPC
+# PC now points to \$lo_op
+x 1 AddrBusPC WriteALUop IncrementPC
+# PC now points to \$hi_op_o
+x 2 DataBusALU Write${to_reg}L WriteStatus
+# overflow condition: stay at \$hi_op_o
+E 3 AddrBusPC
+E 4 AddrBusPC WriteALUop IncrementPC
+# PC now points to \$hi_op_no
+E 5 DataBusALU Write${to_reg}H WriteStatus
+# no-overflow condition: move to \$hi_op_no
+e 3 IncrementPC
+# PC now points to \$hi_op_no
+e 4 AddrBusPC WriteALUop
+# PC now points to next instruction
+e 5 DataBusALU Write${to_reg}H WriteStatus
+x 6 IncrementPC
+# PC now points to next instruction
+x 7 NextInstruction
+EOF
+let "opcode = opcode + 1"
+done
+
+# 16-bit ALU operation: zero flag
+for to_reg in A B; do
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] ALUOP16Z_${to_reg} \$lo_op \$hi_op_z \$hi_op_nz
+x 0 IncrementPC
+# PC now points to \$lo_op
+x 1 AddrBusPC WriteALUop IncrementPC
+# PC now points to \$hi_op_o
+x 2 DataBusALU Write${to_reg}L WriteStatus
+# overflow condition: stay at \$hi_op_o
+Z 3 AddrBusPC
+Z 4 AddrBusPC WriteALUop IncrementPC
+# PC now points to \$hi_op_no
+Z 5 DataBusALU Write${to_reg}H WriteStatus
+# no-overflow condition: move to \$hi_op_no
+z 3 IncrementPC
+# PC now points to \$hi_op_no
+z 4 AddrBusPC WriteALUop
+# PC now points to next instruction
+z 5 DataBusALU Write${to_reg}H WriteStatus
+x 6 IncrementPC
+# PC now points to next instruction
+x 7 NextInstruction
 EOF
 let "opcode = opcode + 1"
 done

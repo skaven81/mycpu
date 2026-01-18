@@ -90,6 +90,15 @@ ALUOP_ADDR_{A,B,C,D} $op
 # Store ALU result into {reg}
 ALUOP_{AH,AL,BH,BL,CH,CL,DH,DL,TAL,TD} $op
 
+# 16-bit ALU operations: $lo_op writes to low dest reg,
+# $hi_op writes to high dest reg conditionally based on
+# $lo_op's status bits. Status bits are from the last
+# operation (the $hi_op)
+ALUOP16_{A,B} $lo_op $hi_op
+ALUOP16O_{A,B} $lo_op $hi_op_if_O $hi_op_if_NO
+ALUOP16E_{A,B} $lo_op $hi_op_if_EQ $hi_op_if_NEQ
+ALUOP16Z_{A,B} $lo_op $hi_op_if_Z $hi_op_if_NZ
+
 # SIMD and atomic copy instructions
 MEMCPY_C_D          ** TD ** (C and D are incremented after copy)
 MEMCPY4_C_D         ** TD ** (C and D are incremented after copy)
@@ -109,15 +118,15 @@ MASKINT
 UMASKINT
 INCR_C
 DECR_C
-INCR_D
-DECR_D
+INCR{,4,8}_D
+DECR{,4,8}_D
 
 # Load the IRQ base address into a register
 IRQBASE_{AH,AL,BH,BL,CH,CL,DH,DL}
 # Load the IRQ ID (shifted left one) into a register
 IRQID_{AH,AL,BH,BL,CH,CL,DH,DL}
 # Load the contents of the status register into a register
-STATUS_{AH,AL,BH,BL,CH,CL,DH,DL}
+STATUS_{AL,BL}
 
 # Color byte masks
 0x03 blue   xx xx xx 11
