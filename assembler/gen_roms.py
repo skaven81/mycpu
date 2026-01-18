@@ -6,10 +6,10 @@ import re
 class ControlSignal:
     @classmethod
     def match_header(cls, line):
-        return bool(re.match("\(([a-zA-Z/]+)\)", line))
+        return bool(re.match(r"\(([a-zA-Z/]+)\)", line))
 
     def __init__(self, line):
-        m = re.match("\(([a-zA-Z/]+)\)\s+([0-9]+)\s+([0-9]+)\s+0x([0-9a-fA-F]{2})", line)
+        m = re.match(r"\(([a-zA-Z/]+)\)\s+([0-9]+)\s+([0-9]+)\s+0x([0-9a-fA-F]{2})", line)
         if m:
             self.signal = m.group(1)
             self.default = int(m.group(2))
@@ -89,11 +89,11 @@ class RomByte:
 class Macro:
     @classmethod
     def match_header(cls, line):
-        return bool(re.match("\{(\S+)\}", line))
+        return bool(re.match(r"\{(\S+)\}", line))
 
     def __init__(self, lines):
         header = lines.pop(0)
-        m = re.match("\{(\S+)\}", header)
+        m = re.match(r"\{(\S+)\}", header)
         if m:
             self.name = m.group(1)
         else:
@@ -122,11 +122,11 @@ class Macro:
 class Opcode:
     @classmethod
     def match_header(cls, line):
-        return bool(re.match("\[(0x[0-9a-fA-F]{2})\]", line))
+        return bool(re.match(r"\[(0x[0-9a-fA-F]{2})\]", line))
 
     def __init__(self, lines):
         header = lines.pop(0)
-        m = re.match("\[(\S+)\]\s+(\S+)\s*(.*)", header)
+        m = re.match(r"\[(\S+)\]\s+(\S+)\s*(.*)", header)
         if m:
             self.code = int(m.group(1), 16)
             self.name = m.group(2)
@@ -139,7 +139,7 @@ class Opcode:
             seq = seq.rstrip()
             if not seq:
                 continue
-            m = re.match("([xoOzZeE]+)\s+([0-9a-fA-F])\s+(.*)", seq)
+            m = re.match(r"([xoOzZeE]+)\s+([0-9a-fA-F])\s+(.*)", seq)
             if m:
                 uop = {
                     "sequence": int(m.group(2), 16),
