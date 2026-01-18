@@ -1296,12 +1296,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 other_reg = 'B' if dest_reg == 'A' else 'A'
                 if node.op.endswith('-'):
                     word_op = 'decr'
-                    ptr_op = f'sub16_{dest_reg.lower()}_minus_{other_reg.lower()}'
+                    ptr_op = f'{dest_reg}-{other_reg}'
                     byte_op = '-'
                     descr = 'decrement'
                 else:
                     word_op = 'incr'
-                    ptr_op = f'add16_to_{dest_reg.lower()}'
+                    ptr_op = f'A+B'
                     byte_op = '+'
                     descr = 'increment'
                 # Load current value
@@ -1321,14 +1321,15 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"UnaryOp {node.op}: preserve {other_reg} before pointer arithmetic")
                         self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"UnaryOp {node.op}: preserve {other_reg} before pointer arithmetic")
                         self.emit(f"LDI_{other_reg} {unit_size}", f"UnaryOp {node.op}: pointed-at type size for {var.friendly_name()}")
-                        self.emit(f"CALL :{ptr_op}", f"UnaryOp {node.op}: move pointer by pointed-at type size for {var.friendly_name()}")
+                        self.emit(f"ALUOP16O_{dest_reg} %{ptr_op}%+%AL%+%BL% %{ptr_op}%+%AH%+%BH%+%Cin% %{ptr_op}%+%AH%+%BH%", f"UnaryOp {node.op}: move pointer by pointed-at type size for {var.friendly_name()}")
                         self.emit(f"POP_{other_reg}L", f"UnaryOp {node.op}: Restore {other_reg} after pointer arithmetic")
                         self.emit(f"POP_{other_reg}H", f"UnaryOp {node.op}: Restore {other_reg} after pointer arithmetic")
                     # Standard value that might be one or two bytes
                     elif var.typespec.sizeof() == 1:
                         self.emit(f"ALUOP_{dest_reg}L %{dest_reg}{byte_op}1%+%{dest_reg}L%", f"UnaryOp {node.op}: {descr} 1-byte value")
                     else:
-                        self.emit(f"CALL :{word_op}16_{dest_reg.lower()}", f"UnaryOp {node.op}: {descr} 2-byte value")
+                        #           16-bit ALU op       low-op (stored to AL)                hi-op (if low-op overflowed)        hi-op (of low-op no overflow)
+                        self.emit(f"ALUOP16O_{dest_reg} %{dest_reg}{byte_op}1%+%{dest_reg}L% %{dest_reg}{byte_op}1%+%{dest_reg}H% %{dest_reg}%+%{dest_reg}H%", f"UnaryOp {node.op}: {descr} 1-byte value")
                 # Get destination address into other_reg
                 with self._debug_block(f"UnaryOp {node.op}: Store value in {dest_reg} back to {var.friendly_name()}"):
                     self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"UnaryOp {node.op}: Save {other_reg} before generating lvalue")
@@ -1570,13 +1571,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 raise ValueError(f"BinaryOp {node.op}: unsure what to do with these types > 2 bytes, left={left_var.friendly_name()}, right={right_var.friendly_name()}")
 
             alu_map = {
-                '+': {'byte':f'ALUOP_{dest_reg}L %A+B%+%AL%+%BL%', 'word':[f'CALL :add16_to_{dest_reg.lower()}']},
-                '-': {'byte':f'ALUOP_{dest_reg}L %{dest_reg}-{other_reg}%+%AL%+%BL%', 'word':[f'CALL :sub16_{dest_reg.lower()}_minus_{other_reg.lower()}']},
-                '&': {'byte':f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', f'ALUOP_{dest_reg}H %A&B%+%AH%+%BH%']},
-                '&&': {'byte':f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', f'ALUOP_{dest_reg}H %A&B%+%AH%+%BH%']},
-                '|': {'byte':f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', f'ALUOP_{dest_reg}H %A|B%+%AH%+%BH%']},
-                '||': {'byte':f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', f'ALUOP_{dest_reg}H %A|B%+%AH%+%BH%']},
-                '^': {'byte':f'ALUOP_{dest_reg}L %AxB%+%AL%+%BL%', 'word':[f'ALUOP_{dest_reg}L %AxB%+%AL%+%BL%', f'ALUOP_{dest_reg}H %AxB%+%AH%+%BH%']},
+                '+': {'byte':f'ALUOP_{dest_reg}L %A+B%+%AL%+%BL%', 'word':f'ALUOP16O_{dest_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%'},
+                '-': {'byte':f'ALUOP_{dest_reg}L %{dest_reg}-{other_reg}%+%AL%+%BL%', 'word':f'ALUOP16O_{dest_reg} %{dest_reg}-{other_reg}%+%AL%+%BL% %{dest_reg}-{other_reg}%+%AH%+%BH%+%Cin% %{dest_reg}+{other_reg}%+%AH%+%BH%'},
+                '&': {'byte':f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', 'word':f'ALUOP16_{dest_reg} %A&B%+%AL%+%BL% %A&B%+%AH%+%BH%'},
+                '&&': {'byte':f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', 'word':f'ALUOP16_{dest_reg} %A&B%+%AL%+%BL% %A&B%+%AH%+%BH%'},
+                '|': {'byte':f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', 'word':f'ALUOP16_{dest_reg} %A|B%+%AL%+%BL% %A|B%+%AH%+%BH%'},
+                '||': {'byte':f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', 'word':f'ALUOP16_{dest_reg} %A|B%+%AL%+%BL% %A|B%+%AH%+%BH%'},
+                '^': {'byte':f'ALUOP_{dest_reg}L %AxB%+%AL%+%BL%', 'word':f'ALUOP16_{dest_reg} %AxB%+%AL%+%BL% %AxB%+%AH%+%BH%'},
             }
 
             if node.op in ('+', '-') and (left_var.is_pointer or right_var.is_pointer):
@@ -1595,14 +1596,14 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 elif unit_size in (2, 4, 8, 16, 32, 64, 128):
                     shifts = {2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6, 128: 7}[unit_size]
                     for _ in range(shifts):
-                        self.emit(f"CALL :shift16_{scale_reg.lower()}_left", f"Multiply operand in {scale_reg} by pointer unit size {unit_size}")
+                        self.emit(f"ALUOP16O_{scale_reg} %{scale_reg}<<1%+%{scale_reg}L% %{scale_reg}<<1%+%{scale_reg}H%+%Cin% %{scale_reg}<<1%+%{scale_reg}H%", f"Multiply operand in {scale_reg} by pointer unit size {unit_size}")
                 elif unit_size <= 8:
                     self.emit(f"ALUOP_PUSH %{ptr_reg}%+%{ptr_reg}H%", f"BinaryOp {node.op}: Save pointer in {ptr_reg} before scaling operand")
                     self.emit(f"ALUOP_PUSH %{ptr_reg}%+%{ptr_reg}L%", f"BinaryOp {node.op}: Save pointer in {ptr_reg} before scaling operand")
                     self.emit(f"ALUOP_{ptr_reg}H %{scale_reg}%+%{scale_reg}H%", f"BinaryOp {node.op}: Copy operand before scaling by unit size {unit_size}")
                     self.emit(f"ALUOP_{ptr_reg}L %{scale_reg}%+%{scale_reg}L%", f"BinaryOp {node.op}: Copy operand before scaling by unit size {unit_size}")
                     for _ in range(unit_size-1):
-                        self.emit(f"CALL :add16_to_{scale_reg.lower()}", f"Scale operand in {scale_reg} by unit size {unit_size}")
+                        self.emit(f"ALUOP16O_{scale_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH+%BH%", f"Scale operand in {scale_reg} by unit size {unit_size}")
                     self.emit(f"POP_{ptr_reg}L", f"BinaryOp {node.op}: Restore {ptr_reg} after scaling computation")
                     self.emit(f"POP_{ptr_reg}H", f"BinaryOp {node.op}: Restore {ptr_reg} after scaling computation")
                 else:
@@ -1618,8 +1619,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 if op_size == 1:
                     self.emit(alu_map[node.op]['byte'], f"BinaryOp {node.op} {op_size} byte")
                 elif op_size == 2:
-                    for o in alu_map[node.op]['word']:
-                        self.emit(o, f"BinaryOp {node.op} {op_size} byte")
+                    self.emit(alu_map[node.op]['word'], f"BinaryOp {node.op} {op_size} byte")
             elif node.op in ('==', '!='):
                 ne = ('false', 0)
                 eq = ('true', 1)
@@ -1629,6 +1629,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
                 label = self._get_label(f'binarybool_is{ne[0]}')
                 label_done = self._get_label('binarybool_done')
+
                 self.emit(f"ALUOP_FLAGS %A&B%+%AL%+%BL%", f"BinaryOp {node.op} {op_size} byte check equality")
                 self.emit(f"JNE {label}", f"BinaryOp {node.op} is {ne[0]}")
                 if op_size == 2:
@@ -1654,7 +1655,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                             self.emit(f"ALUOP_{dest_reg}L %{dest_reg}{node.op}1%+%{dest_reg}L%", f"BinaryOp {node.op} {right_var_val[0]} positions")
                         else:
                             if node.op == '<<':
-                                self.emit(f"CALL :shift16_{dest_reg.lower()}_left", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                                self.emit(f"ALUOP16O_{dest_reg} %{dest_reg}<<1%+%{dest_reg}L% %{dest_reg}<<1%+%{dest_reg}H%+%Cin% %{dest_reg}<<1%+%{dest_reg}H%", f"BinaryOp {node.op} {right_var_val[0]} positions")
                             else:
                                 self.emit(f"CALL :shift16_{dest_reg.lower()}_right", f"BinaryOp {node.op} {right_var_val[0]} positions")
                 else:
@@ -1815,7 +1816,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 self.emit(f"MOV_DH_{dest_reg}H", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"MOV_DL_{dest_reg}L", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"LDI_{other_reg} {var.offset}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
-                self.emit(f"CALL :add16_to_{dest_reg.lower()}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                self.emit(f"ALUOP16O_{dest_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"POP_{other_reg}H", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"POP_{other_reg}L", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
 
@@ -1831,11 +1832,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             element_size = var_or_size
 
         if element_size == 1:
-            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
+            self.emit(f"ALUOP16O_{addr_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
         elif element_size in (2, 4, 8, 16, 32, 64, 128):
             shifts = {2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6, 128: 7}[element_size]
             for _ in range(shifts):
-                self.emit(f"CALL :shift16_{index_reg.lower()}_left", f"Multiply array offset in {index_reg} by element size {element_size}")
+                self.emit(f"ALUOP16O_{index_reg} %{index_reg}<<1%+%{index_reg}L% %{index_reg}<<1%+%{index_reg}H%+%Cin% %{index_reg}<<1%+%{index_reg}H%", f"Multiply array offset in {index_reg} by element size {element_size}")
             self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
         elif element_size <= 8:
             for _ in range(element_size):
@@ -1848,7 +1849,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"CALL :mul16", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
             self.emit(f"CALL :heap_pop_{index_reg}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
             self.emit(f"CALL :heap_pop_word", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
-            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
+            self.emit(f"ALUOP16O_{addr_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
 
     def _add_member_offset(self, member_var, addr_reg):
         """Add struct member offset to address in addr_reg."""
@@ -1861,7 +1862,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
             self.emit(f"LDI_{other_reg} {member_var.offset}", f"Add struct member {member_var.name} offset to address in {addr_reg}")
-            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            self.emit(f"ALUOP16O_{addr_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
             self.emit(f"POP_{other_reg}H", f"Add struct member {member_var.name} offset to address in {addr_reg}")
             self.emit(f"POP_{other_reg}L", f"Add struct member {member_var.name} offset to address in {addr_reg}")
 
@@ -1874,12 +1875,14 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         elif size == 2:
             self.emit(f"LDA_{addr_reg}_{dest_reg}H", f"Dereferenced load")
             if addr_reg in ('A', 'B',):
-                self.emit(f"CALL :incr16_{addr_reg.lower()}", f"Dereferenced load")
+                #           16-bit ALU op       low-op (stored to AL)        hi-op (if low-op overflowed) hi-op (if low-op no overflow)
+                self.emit(f"ALUOP16O_{dest_reg} %{dest_reg}+1%+%{dest_reg}L% %{dest_reg}+1%+%{dest_reg}H% %{dest_reg}%+%{dest_reg}H%", f"Dereferenced load")
             else:
                 self.emit(f"INCR_{addr_reg}", f"Dereferenced load")
             self.emit(f"LDA_{addr_reg}_{dest_reg}L", f"Dereferenced load")
             if addr_reg in ('A', 'B',):
-                self.emit(f"CALL :decr16_{addr_reg.lower()}", f"Dereferenced load")
+                #           16-bit ALU op       low-op (stored to AL)        hi-op (if low-op overflowed) hi-op (if low-op no overflow)
+                self.emit(f"ALUOP16O_{dest_reg} %{dest_reg}-1%+%{dest_reg}L% %{dest_reg}-1%+%{dest_reg}H% %{dest_reg}%+%{dest_reg}H%", f"Dereferenced load")
             else:
                 self.emit(f"DECR_{addr_reg}", f"Dereferenced load")
         else:
@@ -1937,9 +1940,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             if var.is_pointer or var.typespec.sizeof() == 2:
                 self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}H%", f"Store to {var.friendly_name()}")
-                self.emit(f"CALL :incr16_{lvalue_reg.lower()}", f"Store to {var.friendly_name()}")
+                #           16-bit ALU op         low-op (stored to AL)            hi-op (if low-op overflowed)     hi-op (if low-op no overflow)
+                self.emit(f"ALUOP16O_{lvalue_reg} %{lvalue_reg}+1%+%{lvalue_reg}L% %{lvalue_reg}+1%+%{lvalue_reg}H% %{lvalue_reg}%+%{lvalue_reg}H%", f"Store to {var.friendly_name()}")
                 self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
-                self.emit(f"CALL :decr16_{lvalue_reg.lower()}", f"Store to {var.friendly_name()}")
+                #           16-bit ALU op         low-op (stored to AL)            hi-op (if low-op overflowed)     hi-op (if low-op no overflow)
+                self.emit(f"ALUOP16O_{lvalue_reg} %{lvalue_reg}-1%+%{lvalue_reg}L% %{lvalue_reg}-1%+%{lvalue_reg}H% %{lvalue_reg}%+%{lvalue_reg}H%", f"Store to {var.friendly_name()}")
             elif var.typespec.sizeof() == 1:
                 self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
             else:
