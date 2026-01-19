@@ -1029,6 +1029,39 @@ EOF
 let "opcode = opcode + 1"
 done
 
+# 16-bit ALU flags operations
+for flag in o e z; do
+setflag=$(echo $flag | tr 'oez' 'OEZ')
+clrflag=$flag
+cat <<EOF
+
+[0x$(printf "%02x" $opcode)] ALUOP16${setflag}_FLAGS \$lo_op \$hi_op_${clrflag} \$hi_op_n${clrflag}
+x 0 IncrementPC
+# PC now points to \$lo_op
+x 1 AddrBusPC WriteALUop IncrementPC
+# PC now points to \$hi_op_o
+x 2 DataBusALU WriteStatus
+# flag set condition: stay at \$hi_op_${clrflag}
+${setflag} 3 AddrBusPC
+${setflag} 4 AddrBusPC WriteALUop IncrementPC
+# PC now points to \$hi_op_no
+${setflag} 5 DataBusALU WriteStatus IncrementPC
+# PC now points to next instruction
+# flag clear condition: move to \$hi_op_n${clrflag}
+${clrflag} 3 IncrementPC
+# PC now points to \$hi_op_no
+${clrflag} 4 AddrBusPC WriteALUop
+# PC now points to next instruction
+${clrflag} 5 DataBusALU WriteStatus IncrementPC
+# PC now points to next instruction
+x 6 NextInstruction
+EOF
+let "opcode = opcode + 1"
+# skip 0xee
+[ $opcode -eq 238 ] && opcode=239
+done
+
+
 # Load a whole word from RAM into A or B.  We can't do this into C or
 # D because of limitations in the CDSEL control signal (can't put D
 # on address bus and write CL/CH, or vice-versa).

@@ -90,14 +90,13 @@ ALUOP_ADDR_{A,B,C,D} $op
 # Store ALU result into {reg}
 ALUOP_{AH,AL,BH,BL,CH,CL,DH,DL,TAL,TD} $op
 
-# 16-bit ALU operations: $lo_op writes to low dest reg,
-# $hi_op writes to high dest reg conditionally based on
-# $lo_op's status bits. Status bits are from the last
-# operation (the $hi_op)
+# 16-bit ALU operations: $lo_op writes to low dest reg (or just to flags),
+# $hi_op writes to high dest reg (or just to flags) conditionally based on
+# $lo_op's status bits. Final status bits are from the last operation (the $hi_op)
 ALUOP16_{A,B} $lo_op $hi_op
-ALUOP16O_{A,B} $lo_op $hi_op_if_O $hi_op_if_NO
-ALUOP16E_{A,B} $lo_op $hi_op_if_EQ $hi_op_if_NEQ
-ALUOP16Z_{A,B} $lo_op $hi_op_if_Z $hi_op_if_NZ
+ALUOP16O_{A,B,FLAGS} $lo_op $hi_op_if_O $hi_op_if_NO
+ALUOP16E_{A,B,FLAGS} $lo_op $hi_op_if_EQ $hi_op_if_NEQ
+ALUOP16Z_{A,B,FLAGS} $lo_op $hi_op_if_Z $hi_op_if_NZ
 
 # SIMD and atomic copy instructions
 MEMCPY_C_D          ** TD ** (C and D are incremented after copy)
