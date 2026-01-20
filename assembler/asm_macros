@@ -72,6 +72,40 @@
 # Arithmetic shift right (sign extension), no Cin support
 %A/2%         0x1e
 
+####
+# Helper macros for ALUOP16 instructions
+####
+# incr16_a      %A+1% %A+1%+%AH%            %A%+%AH%
+%ALU16_A+1%     0x23  0x23+0x40             0x03+0x40
+# incr16_b      %B+1% %B+1%+%BH%            %B%+%BH%
+%ALU16_B+1%     0x24  0x24+0x80             0x04+0x80
+# decr16_a      %A-1% %A-1%+%AH%            %A%+%AH%
+%ALU16_A-1%     0x08  0x08+0x40             0x03+0x40
+# decr16_b      %B-1% %B-1%+%BH%            %B%+%BH%
+%ALU16_B-1%     0x09  0x09+0x80             0x04+0x80
+# add16_to..    %A+B% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%
+%ALU16_A+B%     0x05  0x05+0x40+0x80+0x20   0x05+0x40+0x80
+# signed_add16_to...  %A+B% %A+B+1_signed%+%AH%+%BH%  %A+B_signed%+%AH%+%BH%
+%ALU16_sA+B%          0x05  0x2b+0x40+0x80            0x0b+0x40+0x80
+# sub16_a-b     %A-B% %A-B%+%AH%+%BH%+%Cin% %A-B%+%AH%+%BH%
+%ALU16_A-B%     0x06  0x06+0x40+0x80+0x20   0x06+0x40+0x80
+# sub16_b-a     %B-A% %B-A%+%AH%+%BH%+%Cin% %B-A%+%AH%+%BH%
+%ALU16_B-A%     0x07  0x07+0x40+0x80+0x20   0x07+0x40+0x80
+# signed_sub16_a-b %A-B% %A-B-1_signed%+%AH%+%BH% %A-B_signed%+%AH%+%BH%
+%ALU16_sA-B%       0x06  0x2c+0x40+0x80           0x0c+0x40+0x80
+# signed_sub16_b-a %B-A% %B-A-1_signed%+%AH%+%BH% %B-A_signed%+%AH%+%BH%
+%ALU16_sA-B%       0x07  0x2d+0x40+0x80           0x2d+0x40+0x80
+# shift16_a_l   %A<<1% %A<<1%+%AH%+%Cin%    %A<<1%+%AH%
+%ALU16_A<<1%    0x19  0x19+0x40+0x20        0x19+0x40
+# shift16_b_l   %A<<1% %A<<1%+%AH%+%Cin%    %A<<1%+%AH%
+%ALU16_B<<1%    0x1b  0x1b+0x80+0x20        0x1b+0x80
+# A==0          %A%   %A%+%AH%              %A%
+%ALU16_Azero%   0x03  0x03+0x40             0x03
+# B==0          %B%   %B%+%BH%              %B%
+%ALU16_Bzero%   0x04  0x04+0x80             0x04
+# A==B          %A|B% %A|B%+%AH%+%BH%       %A|B%
+%ALU16_A|Beq%   0x13  0x13+0x40+0x80        0x13
+
 # IRQ addresses
 %IRQ0addr%  0x5f00
 %IRQ1addr%  0x5f02

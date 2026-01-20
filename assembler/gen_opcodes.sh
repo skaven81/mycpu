@@ -1039,7 +1039,7 @@ cat <<EOF
 x 0 IncrementPC
 # PC now points to \$lo_op
 x 1 AddrBusPC WriteALUop IncrementPC
-# PC now points to \$hi_op_o
+# PC now points to \$hi_op_${clrflag}
 x 2 DataBusALU WriteStatus
 # flag set condition: stay at \$hi_op_${clrflag}
 ${setflag} 3 AddrBusPC
