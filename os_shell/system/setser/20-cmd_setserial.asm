@@ -6,9 +6,9 @@
 
 LDI_A $user_input_tokens+2      # A points at first argument pointer
 LDA_A_CH                        # put high byte of first arg pointer into CH
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_CL                        # put low byte of first arg pointer into CL
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 ALUOP_FLAGS %A%+%AH%            # check if null
 JZ .usage
 

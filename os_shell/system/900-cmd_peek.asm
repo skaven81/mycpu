@@ -80,7 +80,7 @@ POP_AL
 LDI_C .simple_peek_end          # Print the suffix
 CALL :print                     # |
 
-CALL :incr16_a                  # Move to next address
+ALUOP16O_A %ALU16_A+1%                  # Move to next address
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
 CALL :sub16_b_minus_a           # If B-A overflows, we are done

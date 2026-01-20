@@ -158,8 +158,8 @@ POP_AL
 JZ .term_strcpy_done        # we are done if the last copied char was null
 INCR_C                      # move to next source char
 INCR_D                      # move to next dest char
-CALL :incr16_a              # move to next source color
-CALL :incr16_b              # move to next dest color
+ALUOP16O_A %ALU16_A+1%              # move to next source color
+ALUOP16O_B %ALU16_B+1%              # move to next dest color
 JMP .term_strcpy_loop       # keep looping until we hit a null character
 .term_strcpy_done
 POP_DL

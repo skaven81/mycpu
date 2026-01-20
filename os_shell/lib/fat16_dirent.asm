@@ -124,11 +124,11 @@ CALL :heap_pop_A                # directory entry address in A
 LDI_B 0x001c                    # offset 0x1c = file size, 4 bytes
 CALL :add16_to_a                # A points at the first byte (LSB) of the file size
 LDA_A_DL
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_DH
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_CL
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_CH
 CALL :heap_push_C               # push the high word onto the heap
 CALL :heap_push_D               # push the low word onto the heap
@@ -161,7 +161,7 @@ CALL :heap_pop_A                # directory entry address in A
 LDI_B 0x001a                    # offset 0x1a = starting cluster, 2 bytes
 CALL :add16_to_a                # A points at the first byte (LSB) of the cluster
 LDA_A_DL
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_DH
 CALL :heap_push_D               # push the cluster onto the heap
 

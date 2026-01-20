@@ -191,7 +191,7 @@ LD_AL $current_fs_handle_ptr+1  # A = filesystem handle
 LDI_B 0x0036                    # offset 0x36 = cluster number
 CALL :add16_to_a                # A = address of cluster number high byte
 STA_A_CH                        # Save cluster number in filesystem handle
-CALL :incr16_a                  # |
+ALUOP16O_A %ALU16_A+1%                  # |
 STA_A_CL                        # |
 CALL :fat16_dirwalk_end         # free memory from the directory walk
 RET 

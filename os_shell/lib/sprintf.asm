@@ -389,7 +389,7 @@ ALUOP_FLAGS %A&B%+%AH%+%BL%     # check first bit of AH
 JZ .sdw_posnegdone              # if negative,
 ALUOP_AL %~A%+%AL%              #   invert AL to make it positive
 ALUOP_AH %~A%+%AH%              #   invert AH to make it positive
-CALL :incr16_a                  #   and add one to get absolute value
+ALUOP16O_A %ALU16_A+1%                  #   and add one to get absolute value
 LDI_BL '-'                      #   write a minus
 ALUOP_ADDR_D %B%+%BL%
 INCR_D
@@ -415,7 +415,7 @@ ALUOP_FLAGS %B%+%BL%    # check if null
 JZ .fmt_str_done        # we don't copy the null, just drop out
 ALUOP_ADDR_D %B%+%BL%   # copy char to dest string
 INCR_D                  # move to next char in dest string
-CALL :incr16_a          # move to next char in src string
+ALUOP16O_A %ALU16_A+1%          # move to next char in src string
 JMP .fmt_str_loop
 
 .fmt_str_done

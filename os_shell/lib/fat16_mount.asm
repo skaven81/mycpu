@@ -125,7 +125,7 @@ LDI_B 0x0038
 CALL :add16_to_b
 LD_CL 0xd00c
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LD_CL 0xd00b
 STA_B_CL
 
@@ -140,7 +140,7 @@ LDI_B 0x003b
 CALL :add16_to_b
 LD_CL 0xd00f
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LD_CL 0xd00e
 STA_B_CL
 
@@ -155,7 +155,7 @@ LDI_B 0x003e
 CALL :add16_to_b
 LD_CL 0xd012
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LD_CL 0xd011
 STA_B_CL
 
@@ -176,13 +176,13 @@ LDI_B 0x0040
 CALL :add16_to_b
 LD_CL 0xd023
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LD_CL 0xd022
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LD_CL 0xd021
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LD_CL 0xd020
 STA_B_CL
 JMP .total_sectors_continue
@@ -200,7 +200,7 @@ LDI_B 0x0042
 CALL :add16_to_b
 LD_CL 0xd014
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LD_CL 0xd013
 STA_B_CL
 
@@ -219,7 +219,7 @@ LDI_B 0x0045
 CALL :add16_to_b
 LD_CL 0xd017
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LD_CL 0xd016
 STA_B_CL
 
@@ -260,13 +260,13 @@ LDI_B 0x0047
 CALL :add16_to_b
 POP_CL                  # from push AH earlier
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 POP_CL                  # from push AL earlier
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 POP_CL                  # from push BH earlier
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 POP_CL                  # from push BL earlier
 STA_B_CL
 
@@ -275,9 +275,9 @@ STA_B_CL
 LDI_B 0x0047            # ReservedRegion start
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 
 CALL :heap_push_C       # push high word of ReservedRegion
 
@@ -285,14 +285,14 @@ LDI_C 0x0000
 CALL :heap_push_C       # push high word of ReservedSectors
 
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C       # push low word of ReservedRegion
 
 LDI_B 0x003b            # Reserved Sectors
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C       # push low word of ReservedSectors
 
@@ -302,14 +302,14 @@ CALL :heap_pop_C        # low word of result
 LDI_B 0x004d            # low word of FAT Region start
 CALL :add16_to_b
 STA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_CL
 
 CALL :heap_pop_C        # high word of result
 LDI_B 0x004b            # high word of FAT Region start
 CALL :add16_to_b
 STA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_CL
 
 #### 0x4f: 4B  RootDirectoryRegion start (LBA) = FATRegion + (NumberOfFATs * SectorsPerFAT)
@@ -317,7 +317,7 @@ STA_B_CL
 LDI_B 0x0045            # Sectors per FAT
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C       # multiplicand (Sectors per FAT)
 
@@ -334,22 +334,22 @@ CALL :heap_pop_D        # low word of result (FATregion size); keep high word of
 LDI_B 0x0057
 CALL :add16_to_b
 STA_B_DH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_DL
 
 # Add FAT region size to FAT region start
 LDI_B 0x004b
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 CALL :heap_push_C       # high word of FAT Region start
 
 CALL :heap_push_D       # low word of multiplication result
 
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C       # low word of FAT Region start
 
@@ -360,11 +360,11 @@ CALL :heap_pop_C        # RootDirRegion start in C+D
 LDI_B 0x004f
 CALL :add16_to_b
 STA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_DH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_DL
 
 #### 0x36: 2B  cluster number of current directory (0 since it's the root directory and the root
@@ -373,7 +373,7 @@ STA_B_DL
 LDI_B 0x0036            # current directory cluster
 CALL :add16_to_b
 ALUOP_ADDR_B %zero%
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 ALUOP_ADDR_B %zero%
 
 #### 0x53: 4B  DataRegion start (LBA) = RootDirectoryRegion + ((RootEntriesCount * 32) / BytesPerSector)
@@ -381,7 +381,7 @@ ALUOP_ADDR_B %zero%
 LDI_B 0x003e
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL                # num root entries in C
 MOV_CH_BH
 MOV_CL_BL
@@ -395,22 +395,22 @@ ALUOP_DL %B%+%BL%
 LDI_B 0x0059
 CALL :add16_to_b
 STA_B_DH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_DL
 # fetch RootDir Region start
 LDI_B 0x004f
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 
 CALL :heap_push_C       # high word of rootdir region start
 LDI_C 0x0000
 CALL :heap_push_C       # high word of rootdir region size
 
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C       # low word of rootdir region start
 CALL :heap_push_D       # low word of rootdir region size
@@ -424,11 +424,11 @@ CALL :heap_pop_C        # high word of result
 LDI_B 0x0053
 CALL :add16_to_b
 STA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_CL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_DH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 STA_B_DL
 
 
@@ -577,7 +577,7 @@ CALL :heap_push_CL
 LDI_B 0x0038                # bytes per sector
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C
 
@@ -606,7 +606,7 @@ CALL :printf
 LDI_B 0x003e                # root directory entries
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C
 
@@ -618,7 +618,7 @@ CALL :heap_push_CL
 LDI_B 0x0045                # sectors per FAT
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C
 
@@ -629,7 +629,7 @@ CALL :printf
 LDI_B 0x003b                # reserved sectors at start
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C
 
@@ -640,7 +640,7 @@ CALL :printf
 LDI_B 0x0057                # FAT region size
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C
 
@@ -665,7 +665,7 @@ CALL :printf
 LDI_B 0x0059                # Root dir region size
 CALL :add16_to_b
 LDA_B_CH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C
 

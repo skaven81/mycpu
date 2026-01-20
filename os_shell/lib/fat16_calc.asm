@@ -58,15 +58,15 @@ CALL :heap_pop_C                # high word of result
 LDI_A 0x0053                    # Offset of $DataRegionStart
 CALL :add16_to_a                # A has address of $DataRegionStart (32 bit)
 LDA_A_BH                        # High word of $DataRegionStart in B
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_BL
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 
 CALL :heap_push_C               # high word of multiplication result
 CALL :heap_push_B               # high word of $DataRegionStart
 
 LDA_A_BH                        # Low word of $DataRegionStart in B
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_BL
 
 CALL :heap_push_D               # low word of multiplication result
@@ -81,13 +81,13 @@ CALL :heap_pop_B                # Pop the filesystem handle address into B
 LDI_A 0x004f                    # Offset of $RootDirectoryRegionStart
 CALL :add16_to_a                # A has address of $RootDirectoryRegionStart
 LDA_A_CH
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_CL                        # C has high word of $RootDirectoryRegionStart
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_DH
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_DL                        # D has low word of $RootDirectoryRegionStart
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 
 CALL :heap_push_C               # high word
 CALL :heap_push_D               # low word
@@ -141,7 +141,7 @@ CALL :add16_to_a                # A contains address of $DataRegionStart
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%             # Remember address of filesystem handle
 LDA_A_BH
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_BL                        # B contains high word of $DataRegionStart
 
 # Push high words of $LBA and $DataRegionStart
@@ -149,9 +149,9 @@ CALL :heap_push_B               # high word of $DataRegionStart
 CALL :heap_push_C               # high word of $LBA
 
 # Push low words of $LBA and $DataRegionStart
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_BH
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_BL                        # B contains low word of $DataRegionStart
 
 CALL :heap_push_B               # low word of $DataRegionStart
@@ -194,8 +194,8 @@ JMP .lba_to_cluster_div_loop
 .lba_to_cluster_div_done
 POP_AL                          # Restore AL from stack; A should be 0 and B should contain our result
 
-CALL :incr16_b
-CALL :incr16_b                  # Add two to result
+ALUOP16O_B %ALU16_B+1%
+ALUOP16O_B %ALU16_B+1%                  # Add two to result
 
 CALL :heap_push_B               # Push final result to heap
 
@@ -263,7 +263,7 @@ LDA_A_DL                        # DL has $ATAdeviceID
 LDI_A 0x004b                    # Offset of $FATRegionStart
 CALL :add16_to_a                # A has address of $ATAdeviceID
 LDA_A_CH
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_CL                        # C has high word of $FATRegionStart
 
 CALL :heap_push_C               # high word of $FATRegionStart
@@ -271,9 +271,9 @@ CALL :heap_push_C               # high word of $FATRegionStart
 LDI_C 0x0000
 CALL :heap_push_C               # high word of cluster number / 256
 
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_CH
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_CL                        # C has low word of $FATRegionStart
 
 CALL :heap_push_C               # low word of $FATRegionStart
@@ -312,7 +312,7 @@ CALL :add16_to_b                # B contains address of cluster
 
 # Read memory at that address and return it
 LDA_B_AL
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_AH
 CALL :heap_push_A
 JMP .next_cluster_done

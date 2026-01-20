@@ -73,7 +73,7 @@ LD_AL 0
 CALL :cursor_goto_rowcol                # move cursor back to beginning of line
 
 CALL :heap_pop_A                        # restore K counter into A
-CALL :incr16_a                          # increment it
+ALUOP16O_A %ALU16_A+1%                          # increment it
 
 CALL :heap_push_A                       # push K counter onto heap for printing
 CALL :heap_push_BH                      # push page address onto heap for printing

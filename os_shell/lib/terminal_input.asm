@@ -150,8 +150,8 @@ ALUOP_BL %A%+%AL%                       # lo byte of mark 1 char addr in BL
 LD16_A $crsr_addr_chars                 # cursor location in A
 CALL :decr16_a                          # setup for loop entry
 .do_backspace_loop
-CALL :incr16_a
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
+ALUOP16O_A %ALU16_A+1%
 LDA_A_CL
 CALL :decr16_a
 STA_A_CL                                # copy char to the right, to the left
@@ -231,11 +231,11 @@ ALUOP_FLAGS %AxB%+%AH%+%BH%
 JNE .delete_loop_continue
 JMP .delete_loop_done
 .delete_loop_continue
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_CL                                # get far char
 CALL :decr16_a                          # move left one
 STA_A_CL                                # put near char
-CALL :incr16_a                          # move right one
+ALUOP16O_A %ALU16_A+1%                          # move right one
 JMP .delete_loop
 
 .delete_loop_done
@@ -305,11 +305,11 @@ CALL :cursor_get_mark           # mark 1 in A
 LDI_BH 0x40
 ALUOP_AH %A|B%+%AH%+%BH%        # A = char addr of mark 1 4005
 LD16_B $crsr_addr_chars         # B = char addr of cursor 4005
-CALL :incr16_a                  # get A in position to start the loop 4006
+ALUOP16O_A %ALU16_A+1%                  # get A in position to start the loop 4006
 .insert_copy_loop
 CALL :decr16_a                  # 4005
 LDA_A_CL                        # char @A into CL
-CALL :incr16_a                  # move right 4006
+ALUOP16O_A %ALU16_A+1%                  # move right 4006
 STA_A_CL                        # CL into char @A
 CALL :decr16_a                  # 4005
 ALUOP_FLAGS %AxB%+%AL%+%BL%

@@ -44,6 +44,34 @@ CALL :strtoi                    # Convert to number in A, BL has flags
 POP_BH
 POP_BL
 
+## Invert A
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+CALL :signed_invert_a
+JNO .no_sia_overflow
+LDI_C .overflow
+CALL :print
+.no_sia_overflow
+CALL :heap_push_A
+LDI_C .si_str
+CALL :printf
+POP_AH
+POP_AL
+
+## Invert B
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
+CALL :signed_invert_b
+JNO .no_sib_overflow
+LDI_C .overflow
+CALL :print
+.no_sib_overflow
+CALL :heap_push_B
+LDI_C .si_str
+CALL :printf
+POP_BH
+POP_BL
+
 ## Addition
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
@@ -63,7 +91,7 @@ CALL :printf
 ## A - B
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
-CALL :signed_sub16_a_minus_b    # result in A
+CALL :my_signed_sub16_a_minus_b    # result in A
 JNO .no_sub1_overflow
 LDI_C .overflow
 CALL :print
@@ -79,12 +107,12 @@ CALL :printf
 ## B - A
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
-CALL :signed_sub16_b_minus_a    # result in A
+CALL :my_signed_sub16_b_minus_a    # result in B
 JNO .no_sub2_overflow
 LDI_C .overflow
 CALL :print
 .no_sub2_overflow
-CALL :heap_push_A
+CALL :heap_push_B
 POP_AH
 POP_AL
 CALL :heap_push_A
@@ -103,4 +131,23 @@ RET
 .helpstr "Usage: signed LHS RHS\n\0"
 .add_str "%D + %D = %D\n\0"
 .sub_str "%D - %D = %D\n\0"
+.si_str "%D inverted\n\0"
 .overflow "OVERFLOW!\n\0"
+
+:my_signed_sub16_a_minus_b
+ALUOP_AL %A-B%+%AL%+%BL%
+JO .borrow1
+ALUOP_AH %A-B_signed%+%AH%+%BH%
+RET
+.borrow1
+ALUOP_AH %A-B-1_signed%+%AH%+%BH%
+RET
+
+:my_signed_sub16_b_minus_a
+ALUOP_BL %B-A%+%AL%+%BL%
+JO .borrow2
+ALUOP_BH %B-A_signed%+%AH%+%BH%
+RET
+.borrow2
+ALUOP_BH %B-A-1_signed%+%AH%+%BH%
+RET

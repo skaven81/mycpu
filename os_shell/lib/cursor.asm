@@ -72,7 +72,7 @@ LDI_BL 0x0f                         # mask to clear the high bits so we just get
 ALUOP_AL %A&B%+%AL%+%BL%            # AL high byte is ready to save
 POP_BL
 ALUOP_ADDR_B %A%+%AL%               # save AL to high byte of mark
-CALL :incr16_b                      # move to low byte of mark
+ALUOP16O_B %ALU16_B+1%                      # move to low byte of mark
 LD_AL $crsr_addr_chars+1            # AL contains low byte of char address
 ALUOP_ADDR_B %A%+%AL%               # save AL to low byte of mark
 POP_AL
@@ -104,7 +104,7 @@ LDI_BH 0x0f                         # mask to clear high bits of offset
 ALUOP_AH %A&B%+%AH%+%BH%            # offset is now just 12 bits
 POP_BH
 ALUOP_ADDR_B %A%+%AH%               # save high byte of offset
-CALL :incr16_b                      # move to low byte of mark
+ALUOP16O_B %ALU16_B+1%                      # move to low byte of mark
 ALUOP_ADDR_B %A%+%AL%               # save low byte of offset
 POP_BL
 POP_BH
@@ -135,7 +135,7 @@ LDI_BH 0x0f                         # mask to clear high bits of offset
 ALUOP_AH %A&B%+%AH%+%BH%            # offset is now just 12 bits
 POP_BH
 ALUOP_ADDR_B %A%+%AH%               # save high byte of offset
-CALL :incr16_b                      # move to low byte of mark
+ALUOP16O_B %ALU16_B+1%                      # move to low byte of mark
 ALUOP_ADDR_B %A%+%AL%               # save low byte of offset
 POP_BL
 POP_BH
@@ -250,7 +250,7 @@ ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes
 ALUOP_AH %zero%
 CALL :add16_to_b                    # B points to ALth mark
 ALUOP_ADDR_B %negone%               # undefined value
-CALL :incr16_b                      # move to low byte of mark
+ALUOP16O_B %ALU16_B+1%                      # move to low byte of mark
 ALUOP_ADDR_B %negone%               # undefined value
 POP_AL
 POP_AH
@@ -275,7 +275,7 @@ ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes
 ALUOP_AH %zero%
 CALL :add16_to_b                    # B points to ALth mark
 LDA_B_AH                            # fetch high byte
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_AL                            # fetch low byte
 POP_BL
 POP_BH
@@ -408,7 +408,7 @@ JMP .cmg_finish                     # If the counter in B is now zero, exit the 
 .cmg_continue
 LDA_A_TD                            # get character at A (left mark)
 STA_D_TD                            # write it to string at D
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 INCR_D                              # move right
 CALL :decr16_b                      # count this char
 JMP .cmg_loop

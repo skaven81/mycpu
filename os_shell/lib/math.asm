@@ -130,7 +130,7 @@ JNZ .signed_invert_a_no_overflow
 # Inversion would overflow since the operand is 0x8000
 ALUOP_AL %~A%+%AL%                  # invert anyway
 ALUOP_AH %~A%+%AH%
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 ALUOP_PUSH %B%+%BH%
 LDI_BH 0x00
 ALUOP_FLAGS %B-1%+%BH%              # but set the O flag
@@ -139,7 +139,7 @@ RET
 .signed_invert_a_no_overflow
 ALUOP_AL %~A%+%AL%
 ALUOP_AH %~A%+%AH%
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 ALUOP_FLAGS %A%+%AL%                # clear O flag
 RET
 
@@ -163,7 +163,7 @@ JNZ .signed_invert_b_no_overflow
 # Inversion would overflow since the operand is 0x8000
 ALUOP_AL %~B%+%BL%                  # invert anyway
 ALUOP_AH %~B%+%BH%
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 ALUOP_PUSH %A%+%AH%
 LDI_AH 0x00
 ALUOP_FLAGS %A-1%+%AH%              # but set the O flag
@@ -172,7 +172,7 @@ RET
 .signed_invert_b_no_overflow
 ALUOP_BL %~B%+%BL%
 ALUOP_BH %~B%+%BH%
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 ALUOP_FLAGS %B%+%BL%                # clear O flag
 RET
 

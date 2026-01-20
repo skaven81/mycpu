@@ -125,7 +125,7 @@ ALUOP_ADDR %B%+%BL% $malloc_segments
 # Write NULs to the ledger bytes - one byte for each segment we allocated
 .ledger_null_loop
 ALUOP_ADDR_A %zero%
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 ALUOP_BL %B-1%+%BL%
 JNZ .ledger_null_loop
 
@@ -199,7 +199,7 @@ POP_BL                                      # BL = position mask
 .ledger_to_addr_shift_loop
 ALUOP_BL %B<<1%+%BL%                        # shift mask left
 JO .ledger_to_addr_done_shifting            # if the shift resulted in a carryout, we are done
-CALL :incr16_a                              # add a block to the offset
+ALUOP16O_A %ALU16_A+1%                              # add a block to the offset
 JMP .ledger_to_addr_shift_loop
 .ledger_to_addr_done_shifting
 CALL :shift16_a_left

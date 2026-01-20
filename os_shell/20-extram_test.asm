@@ -23,7 +23,7 @@ CALL :cursor_goto_rowcol
 # KB tested = (page address + 1) * 4
 ALUOP_AL %B%+%BH%
 LDI_AH 0x00
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 CALL :shift16_a_left
 CALL :shift16_a_left
 

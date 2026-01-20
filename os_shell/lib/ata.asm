@@ -62,9 +62,9 @@ LDI_BL 20
 .ata_identify_string_model_loop
 ALUOP_PUSH %B%+%BL%
 LDA_A_BL                            # first byte is low
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_BH                            # second byte is high
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 
 ALUOP_ADDR_D %B%+%BH%               # write high byte
 INCR_D
@@ -85,9 +85,9 @@ LDI_BL 4
 .ata_identify_string_vers_loop
 ALUOP_PUSH %B%+%BL%
 LDA_A_BL                            # first byte is low
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_BH                            # second byte is high
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 
 ALUOP_ADDR_D %B%+%BH%               # write high byte
 INCR_D
@@ -103,12 +103,12 @@ MOV_CL_AL
 LDI_B 120                           # offset to word 60=byte 120/0x78 (sectors)
 CALL :add16_to_a                    # A points at first byte of sector count
 # read 2 words (in little-endian format) into A (high) and B (low)
-CALL :incr16_a                      # ignore the first byte, as we are going
+ALUOP16O_A %ALU16_A+1%                      # ignore the first byte, as we are going
                                     # to shift 11 bits anyway
 LDA_A_BL                            # second byte is now LSB
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 LDA_A_BH                            # third byte is MSB
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 CALL :shift16_b_right               # shift B right three places to get to 11
 CALL :shift16_b_right
 CALL :shift16_b_right

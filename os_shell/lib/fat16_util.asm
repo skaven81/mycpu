@@ -18,7 +18,7 @@ CALL :heap_pop_A                # filesystem handle address in A
 LDI_B 0x0036                    # Offset 0x36 = current directory cluster
 CALL :add16_to_b                # B=address of current directory cluster
 LDA_B_AH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_AL                        # A = current directory cluster
 CALL :heap_push_A
 

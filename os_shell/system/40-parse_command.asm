@@ -16,7 +16,7 @@ PUSH_DL
 LDI_B $user_input_tokens        # B now points at the first entry in the token array
 
 LDA_B_CH                        # CH=hi byte of token[0] string pointer
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_CL                        # CL=lo byte of token[0] string pointer
 
 # C is a pointer to the first token provided by the user (the command), with the

@@ -50,10 +50,10 @@ LDA_D_AL
 ALUOP_FLAGS %A%+%AL%    # Does D point at a null?
 JZ .strprepend_found_null
 INCR_D
-CALL :incr16_b          # count how many bytes we need to copy
+ALUOP16O_B %ALU16_B+1%          # count how many bytes we need to copy
 JMP .strprepend_find_null_loop
 .strprepend_found_null
-CALL :incr16_b          # new string is +1 chars so we have +1 char to copy
+ALUOP16O_B %ALU16_B+1%          # new string is +1 chars so we have +1 char to copy
 .strprepend_copy_loop   # D points to null at end of string
 LDA_D_AL                # get this character
 INCR_D

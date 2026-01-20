@@ -192,7 +192,7 @@ LD_AL $odyexe_first_byte_of_binary+1
 CALL :add16_to_b            # B contains the address we want to rewrite;
                             # A contains the base address in memory
 LDA_B_DH
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 LDA_B_DL                    # D contains the zero-based offset from the program.
 CALL :decr16_b
 
@@ -212,7 +212,7 @@ POP_BL
 POP_BH
 
 ALUOP_ADDR_B %A%+%AH%       # write the modified offset back
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 ALUOP_ADDR_B %A%+%AL%
 
 # decrement $number_of_rewrites (B)

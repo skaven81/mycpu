@@ -14,7 +14,7 @@ CALL :memfill_segments
 LD_AL $timer_flag           # check if timer expired during this fill
 ALUOP_FLAGS %A%+%AL%
 JNZ .memfill_loop_done      # If so, don't count this as a completed frame and exit the loop
-CALL :incr16_b
+ALUOP16O_B %ALU16_B+1%
 JMP .memfill_loop
 
 .memfill_loop_done
@@ -299,7 +299,7 @@ ALUOP_BL %B-1%+%BL%         # decrement color counter
 JNO .next_char
 LDI_BL 0x3f                 # reset back to white if we overflow
 .next_char
-CALL :incr16_a
+ALUOP16O_A %ALU16_A+1%
 ALUOP_PUSH %B%+%BL%
 ALUOP_PUSH %A%+%AH%
 LDI_B 0x5eff
