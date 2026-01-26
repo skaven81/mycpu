@@ -303,7 +303,7 @@ ALUOP16O_A %ALU16_A+1%
 ALUOP_PUSH %B%+%BL%
 ALUOP_PUSH %A%+%AH%
 LDI_B 0x5eff
-CALL :sub16_b_minus_a       # result in B; if A has moved past writable area, BH will have overflowed
+ALUOP16O_B %ALU16_B-A%       # result in B; if A has moved past writable area, BH will have overflowed
 LDI_AH 0xff
 ALUOP_FLAGS %A&B%+%AH%+%BH%
 POP_AH

@@ -83,7 +83,7 @@ CALL :print                     # |
 ALUOP16O_A %ALU16_A+1%                  # Move to next address
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
-CALL :sub16_b_minus_a           # If B-A overflows, we are done
+ALUOP16O_B %ALU16_B-A%           # If B-A overflows, we are done
 POP_BL
 POP_BH
 JNO .process_range

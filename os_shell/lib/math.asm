@@ -697,7 +697,7 @@ PUSH_DH
 
 CALL :heap_pop_A        # low word of first operand
 CALL :heap_pop_B        # low word of second operand
-CALL :sub16_a_minus_b   # A now contains the low word result
+ALUOP16O_A %ALU16_A-B%   # A now contains the low word result
 JO .sub32_borrow        # note if we need to borrow in next sub
 CALL .sub32_high_common
 JMP .sub32_done
@@ -724,7 +724,7 @@ ALUOP_DL %A%+%AL%       # store low word result in D
 ALUOP_DH %A%+%AH%
 CALL :heap_pop_A        # high word of first operand
 CALL :heap_pop_B        # high word of second operand
-CALL :sub16_a_minus_b   # A now contains high word result
+ALUOP16O_A %ALU16_A-B%   # A now contains high word result
 RET
 
 ###

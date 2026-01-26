@@ -173,7 +173,7 @@ ALUOP_PUSH %B%+%BL%
 
 LD16_B $malloc_range_start                  # Load memory base address into B
 
-CALL :sub16_a_minus_b                       # A = offset from base address
+ALUOP16O_A %ALU16_A-B%                       # A = offset from base address
 
 # Shift the offset right four bits to get the block index (the byte
 # offset in the ledger representing this address)

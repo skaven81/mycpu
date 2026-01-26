@@ -180,7 +180,7 @@ ALUOP_PUSH %B%+%BL%
 ALUOP_PUSH %B%+%BH%
 
 # If B-A overflows, we are done
-CALL :sub16_b_minus_a
+ALUOP16O_B %ALU16_B-A%
 POP_BH
 POP_BL
 JNO .process_range_loop

@@ -133,7 +133,7 @@ ALUOP_PUSH %A%+%AH%
 LDI_AH 0x0f
 ALUOP_BH %A&B%+%AH%+%BH%                # B now contains just the offset
 POP_AH
-CALL :sub16_b_minus_a                   # if cursor is to the right of the
+ALUOP16O_B %ALU16_B-A%                   # if cursor is to the right of the
 ALUOP_FLAGS %B%+%BH%                    # mark 0, then B will be nonzero;
 JNZ .do_backspace                       # if cursor is at mark 0 then B will
 ALUOP_FLAGS %B%+%BL%                    # be zero.
@@ -175,7 +175,7 @@ ALUOP_PUSH %A%+%AH%
 LDI_AH 0x0f
 ALUOP_BH %A&B%+%AH%+%BH%                # B now contains just the offset
 POP_AH
-CALL :sub16_b_minus_a                   # if cursor is to the right of the
+ALUOP16O_B %ALU16_B-A%                   # if cursor is to the right of the
 ALUOP_FLAGS %B%+%BH%                    # mark 0, then B will be nonzero;
 JNZ .do_leftarrow                       # if cursor is at mark 0 then B will
 ALUOP_FLAGS %B%+%BL%                    # be zero.
@@ -198,7 +198,7 @@ ALUOP_PUSH %A%+%AH%
 LDI_AH 0x0f
 ALUOP_BH %A&B%+%AH%+%BH%                # B now contains just the cursor offset
 POP_AH
-CALL :sub16_b_minus_a                   # if cursor is to the left of the
+ALUOP16O_B %ALU16_B-A%                   # if cursor is to the left of the
 ALUOP_FLAGS %B%+%BH%                    # mark 1, then B will be nonzero;
 JNZ .do_rightarrow                      # if cursor is at mark 0 then B will
 ALUOP_FLAGS %B%+%BL%                    # be zero.

@@ -177,7 +177,7 @@ CALL :shift16_a_left            # Shift left three times to get the total number
 CALL :shift16_a_left
 CALL :shift16_a_left
 
-CALL :sub16_a_minus_b           # A~free_blocks = total_blocks - allocated_blocks
+ALUOP16O_A %ALU16_A-B%           # A~free_blocks = total_blocks - allocated_blocks
 CALL :heap_push_A
 ALUOP16O_A %ALU16_A+B%                # A~total_blocks = free_blocks + allocated_blocks
 CALL :heap_push_A

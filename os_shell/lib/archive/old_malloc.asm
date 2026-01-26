@@ -191,7 +191,7 @@ RET
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
 LD16_B $malloc_range_start
-CALL :sub16_a_minus_b                       # A = number of segments
+ALUOP16O_A %ALU16_A-B%                       # A = number of segments
 CALL :shift16_a_left
 CALL :shift16_a_left
 CALL :shift16_a_left                        # A = block aligned offset
@@ -250,7 +250,7 @@ PUSH_CL
 
 # Subtract ledger addr from memory address, to get an offset
 LD16_B $malloc_range_start          # B contains the address of the ledger
-CALL :sub16_a_minus_b               # A is now the offset from the base address
+ALUOP16O_A %ALU16_A-B%               # A is now the offset from the base address
 
 # Shift the offset right four bits to get the block index (the bit of the
 # the ledger representing this address)

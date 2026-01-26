@@ -391,7 +391,7 @@ MOV_CH_BH
 MOV_CL_BL
 
 # get number of chars to transcribe into B
-CALL :sub16_b_minus_a               # B now contains num chars to transcribe
+ALUOP16O_B %ALU16_B-A%               # B now contains num chars to transcribe
 ALUOP_PUSH %A%+%AH%
 LDI_AH 0x80
 ALUOP_FLAGS %A&B%+%AH%+%BH%
@@ -593,7 +593,7 @@ ALUOP_CL %B%+%BL%           # save new cursor addr in C
 
 # if the cursor moves, will the new addr be < %display_chars% ??
 LDI_A %display_chars%
-CALL :sub16_b_minus_a       # B now contains the delta, >= 0 if greater than %display_chars% and OK, but < 0 if out of range.
+ALUOP16O_B %ALU16_B-A%       # B now contains the delta, >= 0 if greater than %display_chars% and OK, but < 0 if out of range.
 LDI_AL 0x80
 ALUOP_FLAGS %A&B%+%AL%+%BH% # so if B is negative (MSB is set)
 JNZ .cmr_done               # don't move the cursor
@@ -602,7 +602,7 @@ JNZ .cmr_done               # don't move the cursor
 MOV_CH_BH
 MOV_CL_BL                   # new cursor addr in B
 LDI_A %display_chars%+3839  # 64 col x 60 row, minus 1 to get to last valid addr
-CALL :sub16_a_minus_b       # A now contains the delta, >= 0 if less than or equal to %display_chars%+3839 and OK, but < 0 if out of range.
+ALUOP16O_A %ALU16_A-B%       # A now contains the delta, >= 0 if less than or equal to %display_chars%+3839 and OK, but < 0 if out of range.
 LDI_BL 0x80
 ALUOP_FLAGS %A&B%+%AH%+%BL% # if B is negative (MSB is set)
 JNZ .cmr_done               # don't move the cursor

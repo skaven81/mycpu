@@ -55,7 +55,7 @@ ALUOP_PUSH %B%+%BL%
 LD_BH $heap_ptr
 LD_BL $heap_ptr+1
 LDI_AH 0x00                         # so we can do 16-bit subtraction
-CALL :sub16_b_minus_a               # advance the heap pointer
+ALUOP16O_B %ALU16_B-A%               # advance the heap pointer
 ALUOP_ADDR %B%+%BH% $heap_ptr       
 ALUOP_ADDR %B%+%BL% $heap_ptr+1     # Save retreated heap pointer
 POP_BL
@@ -70,7 +70,7 @@ ALUOP_PUSH %B%+%BH%
 LD_AH $heap_ptr
 LD_AL $heap_ptr+1
 LDI_BH 0x00                         # so we can do 16-bit subtraction
-CALL :sub16_a_minus_b               # advance the heap pointer
+ALUOP16O_A %ALU16_A-B%               # advance the heap pointer
 ALUOP_ADDR %A%+%AH% $heap_ptr       
 ALUOP_ADDR %A%+%AL% $heap_ptr+1     # Save retreated heap pointer
 POP_BH
