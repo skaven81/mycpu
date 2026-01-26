@@ -550,13 +550,13 @@ LDI_B 0x004a                # Last byte of ReservedRegion start
 CALL :add16_to_b
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 1
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 2
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # MSB byte
 
@@ -589,13 +589,13 @@ LDI_B 0x0043                # Total sectors in filesystem (LSB)
 CALL :add16_to_b
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 1
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 2
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # MSB byte
 
@@ -648,13 +648,13 @@ LDI_B 0x004e                # FATRegion start (LSB)
 CALL :add16_to_b
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 1
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 2
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # MSB byte
 
@@ -673,13 +673,13 @@ LDI_B 0x0052                # Root dir start (LSB)
 CALL :add16_to_b
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 1
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 2
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # MSB byte
 
@@ -691,13 +691,13 @@ LDI_B 0x0056                # Data space start (LSB)
 CALL :add16_to_b
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 1
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # byte 2
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 LDA_B_CL
 CALL :heap_push_CL          # MSB byte
 

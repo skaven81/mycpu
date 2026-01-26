@@ -416,7 +416,7 @@ JMP .find_unused_run_loop           # try next ledger byte
 
 .find_unused_run_iszero             # found a zero, so
 CALL :heap_pop_B                    # restore current count
-CALL :decr16_b                      # decrement counter
+ALUOP16O_B %ALU16_B-1%                      # decrement counter
 CALL :heap_push_B                   # put it back on the heap
 ALUOP_FLAGS %B%+%BH%
 JNZ .find_unused_run_loop           # if current count isn't zero, keep going

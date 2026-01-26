@@ -704,7 +704,7 @@ JMP .sub32_done
 
 .sub32_borrow
 CALL .sub32_high_common
-CALL :decr16_a          # subtract borrow
+ALUOP16O_A %ALU16_A-1%          # subtract borrow
 
 .sub32_done
 # result high word is in A, low word is in D

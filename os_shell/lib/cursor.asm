@@ -410,7 +410,7 @@ LDA_A_TD                            # get character at A (left mark)
 STA_D_TD                            # write it to string at D
 ALUOP16O_A %ALU16_A+1%
 INCR_D                              # move right
-CALL :decr16_b                      # count this char
+ALUOP16O_B %ALU16_B-1%                      # count this char
 JMP .cmg_loop
 
 .cmg_finish

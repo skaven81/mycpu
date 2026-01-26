@@ -133,7 +133,7 @@ CALL :shift16_b_left
 CALL :shift16_b_left
 CALL :shift16_b_left
 CALL :shift16_b_left
-CALL :decr16_b                  # subtract 1 to get the last byte in the range
+ALUOP16O_B %ALU16_B-1%                  # subtract 1 to get the last byte in the range
 CALL :add16_to_b                # add total bytes to start address to get end address
 CALL :heap_push_BL
 CALL :heap_push_BH
@@ -160,7 +160,7 @@ JZ .free_byte
 INCR_D                          # count used block
 .free_byte
 INCR_C                          # move to next ledger byte
-CALL :decr16_b                  # decrement counter
+ALUOP16O_B %ALU16_B-1%                  # decrement counter
 ALUOP_FLAGS %B%+%BH%
 JNZ .count_loop
 ALUOP_FLAGS %B%+%BL%
@@ -239,7 +239,7 @@ POP_CL
 POP_CH
 
 .list_ignore
-CALL :decr16_b                  # decrement counter
+ALUOP16O_B %ALU16_B-1%                  # decrement counter
 ALUOP_FLAGS %B%+%BH%
 JNZ .list_loop
 ALUOP_FLAGS %B%+%BL%

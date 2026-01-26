@@ -60,7 +60,7 @@ INCR_D
 ALUOP_ADDR_D %A%+%AL%   # copy it one spot to the right
 DECR_D
 DECR_D                  # move D to spots to the left
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 ALUOP_FLAGS %B%+%BL%
 JNZ .strprepend_copy_loop
 ALUOP_FLAGS %B%+%BH%

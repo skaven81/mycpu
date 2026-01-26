@@ -194,7 +194,7 @@ CALL :add16_to_b            # B contains the address we want to rewrite;
 LDA_B_DH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_DL                    # D contains the zero-based offset from the program.
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 
 LD_AH $odyexe_first_byte_of_program
 LD_AL $odyexe_first_byte_of_program+1
@@ -218,7 +218,7 @@ ALUOP_ADDR_B %A%+%AL%
 # decrement $number_of_rewrites (B)
 LD_BH $odyexe_rewrites_remaining
 LD_BL $odyexe_rewrites_remaining+1
-CALL :decr16_b
+ALUOP16O_B %ALU16_B-1%
 ALUOP_ADDR %B%+%BH% $odyexe_rewrites_remaining
 ALUOP_ADDR %B%+%BL% $odyexe_rewrites_remaining+1
 JMP .rewrite_loop
