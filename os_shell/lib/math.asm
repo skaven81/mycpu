@@ -645,7 +645,7 @@ PUSH_DH
 
 CALL :heap_pop_A        # low word of first operand
 CALL :heap_pop_B        # low word of second operand
-CALL :add16_to_b        # B now contains the low word result
+ALUOP16O_B %ALU16_A+B%        # B now contains the low word result
 JO .add32_carry         # note if we need to carry in to next add
 CALL .add32_high_common
 JMP .add32_done
@@ -653,7 +653,7 @@ JMP .add32_done
 .add32_carry
 CALL .add32_high_common
 LDI_A 0x0001
-CALL :add16_to_b        # add carry
+ALUOP16O_B %ALU16_A+B%        # add carry
 
 .add32_done
 # result high word is in B, low word is in D
@@ -673,7 +673,7 @@ ALUOP_DL %B%+%BL%       # store low word result in D
 ALUOP_DH %B%+%BH%
 CALL :heap_pop_A        # high word of first operand
 CALL :heap_pop_B        # high word of second operand
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 RET
 
 ###

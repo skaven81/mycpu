@@ -148,7 +148,7 @@ ALUOP_BL %B>>1%+%BL%            # Shift memory page right 3 positions to get led
 ALUOP_BL %B>>1%+%BL%            # |
 ALUOP_BL %B>>1%+%BL%            # |
 LDI_BH 0x00
-CALL :add16_to_a                # add to ledger address; A now has ledger byte addr
+ALUOP16O_A %ALU16_A+B%                # add to ledger address; A now has ledger byte addr
 POP_BL                          # BL has full memory page again
 
 ALUOP_PUSH %A%+%AL%

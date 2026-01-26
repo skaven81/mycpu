@@ -34,7 +34,7 @@ LDI_C .master_read_out
 CALL :printf
 
 LDI_A 512
-CALL :add16_to_b                # Increment start address by 512
+ALUOP16O_B %ALU16_A+B%                # Increment start address by 512
 
 CALL :heap_push_B               # destination address
 LDI_AL 0x01                     # slave drive

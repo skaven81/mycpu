@@ -56,7 +56,7 @@ JNZ .not_detected
 MOV_CH_AH                           # copy sector addr into A
 MOV_CL_AL
 LDI_B 54                            # offset to word 27=byte 54/0x36 (model)
-CALL :add16_to_a                    # A points at first byte of model
+ALUOP16O_A %ALU16_A+B%                    # A points at first byte of model
 # read 20 words (in little-endian format) into D
 LDI_BL 20
 .ata_identify_string_model_loop
@@ -78,7 +78,7 @@ JNZ .ata_identify_string_model_loop # continue until decrementing returns zero
 MOV_CH_AH                           # reset sector addr in A
 MOV_CL_AL
 LDI_B 46                            # offset to word 23=byte 46/0x2e (firmware)
-CALL :add16_to_a                    # A points at first byte of firmware
+ALUOP16O_A %ALU16_A+B%                    # A points at first byte of firmware
 
 # read 4 words (in little-endian format) into D
 LDI_BL 4
@@ -101,7 +101,7 @@ JNZ .ata_identify_string_vers_loop  # continue until decrementing returns zero
 MOV_CH_AH                           # reset sector addr in A
 MOV_CL_AL
 LDI_B 120                           # offset to word 60=byte 120/0x78 (sectors)
-CALL :add16_to_a                    # A points at first byte of sector count
+ALUOP16O_A %ALU16_A+B%                    # A points at first byte of sector count
 # read 2 words (in little-endian format) into A (high) and B (low)
 ALUOP16O_A %ALU16_A+1%                      # ignore the first byte, as we are going
                                     # to shift 11 bits anyway

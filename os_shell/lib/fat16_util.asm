@@ -16,7 +16,7 @@ ALUOP_PUSH %B%+%BL%
 
 CALL :heap_pop_A                # filesystem handle address in A
 LDI_B 0x0036                    # Offset 0x36 = current directory cluster
-CALL :add16_to_b                # B=address of current directory cluster
+ALUOP16O_B %ALU16_A+B%                # B=address of current directory cluster
 LDA_B_AH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_AL                        # A = current directory cluster
@@ -54,7 +54,7 @@ JMP .gcdn_done
 # If we get here then $current_fs_handle pointer in A is valid
 .gcdn_current_fs_handle_valid
 LDI_B 0x005f                    # Offset 5f=ATA device ID
-CALL :add16_to_a                # A now points at the device ID
+ALUOP16O_A %ALU16_A+B%                # A now points at the device ID
 LDA_A_BL                        # BL contains the device ID
 CALL :heap_push_BL
 

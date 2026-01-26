@@ -312,12 +312,12 @@ JO .strtoi_overflow         # |
 ALUOP_PUSH %B%+%BL%         # Save BL
 MOV_DH_BH                   # Get our old 2a value out of D into B
 MOV_DL_BL                   # |
-CALL :add16_to_a            # 8a+2a=10a
+ALUOP16O_A %ALU16_A+B%            # 8a+2a=10a
 POP_BL                      # Put BL back
 JO .strtoi_overflow
 CALL :hextoi                # BL is now the integer value
 LDI_BH 0x00
-CALL :add16_to_a            # add BL to A
+ALUOP16O_A %ALU16_A+B%            # add BL to A
 JO .strtoi_overflow
 INCR_C                      # move to next char
 JMP .strdectoi_loop         # and keep processing

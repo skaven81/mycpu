@@ -42,7 +42,7 @@ DECR_C
 # Fetch $SectorsPerCluster and push word to heap (multiplier)
 CALL :heap_pop_B                # Pop the filesystem handle address into B
 LDI_A 0x003a                    # Offset of $SectorsPerCluster
-CALL :add16_to_a                # A has address of $SectorsPerCluster
+ALUOP16O_A %ALU16_A+B%                # A has address of $SectorsPerCluster
 LDA_A_DL                        # DL has $SectorsPerCluster
 LDI_DH 0x00                     # Make D a full 16-bit number
 
@@ -56,7 +56,7 @@ CALL :heap_pop_C                # high word of result
 
 # Fetch $DataRegionStart
 LDI_A 0x0053                    # Offset of $DataRegionStart
-CALL :add16_to_a                # A has address of $DataRegionStart (32 bit)
+ALUOP16O_A %ALU16_A+B%                # A has address of $DataRegionStart (32 bit)
 LDA_A_BH                        # High word of $DataRegionStart in B
 ALUOP16O_A %ALU16_A+1%
 LDA_A_BL
@@ -79,7 +79,7 @@ JMP .cluster_to_lba_done        # Return (result is already on the heap in corre
 .return_root_dir_sector
 CALL :heap_pop_B                # Pop the filesystem handle address into B
 LDI_A 0x004f                    # Offset of $RootDirectoryRegionStart
-CALL :add16_to_a                # A has address of $RootDirectoryRegionStart
+ALUOP16O_A %ALU16_A+B%                # A has address of $RootDirectoryRegionStart
 LDA_A_CH
 ALUOP16O_A %ALU16_A+1%
 LDA_A_CL                        # C has high word of $RootDirectoryRegionStart
@@ -137,7 +137,7 @@ CALL :heap_pop_B                # Pop address of filesystem handle
 
 # retrieve $DataRegionStart
 LDI_A 0x0053                    # Offset of $DataRegionStart
-CALL :add16_to_a                # A contains address of $DataRegionStart
+ALUOP16O_A %ALU16_A+B%                # A contains address of $DataRegionStart
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%             # Remember address of filesystem handle
 LDA_A_BH
@@ -163,7 +163,7 @@ CALL :sub32                     # Heap now has ($LBA - $DataRegionStart)
 LDI_A 0x003a                    # Offset of $SectorsPerCluster
 POP_BL
 POP_BH                          # B has restored filesystem handle address
-CALL :add16_to_a                # A contains address of $SectorsPerCluster
+ALUOP16O_A %ALU16_A+B%                # A contains address of $SectorsPerCluster
 LDA_A_CL                        # CL = $SectorsPerCluster
 
 # Pop stuff we'll be shifting into A and B
@@ -257,11 +257,11 @@ PUSH_CH
 
 CALL :heap_pop_B                # Pop the filesystem handle address into B
 LDI_A 0x005f                    # Offset of $ATAdeviceID
-CALL :add16_to_a                # A has address of $ATAdeviceID
+ALUOP16O_A %ALU16_A+B%                # A has address of $ATAdeviceID
 LDA_A_DL                        # DL has $ATAdeviceID
 
 LDI_A 0x004b                    # Offset of $FATRegionStart
-CALL :add16_to_a                # A has address of $ATAdeviceID
+ALUOP16O_A %ALU16_A+B%                # A has address of $ATAdeviceID
 LDA_A_CH
 ALUOP16O_A %ALU16_A+1%
 LDA_A_CL                        # C has high word of $FATRegionStart
@@ -308,7 +308,7 @@ POP_AL                          # Pop low byte of cluster number
 CALL :shift16_a_left
 
 LDI_B 0xe000
-CALL :add16_to_b                # B contains address of cluster
+ALUOP16O_B %ALU16_A+B%                # B contains address of cluster
 
 # Read memory at that address and return it
 LDA_B_AL

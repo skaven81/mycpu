@@ -150,7 +150,7 @@ CALL :shift16_a_left                        # by 16
 CALL :shift16_a_left
 
 LD16_B $malloc_range_start                  # Load memory base address into B
-CALL :add16_to_a                            # A = A+B
+ALUOP16O_A %ALU16_A+B%                            # A = A+B
 
 POP_BL
 POP_BH
@@ -184,7 +184,7 @@ CALL :shift16_a_right
 
 # Add the ledger index to the ledger base address
 LDI_B 0xd000                        # Add ledger base addr (B)
-CALL :add16_to_a                    # to ledger offset (A) and store in A
+ALUOP16O_A %ALU16_A+B%                    # to ledger offset (A) and store in A
 
 POP_BL
 POP_BH
@@ -392,7 +392,7 @@ CALL :shift16_a_left
 CALL :shift16_a_left
 CALL :shift16_a_left                # A contains the number of ledger bytes
 LDI_B 0xd000
-CALL :add16_to_a                    # A contains the address of the last ledger byte, plus one
+ALUOP16O_A %ALU16_A+B%                    # A contains the address of the last ledger byte, plus one
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%                   # C now contains the address of the last ledger byte, plus one
                                     # the first thing the .find_unused_run_loop will do is decrement this.

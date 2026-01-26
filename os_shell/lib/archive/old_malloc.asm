@@ -207,7 +207,7 @@ CALL :shift16_a_left
 CALL :shift16_a_left
 CALL :shift16_a_left                        # A = segment aligned offset
 LD16_B $malloc_range_start
-CALL :add16_to_a                            # A = real address
+ALUOP16O_A %ALU16_A+B%                            # A = real address
 POP_BH
 RET
 
@@ -272,7 +272,7 @@ CALL :shift16_a_right
 CALL :shift16_a_right
 
 # Add the ledger index to the range base address
-CALL :add16_to_a                    # Add base addr (B) to ledger idx (A) and store in A
+ALUOP16O_A %ALU16_A+B%                    # Add base addr (B) to ledger idx (A) and store in A
 ALUOP_PUSH %A%+%AL%                 # Save AL since we mangle it below
 
 # Construct a mask in BL from the bit_pos value in CL

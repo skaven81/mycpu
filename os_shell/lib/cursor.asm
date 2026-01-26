@@ -65,7 +65,7 @@ ALUOP_PUSH %A%+%AL%
 LDI_B $crsr_marks                   # B points to 0th mark
 ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
 ALUOP_AH %zero%
-CALL :add16_to_b                    # B points to ALth mark
+ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
 ALUOP_PUSH %B%+%BL%
 LD_AL $crsr_addr_chars              # AL contains high byte of char address
 LDI_BL 0x0f                         # mask to clear the high bits so we just get the offset
@@ -96,7 +96,7 @@ ALUOP_AL %B%+%BL%                   # mark ID into AL
 LDI_B $crsr_marks                   # B points to 0th mark
 ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
 ALUOP_AH %zero%
-CALL :add16_to_b                    # B points to ALth mark
+ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
 POP_AL
 POP_AH                              # A now contains offset or addr
 ALUOP_PUSH %B%+%BH%
@@ -126,7 +126,7 @@ ALUOP_AL %B%+%BL%                   # mark ID into AL
 LDI_B $crsr_marks                   # B points to 0th mark
 ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
 ALUOP_AH %zero%
-CALL :add16_to_b                    # B points to ALth mark
+ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
 POP_AL
 POP_AH                              # A now contains row/col
 CALL :cursor_conv_rowcol            # A now contains offset
@@ -212,7 +212,7 @@ JMP .cmm_posnegdone
 LDI_BH 0x00                         # If BL was positive, extend zeros into BH
 .cmm_posnegdone
 POP_AH
-CALL :add16_to_a                    # A contains new offset
+ALUOP16O_A %ALU16_A+B%                    # A contains new offset
 LDI_BH 0x80
 ALUOP_FLAGS %A&B%+%AH%+%BH%         # check if offset is negative
 JNZ .cmm_out_of_bounds
@@ -248,7 +248,7 @@ ALUOP_PUSH %A%+%AL%
 LDI_B $crsr_marks                   # B points to 0th mark
 ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
 ALUOP_AH %zero%
-CALL :add16_to_b                    # B points to ALth mark
+ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
 ALUOP_ADDR_B %negone%               # undefined value
 ALUOP16O_B %ALU16_B+1%                      # move to low byte of mark
 ALUOP_ADDR_B %negone%               # undefined value
@@ -273,7 +273,7 @@ ALUOP_PUSH %B%+%BL%
 LDI_B $crsr_marks                   # B points to 0th mark
 ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
 ALUOP_AH %zero%
-CALL :add16_to_b                    # B points to ALth mark
+ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
 LDA_B_AH                            # fetch high byte
 ALUOP16O_B %ALU16_B+1%
 LDA_B_AL                            # fetch low byte
@@ -587,7 +587,7 @@ JZ .cmr_1                   # if AL was positive, continue.
 LDI_AH 0xff                 # otherwise, ensure A is negative
 .cmr_1
 LD16_B $crsr_addr_chars
-CALL :add16_to_b            # B now contains the new cursor addr
+ALUOP16O_B %ALU16_A+B%            # B now contains the new cursor addr
 ALUOP_CH %B%+%BH%
 ALUOP_CL %B%+%BL%           # save new cursor addr in C
 
@@ -652,13 +652,13 @@ ALUOP_AH %A&B%+%AH%+%BH%
 
 # add %display_chars% to the offset and store in $crsr_addr_chars
 LDI_B %display_chars%                   # put the char base addr in B
-CALL :add16_to_b                        # B now contains the new cursor absolute address
+ALUOP16O_B %ALU16_A+B%                        # B now contains the new cursor absolute address
 ALUOP_ADDR %B%+%BH% $crsr_addr_chars    # store the new absolute address in RAM
 ALUOP_ADDR %B%+%BL% $crsr_addr_chars+1
 
 # add %display_color% to the offset and store in $crsr_addr_color
 LDI_B %display_color%                   # put the color base addr in B
-CALL :add16_to_b                        # B now contains the new cursor absolute address
+ALUOP16O_B %ALU16_A+B%                        # B now contains the new cursor absolute address
 ALUOP_ADDR %B%+%BH% $crsr_addr_color    # store the new absolute address in RAM
 ALUOP_ADDR %B%+%BL% $crsr_addr_color+1
 
@@ -714,13 +714,13 @@ CALL :cursor_conv_rowcol
 
 # add %display_chars% to the offset and store in $crsr_addr_chars
 LDI_B %display_chars%                   # put the char base addr in B
-CALL :add16_to_b                        # B now contains the new cursor absolute address
+ALUOP16O_B %ALU16_A+B%                        # B now contains the new cursor absolute address
 ALUOP_ADDR %B%+%BH% $crsr_addr_chars    # store the new absolute address in RAM
 ALUOP_ADDR %B%+%BL% $crsr_addr_chars+1
 
 # add %display_color% to the offset and store in $crsr_addr_color
 LDI_B %display_color%                   # put the color base addr in B
-CALL :add16_to_b                        # B now contains the new cursor absolute address
+ALUOP16O_B %ALU16_A+B%                        # B now contains the new cursor absolute address
 ALUOP_ADDR %B%+%BH% $crsr_addr_color    # store the new absolute address in RAM
 ALUOP_ADDR %B%+%BL% $crsr_addr_color+1
 

@@ -63,7 +63,7 @@ ALUOP_BH %A%+%AH%
 ALUOP_BL %A%+%AL%               # Copy range into B
 POP_AL
 POP_AH                          # Pop start address into A
-CALL :add16_to_b                # B=B+A -> end address
+ALUOP16O_B %ALU16_A+B%                # B=B+A -> end address
 
 .process_range
 LDA_A_SLOW_PUSH

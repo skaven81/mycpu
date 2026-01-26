@@ -189,7 +189,7 @@ CALL :heap_pop_C                # C contains new directory cluster number
 LD_AH $current_fs_handle_ptr
 LD_AL $current_fs_handle_ptr+1  # A = filesystem handle
 LDI_B 0x0036                    # offset 0x36 = cluster number
-CALL :add16_to_a                # A = address of cluster number high byte
+ALUOP16O_A %ALU16_A+B%                # A = address of cluster number high byte
 STA_A_CH                        # Save cluster number in filesystem handle
 ALUOP16O_A %ALU16_A+1%                  # |
 STA_A_CL                        # |

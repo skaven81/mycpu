@@ -95,14 +95,14 @@ CALL :heap_pop_A                # filesystem handle addr in A
 ALUOP_ADDR %A%+%AH% $fat16_readfile_fs_handle
 ALUOP_ADDR %A%+%AL% $fat16_readfile_fs_handle+1
 LDI_B 0x003a                    # sectors per cluster offset
-CALL :add16_to_a                # A now points to sectors_per_cluster byte
+ALUOP16O_A %ALU16_A+B%                # A now points to sectors_per_cluster byte
 LDA_A_BL                        # Load byte into BL
 ALUOP_ADDR %B%+%BL% $fat16_readfile_sectors_per_cluster
 ALUOP_ADDR %B%+%BL% $fat16_readfile_sectors_remaining_in_cluster
 LD_AH $fat16_readfile_fs_handle
 LD_AL $fat16_readfile_fs_handle+1
 LDI_B 0x005f                    # device ID offset
-CALL :add16_to_a                # A now points to sectors_per_cluster byte
+ALUOP16O_A %ALU16_A+B%                # A now points to sectors_per_cluster byte
 LDA_A_BL                        # Load byte into BL
 ALUOP_ADDR %B%+%BL% $fat16_readfile_device_id
 
@@ -162,7 +162,7 @@ JNZ .abort_ata_error
 LD_AH $fat16_readfile_next_write_address
 LD_AL $fat16_readfile_next_write_address+1
 LDI_B 512
-CALL :add16_to_a
+ALUOP16O_A %ALU16_A+B%
 ALUOP_ADDR %A%+%AH% $fat16_readfile_next_write_address
 ALUOP_ADDR %A%+%AL% $fat16_readfile_next_write_address+1
 

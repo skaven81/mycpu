@@ -230,7 +230,7 @@ LDA_C_AH                            # |
 INCR_C                              # |
 LDA_C_AL                            # |
 LDI_B 0x004f                        # 0x4f = RootDirectoryRegionStart
-CALL :add16_to_b                    # B = LBA of RootDirectoryRegionStart
+ALUOP16O_B %ALU16_A+B%                    # B = LBA of RootDirectoryRegionStart
 ALUOP_CH %B%+%BH%
 ALUOP_CL %B%+%BL%                   # C = source address
 LDI_D $dirwalk_next_sector_lba   # D = dest address
@@ -238,7 +238,7 @@ LDI_AL 3                            # copy four bytes
 CALL :memcpy                        # $dirwalk_next_sector_lba contains LBA addr of root dir
 
 LDI_B 0x0060                        # 0x59 = num root dir sectors; we only use the low byte so 0x60
-CALL :add16_to_b                    # B = addr of # root entries word
+ALUOP16O_B %ALU16_A+B%                    # B = addr of # root entries word
 LDA_B_AL                            # A = num root dir sectors (we assume <= 255)
 ALUOP_ADDR %A%+%AL% $dirwalk_num_sectors_remaining
 
@@ -266,7 +266,7 @@ LDA_C_AH                            # |
 INCR_C                              # |
 LDA_C_AL                            # |
 LDI_B 0x003a                        # 0x3a = Sectors per cluster
-CALL :add16_to_b                    # B = addr of sectors per cluster
+ALUOP16O_B %ALU16_A+B%                    # B = addr of sectors per cluster
 LDA_B_AL                            # AL = num sectors
 ALUOP_ADDR %A%+%AL% $dirwalk_num_sectors_remaining
 
@@ -357,7 +357,7 @@ LDA_C_AH                            # |
 INCR_C                              # |
 LDA_C_AL                            # |
 LDI_B 0x005f                        # 0x5f = ATA device ID
-CALL :add16_to_b                    # B = addr of device ID
+ALUOP16O_B %ALU16_A+B%                    # B = addr of device ID
 LDA_B_AL                            # AL = device ID
 CALL :heap_push_AL                  # Push device ID
 
@@ -445,7 +445,7 @@ CALL :shift16_b_left                # |
 CALL :shift16_b_left                # |
 CALL :shift16_b_left                # |
 CALL :shift16_b_left                # |
-CALL :add16_to_a                    # A now contains the memory address of the next dirent
+ALUOP16O_A %ALU16_A+B%                    # A now contains the memory address of the next dirent
 CALL :heap_push_A
 
 .dirwalk_next_return

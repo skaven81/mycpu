@@ -134,7 +134,7 @@ CALL :shift16_b_left
 CALL :shift16_b_left
 CALL :shift16_b_left
 ALUOP16O_B %ALU16_B-1%                  # subtract 1 to get the last byte in the range
-CALL :add16_to_b                # add total bytes to start address to get end address
+ALUOP16O_B %ALU16_A+B%                # add total bytes to start address to get end address
 CALL :heap_push_BL
 CALL :heap_push_BH
 CALL :heap_push_AL
@@ -179,7 +179,7 @@ CALL :shift16_a_left
 
 CALL :sub16_a_minus_b           # A~free_blocks = total_blocks - allocated_blocks
 CALL :heap_push_A
-CALL :add16_to_a                # A~total_blocks = free_blocks + allocated_blocks
+ALUOP16O_A %ALU16_A+B%                # A~total_blocks = free_blocks + allocated_blocks
 CALL :heap_push_A
 
 LDI_C .stats_2

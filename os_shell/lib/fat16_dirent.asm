@@ -93,7 +93,7 @@ ALUOP_PUSH %B%+%BL%
 
 CALL :heap_pop_A                # directory entry address in A
 LDI_B 0x000b                    # offset 0x0b = attribute, 1 byte
-CALL :add16_to_a                # A points at the attribute byte
+ALUOP16O_A %ALU16_A+B%                # A points at the attribute byte
 LDA_A_BL                        # BL contains the attribute byte
 CALL :heap_push_BL              # Push it to heap to return it
 
@@ -122,7 +122,7 @@ PUSH_DL
 
 CALL :heap_pop_A                # directory entry address in A
 LDI_B 0x001c                    # offset 0x1c = file size, 4 bytes
-CALL :add16_to_a                # A points at the first byte (LSB) of the file size
+ALUOP16O_A %ALU16_A+B%                # A points at the first byte (LSB) of the file size
 LDA_A_DL
 ALUOP16O_A %ALU16_A+1%
 LDA_A_DH
@@ -159,7 +159,7 @@ PUSH_DL
 
 CALL :heap_pop_A                # directory entry address in A
 LDI_B 0x001a                    # offset 0x1a = starting cluster, 2 bytes
-CALL :add16_to_a                # A points at the first byte (LSB) of the cluster
+ALUOP16O_A %ALU16_A+B%                # A points at the first byte (LSB) of the cluster
 LDA_A_DL
 ALUOP16O_A %ALU16_A+1%
 LDA_A_DH
@@ -269,7 +269,7 @@ LDA_C_AL                        # year/month in AL
 ALUOP_AL %A>>1%+%AL%            # shift right one position
 LDI_AH 0x00
 LDI_B 1980
-CALL :add16_to_a                # AH now has year
+ALUOP16O_A %ALU16_A+B%                # AH now has year
 CALL :heap_push_A
 
 # allocate memory for return string
@@ -356,7 +356,7 @@ INCR_D
 
 ## modify date
 LDI_A 0x0016                    # offset 0x16 = last write time
-CALL :add16_to_a                # A contains address of last write time
+ALUOP16O_A %ALU16_A+B%                # A contains address of last write time
 CALL :heap_push_A
 CALL .get_timestamp_string      # 32-byte string address on top of heap
 CALL :heap_pop_C
@@ -373,7 +373,7 @@ INCR_D
 ## attribute byte
 ALUOP_PUSH %B%+%BL%
 LDI_A 0x000b                    # offset 0x0b = attribute byte
-CALL :add16_to_a                # A contains address of attribute byte
+ALUOP16O_A %ALU16_A+B%                # A contains address of attribute byte
 LDA_A_BL                        # attribute byte in BL
 LDI_AL 0x10                     # bit 4 = directory
 ALUOP_FLAGS %A&B%+%AL%+%BL%

@@ -122,7 +122,7 @@ STA_A_CL
 
 #### 0x38: 2B  Bytes per Sector
 LDI_B 0x0038
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LD_CL 0xd00c
 STA_B_CL
 ALUOP16O_B %ALU16_B+1%
@@ -131,13 +131,13 @@ STA_B_CL
 
 #### 0x3a: 1B  Sectors per Cluster
 LDI_B 0x003a
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LD_CL 0xd00d
 STA_B_CL
 
 #### 0x3b: 2B  Reserved Sectors from start of volume
 LDI_B 0x003b
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LD_CL 0xd00f
 STA_B_CL
 ALUOP16O_B %ALU16_B+1%
@@ -146,13 +146,13 @@ STA_B_CL
 
 #### 0x3d: 1B  Number of FAT copies
 LDI_B 0x003d
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LD_CL 0xd010
 STA_B_CL
 
 #### 0x3e: 2B  Number of possible root directory entries
 LDI_B 0x003e
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LD_CL 0xd012
 STA_B_CL
 ALUOP16O_B %ALU16_B+1%
@@ -173,7 +173,7 @@ JNZ .use_small_sectors
 POP_AH
 POP_AL
 LDI_B 0x0040
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LD_CL 0xd023
 STA_B_CL
 ALUOP16O_B %ALU16_B+1%
@@ -191,13 +191,13 @@ JMP .total_sectors_continue
 POP_AH
 POP_AL
 LDI_B 0x0040
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 ALUOP_ADDR_B %zero%
 LDI_B 0x0041
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 ALUOP_ADDR_B %zero%
 LDI_B 0x0042
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LD_CL 0xd014
 STA_B_CL
 ALUOP16O_B %ALU16_B+1%
@@ -209,14 +209,14 @@ STA_B_CL
 #### 0x44: 1B  Media descriptor (This is the same value which must be in the low byte in the first entry of the FAT)
 .media_descriptor
 LDI_B 0x0044
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LD_CL 0xd015
 STA_B_CL
 
 #### 0x45: 2B  Sectors per FAT
 .sectors_per_fat
 LDI_B 0x0045
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LD_CL 0xd017
 STA_B_CL
 ALUOP16O_B %ALU16_B+1%
@@ -226,7 +226,7 @@ STA_B_CL
 #### 0x60: 9B  OEM ID
 .oem_id
 LDI_B 0x0060
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 ALUOP_DH %B%+%BH%
 ALUOP_DL %B%+%BL%
 LDI_C 0xd003
@@ -238,7 +238,7 @@ POP_AL
 #### 0x69: 12B Volume Label
 .volume_label
 LDI_B 0x0069
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 ALUOP_DH %B%+%BH%
 ALUOP_DL %B%+%BL%
 LDI_C 0xd02b
@@ -250,14 +250,14 @@ POP_AL
 #### 0x5f: 1B  ATA device ID (0=master/1=slave)
 .device_id
 LDI_B 0x005f
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 POP_CL                  # from push CL earlier
 STA_B_CL
 
 #### 0x47: 4B  ReservedRegion start (LBA) = VolumeStart
 .reserved_region_start
 LDI_B 0x0047
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 POP_CL                  # from push AH earlier
 STA_B_CL
 ALUOP16O_B %ALU16_B+1%
@@ -273,7 +273,7 @@ STA_B_CL
 #### 0x4b: 4B  FATRegion start (LBA) = ReservedRegion + ReservedSectors
 .fat_region_start
 LDI_B 0x0047            # ReservedRegion start
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
@@ -290,7 +290,7 @@ LDA_B_CL
 CALL :heap_push_C       # push low word of ReservedRegion
 
 LDI_B 0x003b            # Reserved Sectors
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
@@ -300,14 +300,14 @@ CALL :add32
 
 CALL :heap_pop_C        # low word of result
 LDI_B 0x004d            # low word of FAT Region start
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 STA_B_CH
 ALUOP16O_B %ALU16_B+1%
 STA_B_CL
 
 CALL :heap_pop_C        # high word of result
 LDI_B 0x004b            # high word of FAT Region start
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 STA_B_CH
 ALUOP16O_B %ALU16_B+1%
 STA_B_CL
@@ -315,14 +315,14 @@ STA_B_CL
 #### 0x4f: 4B  RootDirectoryRegion start (LBA) = FATRegion + (NumberOfFATs * SectorsPerFAT)
 .rootdir_region_start
 LDI_B 0x0045            # Sectors per FAT
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C       # multiplicand (Sectors per FAT)
 
 LDI_B 0x003d            # Num FATs
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 LDI_CH 0x00
 CALL :heap_push_C       # multiplier (Num FATs)
@@ -332,14 +332,14 @@ CALL :heap_pop_D        # low word of result (FATregion size); keep high word of
 
 # store FAT region size
 LDI_B 0x0057
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 STA_B_DH
 ALUOP16O_B %ALU16_B+1%
 STA_B_DL
 
 # Add FAT region size to FAT region start
 LDI_B 0x004b
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
@@ -358,7 +358,7 @@ CALL :heap_pop_D
 CALL :heap_pop_C        # RootDirRegion start in C+D
 
 LDI_B 0x004f
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 STA_B_CH
 ALUOP16O_B %ALU16_B+1%
 STA_B_CL
@@ -371,7 +371,7 @@ STA_B_DL
 ####           directory is not in the data region and thus has no cluster number
 .current_dir_cluster
 LDI_B 0x0036            # current directory cluster
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 ALUOP_ADDR_B %zero%
 ALUOP16O_B %ALU16_B+1%
 ALUOP_ADDR_B %zero%
@@ -379,7 +379,7 @@ ALUOP_ADDR_B %zero%
 #### 0x53: 4B  DataRegion start (LBA) = RootDirectoryRegion + ((RootEntriesCount * 32) / BytesPerSector)
 .data_region_start
 LDI_B 0x003e
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL                # num root entries in C
@@ -393,13 +393,13 @@ ALUOP_DH %B%+%BH%
 ALUOP_DL %B%+%BL%
 # store root directory region size from D
 LDI_B 0x0059
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 STA_B_DH
 ALUOP16O_B %ALU16_B+1%
 STA_B_DL
 # fetch RootDir Region start
 LDI_B 0x004f
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
@@ -422,7 +422,7 @@ CALL :heap_pop_C        # high word of result
 
 # store data region start
 LDI_B 0x0053
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 STA_B_CH
 ALUOP16O_B %ALU16_B+1%
 STA_B_CL
@@ -507,7 +507,7 @@ ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
 CALL :heap_pop_B
 LDI_A 0x005f
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_AL
 CALL :heap_push_AL
 POP_AL
@@ -532,22 +532,22 @@ CALL :heap_pop_A            # file descriptor base address in A
 
 # Line 1
 LDI_B 0x0060                # OEM ID
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 CALL :heap_push_B
 LDI_B 0x0069                # Volume ID
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 CALL :heap_push_B
 LDI_C .str_1
 CALL :printf
 
 # Line 2
 LDI_B 0x0044                # Media descriptor
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 CALL :heap_push_CL
 
 LDI_B 0x004a                # Last byte of ReservedRegion start
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
 ALUOP16O_B %ALU16_B-1%
@@ -561,7 +561,7 @@ LDA_B_CL
 CALL :heap_push_CL          # MSB byte
 
 LDI_B 0x005f                # ATA ID
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 CALL :heap_push_CL
 
@@ -570,12 +570,12 @@ CALL :printf
 
 # Line 3
 LDI_B 0x003a                # sectors per cluster
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 CALL :heap_push_CL
 
 LDI_B 0x0038                # bytes per sector
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
@@ -586,7 +586,7 @@ CALL :printf
 
 # Line 4
 LDI_B 0x0043                # Total sectors in filesystem (LSB)
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
 ALUOP16O_B %ALU16_B-1%
@@ -604,19 +604,19 @@ CALL :printf
 
 # Line 5
 LDI_B 0x003e                # root directory entries
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C
 
 LDI_B 0x003d                # num FAT copies
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 CALL :heap_push_CL
 
 LDI_B 0x0045                # sectors per FAT
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
@@ -627,7 +627,7 @@ CALL :printf
 
 # Line 6
 LDI_B 0x003b                # reserved sectors at start
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
@@ -638,14 +638,14 @@ CALL :printf
 
 # Line 7
 LDI_B 0x0057                # FAT region size
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C
 
 LDI_B 0x004e                # FATRegion start (LSB)
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
 ALUOP16O_B %ALU16_B-1%
@@ -663,14 +663,14 @@ CALL :printf
 
 # Line 8
 LDI_B 0x0059                # Root dir region size
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CH
 ALUOP16O_B %ALU16_B+1%
 LDA_B_CL
 CALL :heap_push_C
 
 LDI_B 0x0052                # Root dir start (LSB)
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
 ALUOP16O_B %ALU16_B-1%
@@ -688,7 +688,7 @@ CALL :printf
 
 # Line 9
 LDI_B 0x0056                # Data space start (LSB)
-CALL :add16_to_b
+ALUOP16O_B %ALU16_A+B%
 LDA_B_CL
 CALL :heap_push_CL          # LSB byte
 ALUOP16O_B %ALU16_B-1%

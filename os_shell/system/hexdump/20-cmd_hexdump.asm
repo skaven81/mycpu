@@ -74,7 +74,7 @@ ALUOP_BH %A%+%AH%
 ALUOP_BL %A%+%AL%               # Copy range into B
 POP_AL
 POP_AH                          # Pop start address into A
-CALL :add16_to_b                # B=B+A -> end address
+ALUOP16O_B %ALU16_A+B%                # B=B+A -> end address
 
 # A contains start address
 # B contains end address
@@ -171,7 +171,7 @@ POP_AL
 # Increment start address to next row
 LDI_BH 0x00
 LDI_BL 0x10
-CALL :add16_to_a
+ALUOP16O_A %ALU16_A+B%
 
 # Restore end address from stack
 POP_BH

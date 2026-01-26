@@ -165,7 +165,7 @@ ALUOP_ADDR %B%+%BL% $odyexe_rewrites_remaining+1
 CALL :shift16_b_left        # multiply number of offsets by 2 to get bytes
 MOV_CH_AH
 MOV_CL_AL
-CALL :add16_to_a            # A now contains the address of the first byte of the program
+ALUOP16O_A %ALU16_A+B%            # A now contains the address of the first byte of the program
 ALUOP_ADDR %A%+%AH% $odyexe_first_byte_of_program
 ALUOP_ADDR %A%+%AL% $odyexe_first_byte_of_program+1
 
@@ -189,7 +189,7 @@ INCR_C                      # we'll find a reference to rewrite
 # read $ptr from [$base + $offset]
 LD_AH $odyexe_first_byte_of_binary
 LD_AL $odyexe_first_byte_of_binary+1
-CALL :add16_to_b            # B contains the address we want to rewrite;
+ALUOP16O_B %ALU16_A+B%            # B contains the address we want to rewrite;
                             # A contains the base address in memory
 LDA_B_DH
 ALUOP16O_B %ALU16_B+1%
@@ -207,7 +207,7 @@ ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
 MOV_DH_BH
 MOV_DL_BL
-CALL :add16_to_a            # add $first to $ptr
+ALUOP16O_A %ALU16_A+B%            # add $first to $ptr
 POP_BL
 POP_BH
 
