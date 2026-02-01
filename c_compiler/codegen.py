@@ -1172,8 +1172,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                             elif ts.sizeof() == 2:
                                 low = val & 0xff
                                 high = (val & 0xff00) >> 8
-                                parts.append(f"0x{low:02x}")
                                 parts.append(f"0x{high:02x}")
+                                parts.append(f"0x{low:02x}")
                                 vals.append(val & 0xffff)
                                 byte_count += 2
                             else:
@@ -1202,8 +1202,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                             elif ts.sizeof() == 2:
                                 low = val & 0xff
                                 high = (val & 0xff00) >> 8
-                                parts.append(f"0x{low:02x}")
                                 parts.append(f"0x{high:02x}")
+                                parts.append(f"0x{low:02x}")
                                 vals.append(val & 0xffff)
                                 byte_count += 2
                             else:
