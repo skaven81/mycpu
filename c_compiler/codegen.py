@@ -37,11 +37,18 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             else:
                 ret = visitor(node, mode, **kwargs)
         except Exception as e:
+            parts = [str(e)]
             if hasattr(node, 'coord') and node.coord:
-                parts = [str(e)]
-                parts.append(f"\n  At: {node.coord}")
-                e.args = ("\n".join(parts),) + e.args[1:] if len(e.args) > 1 else ("\n".join(parts),)
-            raise
+                parts.append(f"  At source: {node.coord}")
+            else:
+                parts.append(f"  AST node has no coord attribute")
+
+            # For SyntaxError, modify the msg attribute as it doesn't use args
+            if isinstance(e, SyntaxError):
+                e.msg = "\n".join(parts)
+
+            e.args = ("\n".join(parts),) + e.args[1:] if len(e.args) > 1 else ("\n".join(parts),)
+            raise e
         return ret
 
     def _get_label(self, name, prefix='.'):
