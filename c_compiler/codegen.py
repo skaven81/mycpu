@@ -627,7 +627,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 raise ValueError(f"Can't generate code for an unregistered variable")
             if node.init:
                 with self._debug_block(f"Initialize var {var.name}"):
-                    if var.is_array or var.typespec.is_struct:
+                    if (var.is_array or var.typespec.is_struct) and not var.is_pointer:
                         self.visit(c_ast.ID(name=var.name), mode='generate_lvalue', dest_reg='B')
                         init_var = self.visit(node.init, mode='generate_rvalue', dest_reg='A', dest_var=var)
                         if not init_var:
