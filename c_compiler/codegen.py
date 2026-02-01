@@ -1895,13 +1895,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"LDA_{addr_reg}_{dest_reg}H", f"Dereferenced load")
             if addr_reg in ('A', 'B',):
                 #           16-bit ALU op       low-op (stored to AL)        hi-op (if low-op overflowed) hi-op (if low-op no overflow)
-                self.emit(f"ALUOP16O_{dest_reg} %{dest_reg}+1%+%{dest_reg}L% %{dest_reg}+1%+%{dest_reg}H% %{dest_reg}%+%{dest_reg}H%", f"Dereferenced load")
+                self.emit(f"ALUOP16O_{addr_reg} %{addr_reg}+1%+%{addr_reg}L% %{addr_reg}+1%+%{addr_reg}H% %{addr_reg}%+%{addr_reg}H%", f"Dereferenced load")
             else:
                 self.emit(f"INCR_{addr_reg}", f"Dereferenced load")
             self.emit(f"LDA_{addr_reg}_{dest_reg}L", f"Dereferenced load")
             if addr_reg in ('A', 'B',):
                 #           16-bit ALU op       low-op (stored to AL)        hi-op (if low-op overflowed) hi-op (if low-op no overflow)
-                self.emit(f"ALUOP16O_{dest_reg} %{dest_reg}-1%+%{dest_reg}L% %{dest_reg}-1%+%{dest_reg}H% %{dest_reg}%+%{dest_reg}H%", f"Dereferenced load")
+                self.emit(f"ALUOP16O_{addr_reg} %{addr_reg}-1%+%{addr_reg}L% %{addr_reg}-1%+%{addr_reg}H% %{addr_reg}%+%{addr_reg}H%", f"Dereferenced load")
             else:
                 self.emit(f"DECR_{addr_reg}", f"Dereferenced load")
         else:
