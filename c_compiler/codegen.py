@@ -731,10 +731,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
                 # Local variable memory allocation
                 localvar_bytes = self._total_localvar_size(node)
-                if self.context.verbose >= 1:
-                    self.emit_debug(f"Found {localvar_bytes} bytes of local vars in this function")
+                self.emit_verbose(f"Found {localvar_bytes} bytes of local vars in this function")
                 # Advance stack pointer
-                self.param_offset = None
                 if localvar_bytes > 0:
                     self.emit(f"LDI_BL {localvar_bytes}", "Bytes to allocate for local vars")
                     self.emit(f"CALL :heap_advance_BL")
@@ -875,8 +873,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         this_node_size = 0
         if type(node) is c_ast.Decl and type(node.type) is not c_ast.FuncDecl:
             var = self.visit(node, mode='return_var', register_var=False)
+            this_node_size = var.sizeof() if var.storage_class != 'static' else 0
             if self.context.verbose >= 2:
-                this_node_size = var.sizeof() if var.storage_class != 'static' else 0
                 self.emit_debug(f"_total_localvar_size: Computed size of {var.friendly_name()} = {var.sizeof()} (effective={this_node_size})")
 
         recursive_sum = 0
