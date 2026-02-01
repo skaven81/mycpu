@@ -1093,8 +1093,14 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 if node.type == 'char':
                     parsed_value = f"'{parsed_value}'"
                 if not dest_var:
-                    self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} as {node.type}")
-                    return Variable(typespec=TypeSpec(node.type, node.type), name='const', qualifiers=['const'], is_virtual=True)
+                    ret_var = Variable(typespec=TypeSpec(node.type, node.type), name='const', qualifiers=['const'], is_virtual=True)
+                    if ret_var.typespec.sizeof() == 1:
+                        self.emit(f"LDI_{dest_reg}L {parsed_value}", f"Constant assignment {node.value} as {node.type}")
+                    elif ret_var.typespec.sizeof() == 2:
+                        self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} as {node.type}")
+                    else:
+                        raise ValueError("Unable to load integer constants larger than 16 bit: {ret_var.friendly_name()} (no dest_var)")
+                    return ret_var
                 elif dest_var.is_pointer:
                     self.emit(f"LDI_{dest_reg} {parsed_value}", f"Constant assignment {node.value} for pointer {dest_var.friendly_name()}")
                     return Variable(typespec=TypeSpec('int', 'int'), name='const', qualifiers=['const'], is_virtual=True)
