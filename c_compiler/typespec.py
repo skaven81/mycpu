@@ -24,6 +24,9 @@ class TypeSpec:
             except KeyError:
                 pass
 
+        if self.is_struct:
+            return False
+
         if 'unsigned' in self.base_type:
             return False
         if 'void' in self.base_type:
