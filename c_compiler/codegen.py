@@ -1760,12 +1760,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
                 # Generate rvalue into A
                 with self._debug_block(f"Assign: Generate rvalue"):
-                    if var.typespec.is_struct:
+                    if var.typespec.is_struct and not var.is_pointer:
                         # For structs, we need the source address
                         return_var = self.visit(node.rvalue, mode='generate_lvalue', dest_reg=dest_reg, dest_var=var)
                     else:
                         return_var = self.visit(node.rvalue, mode='generate_rvalue', dest_reg=dest_reg, dest_var=var)
-
                 # Store value
                 with self._debug_block(f"Assign: Store rvalue to lvalue"):
                     self._emit_store(var, lvalue_reg=other_reg, rvalue_reg=dest_reg)
