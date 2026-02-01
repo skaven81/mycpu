@@ -824,12 +824,20 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         with self._debug_block(f"FuncCall {func.name} push parameter {pv.friendly_name()}"):
                             if pv.is_pointer:
                                 rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_var=pv)
+                                if not rvalue_var.is_pointer and not rvalue_var.is_array:
+                                    raise SyntaxError(f"Incompatible types in function call, function param: {pv.friendly_name()}, call param: {rvalue_var.friendly_name()}")
                                 self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer)")
                             elif pv.is_array or pv.typespec.is_struct:
                                 rvalue_var = self.visit(an, mode='generate_lvalue', dest_reg='A', dest_var=pv)
+                                if pv.is_array and (not rvalue_var.is_pointer or not rvalue_var.is_array):
+                                    raise SyntaxError(f"Incompatible types in function call, function param: {pv.friendly_name()}, call param: {rvalue_var.friendly_name()}")
+                                if pv.typespec.is_struct and (not rvalue_var.is_pointer or not rvalue_var.typespec.is_struct):
+                                    raise SyntaxError(f"Incompatible types in function call, function param: {pv.friendly_name()}, call param: {rvalue_var.friendly_name()}")
                                 self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
                             else:
                                 rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_var=pv)
+                                if pv.sizeof() != rvalue_var.sizeof():
+                                    raise SyntaxError(f"Incompatible types in function call, function param: {pv.friendly_name()}, call param: {rvalue_var.friendly_name()}")
                                 if rvalue_var.is_array or rvalue_var.typespec.is_struct:
                                     self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
                                 elif rvalue_var.sizeof() == 1:
