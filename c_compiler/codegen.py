@@ -853,8 +853,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             for c in node.exprs:
                 last_var = self.visit(c, mode=mode, dest_reg=dest_reg, dest_var=dest_var, **kwargs)
             return last_var
+        elif mode == 'codegen':
+            for c in node.exprs:
+                self.visit(c, mode=mode, dest_reg=dest_reg, dest_var=dest_var, **kwargs)
         else:
-            raise NotImplementedError(f"visit_ExprList mode {mode} not yet supported")
+            raise NotImplementedError(f"visit_ExprList mode {mode} not yet supported: {node}")
 
     def _total_localvar_size(self, node) -> int:
         """
