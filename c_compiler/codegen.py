@@ -25,16 +25,23 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         method = 'visit_' + node.__class__.__name__
         visitor = getattr(self, method, self.generic_visit)
 
-        if self.context.verbose > 1:
-            node_name = None
-            if type(getattr(node, 'name', None)) is str:
-                node_name = node.name
-            elif type(getattr(getattr(node, 'name', None), 'name', None)) is str:
-                node_name = node.name.name
-            with self._debug_block(f"Visiting {node.__class__.__name__} {node_name if node_name else ''} mode {mode}"):
+        try:
+            if self.context.verbose > 1:
+                node_name = None
+                if type(getattr(node, 'name', None)) is str:
+                    node_name = node.name
+                elif type(getattr(getattr(node, 'name', None), 'name', None)) is str:
+                    node_name = node.name.name
+                with self._debug_block(f"Visiting {node.__class__.__name__} {node_name if node_name else ''} mode {mode}"):
+                    ret = visitor(node, mode, **kwargs)
+            else:
                 ret = visitor(node, mode, **kwargs)
-        else:
-            ret = visitor(node, mode, **kwargs)
+        except Exception as e:
+            if hasattr(node, 'coord') and node.coord:
+                parts = [str(e)]
+                parts.append(f"\n  At: {node.coord}")
+                e.args = ("\n".join(parts),) + e.args[1:] if len(e.args) > 1 else ("\n".join(parts),)
+            raise
         return ret
 
     def _get_label(self, name, prefix='.'):
