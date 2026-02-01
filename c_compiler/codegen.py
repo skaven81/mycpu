@@ -817,7 +817,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     arg_nodes = reversed(self.visit(node.args, mode='return_nodes'))
                     for pv, an in zip(param_vars, arg_nodes):
                         with self._debug_block(f"FuncCall {func.name} push parameter {pv.friendly_name()}"):
-                            if pv.is_pointer or pv.is_array or pv.typespec.is_struct:
+                            if pv.is_pointer:
+                                rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_var=pv)
+                                self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer)")
+                            elif pv.is_array or pv.typespec.is_struct:
                                 rvalue_var = self.visit(an, mode='generate_lvalue', dest_reg='A', dest_var=pv)
                                 self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer to {rvalue_var.friendly_name()})")
                             else:
