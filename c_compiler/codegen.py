@@ -1946,21 +1946,61 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"LDI_{dest_reg} {prefix}{var.padded_name()}", f"Load base address of {var.name} into {dest_reg}")
         else:
             other_reg = 'A' if dest_reg == 'B' else 'B'
-            # The naiive approach loading the offset into a register and calling :add16_to_reg
+            # The naiive approach loading the offset into a register and calling ALUOP16O
             #  ALUOP_PUSH -> 4 clocks
-            #  POP -> 2 clocks
+            #  ALUOP_PUSH -> 4 clocks
+            #  MOV_DH -> 2 clocks
+            #  MOV_DL -> 2 clocks
             #  LDI -> 4 clocks
-            #  CALL :add16_to_reg -> 8 (CALL) + 4+4+4 + 2 (RET) -> 22 clocks
-            # Total 43 clocks for the naiive method - expensive!
-
-            # We can load values much faster using INCR_D/DECR_D for small offsets.
+            #  ALUOP16O -> 8 clocks
+            #  POP -> 2 clocks
+            #  POP -> 2 clocks
+            #
+            # Total 28 clocks for the naiive method - expensive!
+            #
+            # We can load values faster using INCR_D/DECR_D for small offsets.
             #
             # For offset mode:
-            #  INCR/DECR (~1 clocks for each abs(offset))
+            #  INCR/DECR (2 clocks each); INCR4/DECR4 (5 clocks each); INCR8/DECR8 (9 clocks each)
             #  MOV_DH/MOV_DL (4 clocks total)
-            #  DECR/INCR (~1 clocks for each abs(offset))
-            # We can go up to +/- 20 and still finish with fewer clocks than the naiive approach
-            if abs(var.offset) <= 20:
+            #  DECR/INCR (2 clocks each); DECR4/INCR4 (5 clocks each); DECR8/INCR8 (9 clocks each)
+            #
+            #  offset clocks
+            #     1   8:        2+4+2
+            #     2   12:     2+2+4+2+2
+            #     3   16:   2+2+2+4+2+2+2
+            #     4   14:       5+4+5
+            #     5   18:     2+5+4+5+2
+            #     6   22:   2+2+5+4+5+2+2
+            #     7   26: 2+2+2+5+4+5+2+2+2
+            #     8   22:       9+4+9
+            #     9   26:     2+9+4+9+2
+            #
+            # For medium sized offsets, it seems like it would help to push/pop
+            # instead of doing incr then decr, but that's only the case for a narrow
+            # range of offsets (8-11).
+            #  PUSH_DH/DL (6 clocks)
+            #  INCR/DECR (2 clocks each); INCR4/DECR4 (5 clocks each); INCR8/DECR8 (9 clocks each)
+            #  MOV_DH/MOV_DL (4 clocks total)
+            #  POP_DH/DL (4 clocks)
+            #
+            #  offset clocks
+            #     1   16: 6+2+4+4
+            #     2   18: 6+2+2+4+4
+            #     3   20: 6+2+2+2+4+4
+            #     4   19: 6+5+4+4
+            #     5   21: 6+5+2+4+4
+            #     6   24: 6+5+2+2+4+4
+            #     7   26: 6+5+2+2+2+4+4
+            #     8   21: 6+9+4+4
+            #     9   23: 6+9+2+4+4
+            #    10   25: 6+9+2+2+4+4
+            #    11   27: 6+9+2+2+2+4+4
+            #
+            # So we stick with just two approaches: the incr+decr one, and the naive one.
+            #
+            # We can go up to +/- 9 and still finish with fewer clocks than the naiive approach
+            if abs(var.offset) <= 9:
                 eight, rest = divmod(abs(var.offset), 8)
                 four, one = divmod(rest, 4)
                 for _ in range(eight):
