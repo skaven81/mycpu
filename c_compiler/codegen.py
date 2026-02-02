@@ -207,11 +207,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             with self._debug_block("If block"):
                 with self._debug_block("If block: condition"):
                     cond_var = self.visit(node.cond, mode='generate_rvalue', dest_reg='A', **kwargs)
-                    self.emit(f"ALUOP_FLAGS %A%+%AL%", f"Check if condition")
-                    self.emit(f"JNZ {true_label}", f"Condition was true")
                     if cond_var.sizeof() == 2:
-                        self.emit(f"ALUOP_FLAGS %A%+%AH%", f"Check if condition")
-                        self.emit(f"JNZ {true_label}", f"Condition was true")
+                        #                          low      hi-if-Z  hi-if-NZ
+                        self.emit(f"ALUOP16Z_FLAGS %A%+%AL% %A%+%AH% %A%+%AL%", f"Check if condition")
+                    elif cond_var.sizeof() == 1:
+                        self.emit(f"ALUOP_FLAGS %A%+%AL%", f"Check if condition")
+                    self.emit(f"JNZ {true_label}", f"Condition was true")
                     self.emit_verbose("Condition was false")
                 with self._debug_block("If block: false condition"):
                     self.visit(node.iffalse, mode='codegen', **kwargs)
