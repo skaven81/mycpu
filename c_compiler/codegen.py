@@ -1729,12 +1729,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     else:
                         self.emit(f"ALUOP16O_FLAGS %ALU16_s{other_reg}-{dest_reg}%", f"Signed BinaryOp {node.op}: Subtract to check O flag")
                     self.emit(f"JO {label_overflow}", f"Signed BinaryOp {node.op}: If overflow, result will be {'true' if other_val else 'false'}")
-                    
+
                     # Signs are the same and there was no overflow, check if the operands are equal
                     if op_size == 2:
                         self.emit(f"ALUOP16E_FLAGS %A&B%+%AL%+%BL% %A&B%+%AH%+%BH% %A&B%+%AL%+%BL%", f"Signed BinaryOp {node.op}: check 16-bit equality")
                     self.emit(f"JEQ {label_equal}", f"Signed BinaryOp {node.op}: If equal, we know if true/false now")
-                    
+
                     # Operands were unequal, same sign, and no overflow on subtraction, so we need
                     # to check if the result sign differs from the operands' signs.
                     if op_size == 1:
