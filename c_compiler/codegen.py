@@ -1554,6 +1554,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"BinaryOp {node.op}: Save {other_reg} for generating rhs")
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"BinaryOp {node.op}: Save {other_reg} for generating rhs")
             return_var = None
+
+            # right/left_var_val will be defined if that operand is a constant literal
             with self._debug_block(f"BinaryOp {node.op}: Generate rhs into {other_reg}"):
                 right_var_val = None
                 try:
@@ -1591,15 +1593,24 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             if left_var_val and right_var_size == 1:
                 left_var_size = 1
 
-            # Compute the resulting op size
+            # Compute the resulting op size and whether it will be signed
+            signed_op = left_var.typespec.is_signed() or right_var.typespec.is_signed()
             if left_var.is_pointer or right_var.is_pointer:
                 op_size = 2
+                signed_op = False
             elif left_var_size == right_var_size == 1:
                 op_size = 1
             elif left_var_size == right_var_size == 2:
                 op_size = 2
             elif left_var_size != right_var_size:
-                raise ValueError(f"BinaryOp with incompatible types, left={left_var.friendly_name()}, right={right_var.friendly_name()}")
+                if left_var_size == 1 and right_var_size == 2:
+                    self.emit_sign_extend(dest_reg, left_var.typespec)
+                    op_size = 2
+                elif left_var_size == 2 and right_var_size == 1:
+                    self.emit_sign_extend(other_reg, left_var.typespec)
+                    op_size = 2
+                else:
+                    raise ValueError(f"BinaryOp with incompatible sized types, left={left_var.friendly_name()}, right={right_var.friendly_name()}")
             else:
                 raise ValueError(f"BinaryOp {node.op}: unsure what to do with these types > 2 bytes, left={left_var.friendly_name()}, right={right_var.friendly_name()}")
 
@@ -1694,7 +1705,131 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 else:
                     raise NotImplementedError(f"BinaryOp mode {mode} op {node.op} not implemented for non-constant shifts")
             elif node.op in ('<', '<=', '>', '>='):
-                raise NotImplementedError(f"BinaryOp mode {mode} op {node.op} not implemented")
+                default_val = 1 if node.op.startswith('<') else 0
+                other_val = 0 if node.op.startswith('<') else 1
+                label_equal = self._get_label("binaryop_equal")
+                label_done = self._get_label("binaryop_done")
+                label_diffsigns = self._get_label("binaryop_diffsigns")
+                label_overflow = self._get_label("binaryop_overflow")
+
+
+                if signed_op:
+                    # if operand signs are the same, we check for overflow.
+                    # Otherwise, we can use the left side sign bit to determine
+                    # the outcome
+                    if op_size == 1:
+                        self.emit(f"ALUOP_FLAGS %Amsb^Bmsb%+%AL%+%BL%", f"Signed BinaryOp {node.op}: Check if signs differ")
+                    else:
+                        self.emit(f"ALUOP_FLAGS %Amsb^Bmsb%+%AH%+%BH%", f"Signed BinaryOp {node.op}: Check if signs differ")
+                    self.emit(f"JNZ {label_diffsigns}", f"Signed BinaryOp {node.op}: XOR of MSB == 0 if signs are the same, or nonzero if signs differ")
+
+                    # Signs are the same, so we need to check for overflow
+                    if op_size == 1:
+                        self.emit(f"ALUOP_FLAGS %{other_reg}-{dest_reg}_signed%+%{other_reg}L%+%{dest_reg}L%", f"Signed BinaryOp {node.op}: Subtract to check E and O flags")
+                    else:
+                        self.emit(f"ALUOP16O_FLAGS %ALU16_s{other_reg}-{dest_reg}%", f"Signed BinaryOp {node.op}: Subtract to check O flag")
+                    self.emit(f"JO {label_overflow}", f"Signed BinaryOp {node.op}: If overflow, result will be {'true' if other_val else 'false'}")
+                    
+                    # Signs are the same and there was no overflow, check if the operands are equal
+                    if op_size == 2:
+                        self.emit(f"ALUOP16E_FLAGS %A&B%+%AL%+%BL% %A&B%+%AH%+%BH% %A&B%+%AL%+%BL%", f"Signed BinaryOp {node.op}: check 16-bit equality")
+                    self.emit(f"JEQ {label_equal}", f"Signed BinaryOp {node.op}: If equal, we know if true/false now")
+                    
+                    # Operands were unequal, same sign, and no overflow on subtraction, so we need
+                    # to check if the result sign differs from the operands' signs.
+                    if op_size == 1:
+                        self.emit(f"ALUOP_{dest_reg}L %{other_reg}-{dest_reg}_signed%+%{other_reg}L%+%{dest_reg}L%", f"Signed BinaryOp {node.op}: Subtract to check for sign change")
+                        self.emit(f"ALUOP_FLAGS %Amsb^Bmsb%+%AL%+%BL%", f"Signed BinaryOp {node.op}: Compare signs")
+                        self.emit(f"LDI_{dest_reg}L {default_val}", f"Signed BinaryOp {node.op}: Assume no sign change -> {'true' if default_val else 'false'}")
+                    else:
+                        self.emit(f"ALUOP16O_{dest_reg} %ALU16_s{other_reg}-{dest_reg}%", f"Signed BinaryOp {node.op}: Subtract to check for sign change")
+                        self.emit(f"ALUOP_FLAGS %Amsb^Bmsb%+%AH%+%BH%", f"Signed BinaryOp {node.op}: Compare signs")
+                        self.emit(f"LDI_{dest_reg} {default_val}", f"Signed BinaryOp {node.op}: Assume no sign change -> {'true' if default_val else 'false'}")
+                    self.emit(f"JZ {label_done}", f"Signed BinaryOp {node.op}: Assume signs were the same")
+                    if op_size == 1:
+                        self.emit(f"LDI_{dest_reg}L {other_val}", f"Signed BinaryOp {node.op}: Signs were different -> {'true' if other_val else 'false'}")
+                    else:
+                        self.emit(f"LDI_{dest_reg} {other_val}", f"Signed BinaryOp {node.op}: Signs were different -> {'true' if other_val else 'false'}")
+                    self.emit(f"JMP {label_done}", f"Signed BinaryOp {node.op}: Signs were different")
+
+                    # If operands were equal, < and > return false, and <= and >= return true
+                    self.emit(f"{label_equal}")
+                    if op_size == 1:
+                        if node.op.endswith('='):
+                            self.emit(f"LDI_{dest_reg}L 1", f"Signed BinaryOp {node.op}: true because equal")
+                        else:
+                            self.emit(f"LDI_{dest_reg}L 0", f"Signed BinaryOp {node.op}: false because equal")
+                    else:
+                        if node.op.endswith('='):
+                            self.emit(f"LDI_{dest_reg} 1", f"Signed BinaryOp {node.op}: true because equal")
+                        else:
+                            self.emit(f"LDI_{dest_reg} 0", f"Signed BinaryOp {node.op}: false because equal")
+                    self.emit(f"JMP {label_done}")
+
+                    # If signs were the same and subtraction triggered a signed overflow, then 
+                    self.emit(f"{label_overflow}")
+                    if op_size == 1:
+                        self.emit(f"LDI_{dest_reg}L {other_val}", f"Signed BinaryOp {node.op}: {'true' if other_val else 'false'} because signed overflow")
+                    else:
+                        self.emit(f"LDI_{dest_reg} {other_val}", f"Signed BinaryOp {node.op}: {'true' if other_val else 'false'} because signed overflow")
+                    self.emit(f"JMP {label_done}")
+
+                    # If signs differ, use the left side sign to determine result
+                    self.emit(f"{label_diffsigns}")
+                    if op_size == 1:
+                        self.emit(f"ALUOP_FLAGS %{dest_reg}msb%+%{dest_reg}L%", f"Signed BinaryOp {node.op}: Check sign of left operand")
+                    else:
+                        self.emit(f"ALUOP_FLAGS %{dest_reg}msb%+%{dest_reg}H%", f"Signed BinaryOp {node.op}: Check sign of left operand")
+                    if op_size == 1:
+                        self.emit(f"LDI_{dest_reg}L {default_val}", f"Signed BinaryOp {node.op}: assume {'true' if default_val else 'false'}")
+                    else:
+                        self.emit(f"LDI_{dest_reg} {default_val}", f"Signed BinaryOp {node.op}: assume {'true' if default_val else 'false'}")
+                    self.emit(f"JNZ {label_done}", f"Signed BinaryOpn {node.op}: if left side sign bit is set, return {'true' if default_val else 'false'}")
+                    if op_size == 1:
+                        self.emit(f"LDI_{dest_reg}L {other_val}", f"Signed BinaryOp {node.op}: flip to {'true' if other_val else 'false'}")
+                    else:
+                        self.emit(f"LDI_{dest_reg} {other_val}", f"Signed BinaryOp {node.op}: flip to {'true' if other_val else 'false'}")
+                    self.emit(f"{label_done}")
+
+                else:
+                    # unsigned subtraction, check for overflow and equality
+                    if op_size == 1:
+                        self.emit(f"ALUOP_FLAGS %{other_reg}-{dest_reg}%+%{other_reg}L%+%{dest_reg}L%", f"Unsigned BinaryOp {node.op}: Subtract to check E and O flags")
+                        # If operands are equal, < and > return false, but <= and >= return true
+                        self.emit(f"JEQ {label_equal}", f"BinaryOp {node.op}: check if equal")
+                        # O flag is still valid here
+                    else:
+                        self.emit(f"ALUOP16E_FLAGS %A&B%+%AL%+%BL% %A&B%+%AH%+%BH% %A&B%+%AL%+%BL%", f"Unsigned BinaryOp {node.op}: Check for equality")
+                        # If operands are equal, < and > return false, but <= and >= return true
+                        self.emit(f"JEQ {label_equal}", f"BinaryOp {node.op}: check if equal")
+                        # O flag is not valid after ALUOP16E operation, so we do it again to get O flag
+                        self.emit(f"ALUOP16O_FLAGS %ALU16_{other_reg}-{dest_reg}%", f"Unsigned BinaryOp {node.op}: Subtract to check O flag")
+
+                    # Operands were not equal, so true/false depends on overflow flag
+                    if op_size == 1:
+                        self.emit(f"LDI_{dest_reg}L {default_val}", f"BinaryOp {node.op}: assume {'true' if {default_val} else 'false'}")
+                    else:
+                        self.emit(f"LDI_{dest_reg} {default_val}", f"BinaryOp {node.op}: assume {'true' if {default_val} else 'false'}")
+                    self.emit(f"JNO {label_done}", f"BinaryOp {node.op} unsigned: no overflow, so baseline assumption is correct")
+                    if op_size == 1:
+                        self.emit(f"LDI_{dest_reg}L {other_val}", f"BinaryOp {node.op}: overflow, so {'true' if other_val else 'false'}")
+                    else:
+                        self.emit(f"LDI_{dest_reg} {other_val}", f"BinaryOp {node.op}: overflow, so {'true' if other_val else 'false'}")
+                    self.emit(f"JMP {label_done}")
+
+                    # If operands are equal, < and > return false, but <= and >= return true
+                    self.emit(f"{label_equal}")
+                    if op_size == 1:
+                        if node.op.endswith('='):
+                            self.emit(f"LDI_{dest_reg}L 1", f"BinaryOp {node.op}: operands equal: true")
+                        else:
+                            self.emit(f"LDI_{dest_reg}L 0", f"BinaryOp {node.op}: operands equal: false")
+                    else:
+                        if node.op.endswith('='):
+                            self.emit(f"LDI_{dest_reg} 1", f"BinaryOp {node.op}: operands equal: true")
+                        else:
+                            self.emit(f"LDI_{dest_reg} 0", f"BinaryOp {node.op}: operands equal: false")
+                    self.emit(f"{label_done}")
             else:
                 raise NotImplementedError(f"BinaryOp mode {mode} op {node.op} not implemented")
 
@@ -1723,7 +1858,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
             return return_var
         else:
-            raise NotImplementedError(f"visit_BinaryOp op {node.op} not yet supported")
+            raise NotImplementedError(f"visit_BinaryOp op {node.op} mode {mode} not yet supported")
 
     def visit_Compound(self, node, mode, **kwargs):
         if mode in ('literal_collection',):
