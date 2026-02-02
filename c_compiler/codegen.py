@@ -945,8 +945,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 name=f"{base_var.name}_element",
                 is_array=len(base_var.array_dims) > 1,  # Still array if multi-dimensional
                 array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else [],
-                is_pointer=base_var.is_pointer,
-                pointer_depth=base_var.pointer_depth,
+                pointer_depth=base_var.pointer_depth - 1,
+                is_pointer=base_var.pointer_depth > 1,
                 is_virtual=True,
             )
             return element_var
@@ -1025,8 +1025,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             name=f"{base_var.name}_element",
             is_array=len(base_var.array_dims) > 1,  # Still array if multi-dimensional
             array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else [],
-            is_pointer=base_var.is_pointer,
-            pointer_depth=base_var.pointer_depth,
+            pointer_depth=base_var.pointer_depth - 1,
+            is_pointer=base_var.pointer_depth > 1,
             is_virtual=True,
         )
 
