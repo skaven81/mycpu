@@ -967,7 +967,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         # Get base address into other_reg
         # For nested ArrayRef, this recursively computes the address
         with self._debug_block(f"Get base address of {base_var.friendly_name()} into {other_reg}"):
-            self.visit(node.name, mode='generate_lvalue', dest_reg=other_reg)
+            if base_var.is_pointer:
+                self.visit(node.name, mode='generate_rvalue', dest_reg=other_reg)
+            else:
+                self.visit(node.name, mode='generate_lvalue', dest_reg=other_reg)
 
         # Compute subscript (offset) into dest_reg
         with self._debug_block(f"Get subscript value into {dest_reg}"):
@@ -984,6 +987,17 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             # Restore base address
             self.emit(f"POP_{other_reg}L", f"ArrayRef Restore base address in {other_reg}")
             self.emit(f"POP_{other_reg}H", f"ArrayRef Restore base address in {other_reg}")
+
+        # Create result variable (one dimension removed)
+        element_var = Variable(
+            typespec=base_var.typespec,
+            name=f"{base_var.name}_element",
+            is_array=len(base_var.array_dims) > 1,  # Still array if multi-dimensional
+            array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else [],
+            pointer_depth=base_var.pointer_depth - 1,
+            is_pointer=base_var.pointer_depth > 1,
+            is_virtual=True,
+        )
 
         # Compute element address: base + (index * element_size)
         with self._debug_block(f"Compute element address into {other_reg}"):
@@ -1003,12 +1017,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 element_size = base_var.typespec.sizeof()
                 for dim in base_var.array_dims[1:]:  # Skip first dimension, multiply rest
                     element_size *= dim
-            elif base_var.is_pointer:
+            elif element_var.is_pointer:
                 # Array of pointers, each element is 2 bytes
                 element_size = 2
             else:
                 # Single dimension (or final dimension): use base element size
-                element_size = base_var.typespec.sizeof()
+                element_size = element_var.sizeof()
 
             self.emit_debug(f"Element size for dimension: {element_size} bytes")
 
@@ -1018,17 +1032,6 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 index_reg=dest_reg,
                 addr_reg=other_reg
             )
-
-        # Create result variable (one dimension removed)
-        element_var = Variable(
-            typespec=base_var.typespec,
-            name=f"{base_var.name}_element",
-            is_array=len(base_var.array_dims) > 1,  # Still array if multi-dimensional
-            array_dims=base_var.array_dims[1:] if len(base_var.array_dims) > 1 else [],
-            pointer_depth=base_var.pointer_depth - 1,
-            is_pointer=base_var.pointer_depth > 1,
-            is_virtual=True,
-        )
 
         if mode == 'generate_lvalue':
             # Copy element address from other_reg to dest_reg
