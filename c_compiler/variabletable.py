@@ -14,6 +14,7 @@ class VariableTable:
         self.scopes = []
         self.local_statics = {}
         self.localvar_offset = 1
+        self.current_function = None
     
     def push_scope(self):
         """Enter a new scope"""
@@ -58,7 +59,10 @@ class VariableTable:
         if variable.storage_class == 'static':
             if variable.name in self.local_statics:
                 raise ValueError(f"Found duplicate static local variable definition for {variable.name}")
-            self.local_statics[variable.name] = variable
+            if not self.current_function:
+                raise ValueError("Static local var added without current function defined")
+            variable.function_context = self.current_function
+            self.local_statics[variable.padded_name()] = variable
 
     def lookup(self, name) -> Variable:
         """Look up a variable by name"""
@@ -68,6 +72,13 @@ class VariableTable:
         
         if name in self.globals:
             return self.globals[name]
+
+        # hack so that we can lookup local statics at the end of the
+        # code generation phase for initialization
+        if len(self.scopes) == 0:
+            for padded_name, var in self.local_statics.items():
+                if var.name == name:
+                    return var
         
         return None
 

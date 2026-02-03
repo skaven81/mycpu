@@ -141,10 +141,15 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             with self._debug_block("Global var declaration"):
                 for c in node:
                     if type(c) is c_ast.Decl:
-                        self.visit(c, mode=mode, **kwargs)
+                        self.visit(c, mode=mode, generate_init=True, **kwargs)
                         visited_toplevel_nodes.append(c)
             self.emit_debug("#"*40)
             self.emit_verbose("")
+
+            # Call to initializer function at end of
+            # code, for declaring local static vars
+            localvar_init_label = self._get_label("local_static_init")
+            self.emit(f"CALL {localvar_init_label}")
 
             # Generate the jump-to-main if configured
             main_func = self.context.funcreg.lookup('main')
@@ -163,6 +168,25 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         visited_toplevel_nodes.append(c)
             self.emit_debug("#"*40)
             self.emit_verbose("")
+
+            # Generate the local static var initializer function
+            self.emit_debug("#"*40)
+            with self._debug_block("Static local var declaration"):
+                self.emit(f"{localvar_init_label}")
+                for var in self.context.vartable.get_all_local_statics():
+                    if not var.init_node:
+                        raise SyntaxError(f"Variable {var.friendly_name()} has no initializer node")
+                    with self._debug_block(f"Initialize var {var.name}"):
+                        if (var.is_array or var.typespec.is_struct) and not var.is_pointer:
+                            self.visit(c_ast.ID(name=var.name), mode='generate_lvalue', dest_reg='B')
+                            init_var = self.visit(var.init_node, mode='generate_rvalue', dest_reg='A', dest_var=var)
+                            if not init_var:
+                                raise ValueError(f"Cannot safely init var {var.name} without init list size")
+                            self.emit_debug(f"init_var sizeof: {init_var.sizeof()}, var sizeof: {var.sizeof()}")
+                            self._emit_bulk_store(var, lvalue_reg='B', rvalue_reg='A', bytes=min(init_var.sizeof(), var.sizeof()))
+                        else:
+                            self.visit(c_ast.Assignment(op='=', lvalue=c_ast.ID(name=var.name), rvalue=var.init_node), mode='codegen')
+                self.emit("RET")
 
             # Generate data block: constant literals
             prefix = self._get_static_prefix()
@@ -554,7 +578,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             raise NotImplementedError(f"visit_StructRef mode {mode} not yet supported")
 
-    def visit_Decl(self, node, mode, var_kind=None, register_var=True, **kwargs):
+    def visit_Decl(self, node, mode, var_kind=None, register_var=True, generate_init=False, **kwargs):
         if mode in ('return_typespec', 'type_collection',):
             return self.visit(node.type, mode=mode, **kwargs)
         elif mode == 'function_collection':
@@ -602,6 +626,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 elif self.context.vartable.get_scope_depth() == 0:
                     # global var declaration
                     new_var.kind = 'global'
+                    if node.init:
+                        new_var.init_node = node.init
                     if register_var:
                         self.context.vartable.add(new_var)
                     self.emit_verbose(f"Registered {new_var.kind} variable {new_var.friendly_name()}")
@@ -610,6 +636,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     # local var declaration
                     new_var.kind = 'local'
                     if register_var:
+                        if node.init and new_var.storage_class == 'static':
+                            new_var.init_node = node.init
                         self.context.vartable.add(new_var) # registration sets the offset
                         new_var = self.context.vartable.lookup(new_var.name)
                         self.emit_verbose(f"Registered {new_var.kind} variable {new_var.friendly_name()}, size {new_var.sizeof()} at offset {new_var.offset}")
@@ -626,7 +654,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             var = self.visit(node, mode='return_var')
             if not var:
                 raise ValueError(f"Can't generate code for an unregistered variable")
-            if node.init:
+            if node.init and (generate_init or (var.kind != 'global' and not (var.kind == 'local' and var.storage_class == 'static'))):
                 with self._debug_block(f"Initialize var {var.name}"):
                     if (var.is_array or var.typespec.is_struct) and not var.is_pointer:
                         self.visit(c_ast.ID(name=var.name), mode='generate_lvalue', dest_reg='B')
@@ -716,6 +744,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             return
         elif mode == 'codegen':
             # Enter a new scope
+            self.context.vartable.current_function = node.decl.name
             self.context.vartable.push_scope()
 
             # Function header and prologue
@@ -788,6 +817,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 # parameter vars from the variable table
                 self.emit_stackpop()
                 self.context.vartable.pop_scope()
+                self.context.vartable.current_function = None
 
                 # Return
                 self.emit("RET")

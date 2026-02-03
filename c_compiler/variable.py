@@ -22,12 +22,16 @@ class Variable:
     is_struct_member: bool = False
     is_type_wrapper: bool = False
     is_virtual: bool = False
+    init_node: Optional = None
+    function_context: Optional[str] = None # for local statics, the function it's defined in
 
     # the assembler can't handle labels shorter than 4 characters, so
     # make sure all variable names get padded out when converted to labels
     def padded_name(self):
         if self.storage_class == 'extern':
             return self.name
+        if self.function_context:
+            return f"var_{self.function_context}_{self.name}"
         return f"var_{self.name}"
 
     def friendly_name(self):
