@@ -1926,6 +1926,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 # Get destination address into B
                 with self._debug_block(f"Assign: Generate lvalue address"):
                     var = self.visit(node.lvalue, mode='generate_lvalue', dest_reg=other_reg)
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save lvalue address in case rvalue generation clobbers {other_reg}")
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save lvalue address in case rvalue generation clobbers {other_reg}")
 
                 # Generate rvalue into A
                 with self._debug_block(f"Assign: Generate rvalue"):
@@ -1936,6 +1938,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         return_var = self.visit(node.rvalue, mode='generate_rvalue', dest_reg=dest_reg, dest_var=var)
                 # Store value
                 with self._debug_block(f"Assign: Store rvalue to lvalue"):
+                    self.emit(f"POP_{other_reg}L", f"Restore lvalue address")
+                    self.emit(f"POP_{other_reg}H", f"Restore lvalue address")
                     self._emit_store(var, lvalue_reg=other_reg, rvalue_reg=dest_reg)
             elif node.op.endswith('='): # +=, -=, etc.
                 # Generate rvalue through a synthetic BinaryOp
@@ -1943,6 +1947,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 # Get destination address into B
                 with self._debug_block(f"Compound Assign {node.op}: Generate lvalue address"):
                     var = self.visit(node.lvalue, mode='generate_lvalue', dest_reg=other_reg)
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save lvalue address in case rvalue generation clobbers {other_reg}")
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save lvalue address in case rvalue generation clobbers {other_reg}")
 
                 # Generate value into A
                 with self._debug_block(f"Compound Assign {node.op}: Generate rvalue"):
@@ -1953,6 +1959,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
                 # Store value
                 with self._debug_block(f"Compound Assign {node.op}: Store rvalue to lvalue"):
+                    self.emit(f"POP_{other_reg}L", f"Restore lvalue address")
+                    self.emit(f"POP_{other_reg}H", f"Restore lvalue address")
                     self._emit_store(var, lvalue_reg=other_reg, rvalue_reg=dest_reg)
 
             else:
