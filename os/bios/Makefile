@@ -5,11 +5,17 @@ include ../config.mk
 #------------------------------------------------------------------------------
 # Source Discovery - Use Make's wildcard and sort
 #------------------------------------------------------------------------------
-BIOS_SOURCES := $(sort $(wildcard *.asm))
-LIBS := $(sort $(wildcard lib/*.asm))
-C_SOURCES ?= $(sort $(wildcard *.c) $(wildcard lib/*.c))
-C_ASMS := $(C_SOURCES:.c=.asm)
-ALL_SOURCES := $(BIOS_SOURCES) $(LIBS) $(C_ASMS)
+BIOS_C := $(sort $(wildcard *.c))
+BIOS_C_ASM := $(BIOS_C:.c=.asm)
+BIOS_ASM := $(filter-out $(BIOS_C_ASM), $(wildcard *.asm))
+BIOS_SOURCES := $(sort $(BIOS_C_ASM) $(BIOS_ASM))
+
+LIBS_C := $(sort $(wildcard lib/*.c))
+LIBS_C_ASM := $(LIBS_C:.c=.asm)
+LIBS_ASM := $(filter-out $(LIBS_C_ASM), $(wildcard lib/*.asm))
+LIBS_SOURCES := $(sort $(LIBS_C_ASM) $(LIBS_ASM))
+
+ALL_SOURCES := $(BIOS_SOURCES) $(LIBS_SOURCES)
 
 #------------------------------------------------------------------------------
 # Targets
