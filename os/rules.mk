@@ -21,11 +21,11 @@ all: $(FILENAME)
 # Source Discovery - Pure Make functions
 #------------------------------------------------------------------------------
 # sort removes duplicates and sorts (Make built-in)
-ASM_SOURCES ?= $(sort $(wildcard *.asm))
 C_SOURCES ?= $(sort $(wildcard *.c))
-
 # ASM files built from C sources (ephemeral)
 C_ASMS := $(C_SOURCES:.c=.asm)
+# ASM sources are any ASMs that weren't built by a compiler
+ASM_SOURCES ?= $(sort $(filter-out $(C_ASMS), $(wildcard *.asm)))
 
 # All ASM files
 ALL_ASMS := $(ASM_SOURCES) $(C_ASMS)
