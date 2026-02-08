@@ -6,7 +6,8 @@ include ../config.mk
 # Configuration
 #------------------------------------------------------------------------------
 FILENAME := SYSTEM.ODY
-INSTALL_SUBDIR :=  # Install to root of SD card
+# Install to root of SD card
+INSTALL_SUBDIR :=
 
 include ../rules.mk
 

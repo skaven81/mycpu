@@ -13,6 +13,6 @@ include ../../config.mk
 # C_INCLUDES += -I../../somelib     # Add additional include directories
 # MEM_TARGET := ext-d,ext-e,ext-de  # Override default memory target
 
-INSTALL_SUBDIR := SYS  # Install to /SYS/ subdirectory on SD card
+INSTALL_SUBDIR := SYS
 
 include ../../rules.mk

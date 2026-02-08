@@ -67,7 +67,7 @@ clean-opcodes:
 sdcard: $(FILENAME)
 	$(Q)test -d $(INSTALL_DIRECTORY) || ( echo "ERROR: $(INSTALL_DIRECTORY) does not exist" && exit 1 )
 	$(Q)mkdir -p $(INSTALL_DIRECTORY)/$(INSTALL_SUBDIR)
-	$(Q)echo "  INSTALL $(FILENAME) -> $(INSTALL_DIRECTORY)/$(INSTALL_SUBDIR)/"
+	$(Q)echo "  INSTALL $(FILENAME) -> $(INSTALL_DIRECTORY)/$(INSTALL_SUBDIR)/$(FILENAME)"
 	$(Q)cp $(FILENAME) $(INSTALL_DIRECTORY)/$(INSTALL_SUBDIR)/$(FILENAME)
 
 #------------------------------------------------------------------------------

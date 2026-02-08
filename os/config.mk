@@ -19,6 +19,7 @@ OPCODES_FILE := $(ASSEMBLER_DIR)/opcodes.out
 
 # Installation
 INSTALL_DIRECTORY := /media/skaven/ODYSSEY
+INSTALL_SUBDIR := SYS
 
 #------------------------------------------------------------------------------
 # Tools
