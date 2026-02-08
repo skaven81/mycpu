@@ -2085,10 +2085,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             shifts = {2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6, 128: 7}[element_size]
             for _ in range(shifts):
                 self.emit(f"ALUOP16O_{index_reg} %{index_reg}<<1%+%{index_reg}L% %{index_reg}<<1%+%{index_reg}H%+%Cin% %{index_reg}<<1%+%{index_reg}H%", f"Multiply array offset in {index_reg} by element size {element_size}")
-            self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
+            self.emit(f"ALUOP16O_{addr_reg} %ALU16_A+B%", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
         elif element_size <= 8:
             for _ in range(element_size):
-                self.emit(f"CALL :add16_to_{addr_reg.lower()}", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
+                self.emit(f"ALUOP16O_{addr_reg} %ALU16_A+B%", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
         else:
             # Fallback to multiplication
             self.emit(f"CALL :heap_push_{index_reg}", f"Multiply array offset in {index_reg} by element size {element_size} to address reg {addr_reg}")
