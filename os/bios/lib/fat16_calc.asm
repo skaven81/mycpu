@@ -305,7 +305,7 @@ JNZ .next_cluster_ata_err
 # Add 2x low byte of cluster to extended memory address
 LDI_AH 0x00
 POP_AL                          # Pop low byte of cluster number
-CALL :shift16_a_left
+ALUOP16O_A %ALU16_A<<1%
 
 LDI_B 0xe000
 ALUOP16O_B %ALU16_A+B%                # B contains address of cluster

@@ -176,172 +176,6 @@ ALUOP16O_B %ALU16_B+1%
 ALUOP_FLAGS %B%+%BL%                # clear O flag
 RET
 
-
-:incr16_a
-# Increments the 16-bit value in the A register
-#
-# Inputs:
-#  AL+AH - the value to be incremented
-ALUOP_AL %A+1%+%AL%
-JNO .incr16a_done
-ALUOP_AH %A+1%+%AH%
-.incr16a_done
-RET
-
-:decr16_a
-# Decrements the 16-bit value in the A register
-#
-# Inputs:
-#  AL+AH - the value to be incremented
-ALUOP_AL %A-1%+%AL%
-JNO .decr16a_done
-ALUOP_AH %A-1%+%AH%
-.decr16a_done
-RET
-
-:incr16_b
-# Increments the 16-bit value in the B register
-#
-# Inputs:
-#  BL+BH - the value to be incremented
-ALUOP_BL %B+1%+%BL%
-JNO .incr16b_done
-ALUOP_BH %B+1%+%BH%
-.incr16b_done
-RET
-
-:decr16_b
-# Decrements the 16-bit value in the B register
-#
-# Inputs:
-#  BL+BH - the value to be incremented
-ALUOP_BL %B-1%+%BL%
-JNO .decr16b_done
-ALUOP_BH %B-1%+%BH%
-.decr16b_done
-RET
-
-:signed_add16_to_a
-# Adds 16-bit values A+B, stores result in A,
-# sets overflow flag if a signed overflow occurs
-# Note that E and Z flags cannot be trusted
-#
-# Inputs:
-#  A - first operand, and result
-#  B - second operand
-ALUOP_AL %A+B%+%AL%+%BL%
-JO .signed_add16_to_a_overflow
-ALUOP_AH %A+B_signed%+%AH%+%BH%
-RET
-.signed_add16_to_a_overflow
-ALUOP_AH %A+B+1_signed%+%AH%+%BH%
-RET
-
-:signed_sub16_a_minus_b
-# Subtracts signed 16-bit values A-B, stores result in A
-#
-# Inputs:
-#  A - first operand
-#  B - second operand
-#
-# Outputs:
-#  A - result
-#  B - unchanged
-#  O flag will be set if overflow occurred (contents of A will be invalid)
-ALUOP_AL %A-B%+%AL%+%BL%
-JO .signed_sub16_a_minus_b_borrow
-ALUOP_AH %A-B_signed%+%AH%+%BH%
-RET
-.signed_sub16_a_minus_b_borrow
-ALUOP_AH %A-B-1_signed%+%AH%+%BH%
-RET
-
-:signed_sub16_b_minus_a
-# Subtracts signed 16-bit values B-A, stores result in B
-#
-# Inputs:
-#  A - second operand
-#  B - first operand
-#
-# Outputs:
-#  A - result
-#  B - unchanged
-#  O flag will be set if overflow occurred (contents of A will be invalid)
-ALUOP_BL %B-A%+%AL%+%BL%
-JO .signed_sub16_b_minus_a_borrow
-ALUOP_BH %B-A_signed%+%AH%+%BH%
-RET
-.signed_sub16_b_minus_a_borrow
-ALUOP_BH %B-A-1_signed%+%AH%+%BH%
-RET
-
-:add16_to_a
-# Adds 16-bit values A+B, stores result in A
-#
-# Inputs:
-#  AL+AH - first operand
-#  BL+BH - second operand
-ALUOP_AL %A+B%+%AL%+%BL%
-JNO .add16_to_a_high
-ALUOP_AH %A+B%+%AH%+%BH%+%Cin%
-RET
-.add16_to_a_high
-ALUOP_AH %A+B%+%AH%+%BH%
-RET
-
-:add16_to_b
-# Adds 16-bit values A+B, stores result in B
-#
-# Inputs:
-#  AL+AH - first operand
-#  BL+BH - second operand
-ALUOP_BL %A+B%+%AL%+%BL%
-JNO .add16_to_b_high
-ALUOP_BH %A+B%+%AH%+%BH%+%Cin%
-RET
-.add16_to_b_high
-ALUOP_BH %A+B%+%AH%+%BH%
-RET
-
-:sub16_a_minus_b
-# Subtracts 16-bit values A-B, stores result in A
-#
-# Inputs:
-#  AL+AH - first operand
-#  BL+BH - second operand
-ALUOP_AL %A-B%+%AL%+%BL%
-JO .sub16_a_minus_b_borrow
-ALUOP_AH %A-B%+%AH%+%BH%
-RET
-.sub16_a_minus_b_borrow
-ALUOP_AH %A-B%+%AH%+%BH%+%Cin%
-RET
-
-:sub16_b_minus_a
-# Subtracts 16-bit values B-A, stores result in B
-#
-# Inputs:
-#  AL+AH - first operand
-#  BL+BH - second operand
-ALUOP_BL %B-A%+%AL%+%BL%
-JO .sub16_b_minus_a_borrow
-ALUOP_BH %B-A%+%AH%+%BH%
-RET
-.sub16_b_minus_a_borrow
-ALUOP_BH %B-A%+%AH%+%BH%+%Cin%
-RET
-
-:shift16_a_left
-# Performs a 16-bit left shift of A
-# overflow flag will be set if a bit carried out
-ALUOP_AL %A<<1%+%AL%                # shift AL
-JNO .shift16_a_left_nooverflow      # if overflow,
-ALUOP_AH %A<<1%+%AH%+%Cin%          #   shift AH with Cin
-RET                                 #   and return
-.shift16_a_left_nooverflow          # otherwise,
-ALUOP_AH %A<<1%+%AH%                #   shift AH without Cin
-RET                                 #   and return
-
 :shift16_a_right
 # Performs a 16-bit right shift of A
 ALUOP_PUSH %B%+%BL%
@@ -355,17 +189,6 @@ ALUOP_AH %A>>1%+%AH%                # shift AH
 POP_BL                              # restore BL
 RET                                 # and return
 
-
-:shift16_b_left
-# Performs a 16-bit left shift of B
-# overflow flag will be set if a bit carried out
-ALUOP_BL %B<<1%+%BL%                # shift BL
-JNO .shift16_b_left_nooverflow      # if overflow,
-ALUOP_BH %B<<1%+%BH%+%Cin%          #   shift BH with Cin
-RET                                 #   and return
-.shift16_b_left_nooverflow          # otherwise,
-ALUOP_BH %B<<1%+%BH%                #   shift BH without Cin
-RET                                 #   and return
 
 :shift16_b_right
 # Performs a 16-bit right shift of B
@@ -398,7 +221,7 @@ LDI_A 0x0000
 LDI_BH 7
 
 .ddbyte_loop
-CALL :shift16_a_left            # shift the A register left.  This left a 0 in the LSB of AL.
+ALUOP16O_A %ALU16_A<<1%            # shift the A register left.  This left a 0 in the LSB of AL.
 ALUOP_BL %B<<1%+%BL%            # shift the BL register left.
 JNO .dd_byte_noover             # if no overflow, do nothing
 ALUOP_AL %A+1%+%AL%             #   otherwise, set the first bit in AL
@@ -444,7 +267,7 @@ POP_BH
 ALUOP_BH %B-1%+%BH%             # loop if we have bits left in BL
 JNZ .ddbyte_loop
 
-CALL :shift16_a_left            # shift the A register left.  This left a 0 in the LSB of AL.
+ALUOP16O_A %ALU16_A<<1%            # shift the A register left.  This left a 0 in the LSB of AL.
 ALUOP_BL %B<<1%+%BL%            # shift the BL register left (last, 8th bit)
 JNO .dd_byte_noover_last        # if no overflow, do nothing
 ALUOP_AL %A+1%+%AL%             #   otherwise, set the first bit in AL
@@ -459,7 +282,7 @@ RET
 ALUOP_PUSH %B%+%BL%
 MOV_CL_BL
 MOV_CH_BH
-CALL :shift16_b_left
+ALUOP16O_B %ALU16_B<<1%
 JO .ddword_origshift_carry      # if there was not a carry-out when B shifted,
 PUSH 0x00                       #   store a 0 for later
 JMP .ddword_origshift_done
@@ -472,7 +295,7 @@ POP_BH                          # put our carry flag into BH
 POP_BL
 
 # Shift thousands, hundreds, tens and ones (A) to the left
-CALL :shift16_a_left
+ALUOP16O_A %ALU16_A<<1%
 JO .ddword_ashift_carry         # if there was not a carry-out when A shifted,
 PUSH 0x00                       #   store a 0 for later
 JMP .ddword_ashift_done
@@ -800,12 +623,12 @@ POP_BL                      # restore multiplicand from stack
 POP_BH
 POP_AL
 POP_AH
-CALL :shift16_b_left
+ALUOP16O_B %ALU16_B<<1%
 JO .mul16_multilpicand_cin
-CALL :shift16_a_left
+ALUOP16O_A %ALU16_A<<1%
 JMP .mul16_multilpicand_done
 .mul16_multilpicand_cin
-CALL :shift16_a_left
+ALUOP16O_A %ALU16_A<<1%
 ALUOP_AL %A+1%+%AL%
 .mul16_multilpicand_done
 ALUOP_PUSH %A%+%AH%         # Put multiplicand back onto stack

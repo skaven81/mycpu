@@ -216,13 +216,13 @@ ALUOP_BL %A%+%AL%           # put char into BL
 POP_AL                      # restore AL
 
 # Valid char, shift A left and make room for the converted BL
-CALL :shift16_a_left        # Make room in A for the next 4 bits
+ALUOP16O_A %ALU16_A<<1%        # Make room in A for the next 4 bits
 JO .strtoi_overflow         # |
-CALL :shift16_a_left        # |
+ALUOP16O_A %ALU16_A<<1%        # |
 JO .strtoi_overflow         # |
-CALL :shift16_a_left        # |
+ALUOP16O_A %ALU16_A<<1%        # |
 JO .strtoi_overflow         # |
-CALL :shift16_a_left        # |
+ALUOP16O_A %ALU16_A<<1%        # |
 JO .strtoi_overflow         # |
 CALL :hextoi                # BL is now the integer value
 ALUOP_AL %A+B%+%AL%+%BL%    # set lowest four bits
@@ -301,13 +301,13 @@ JO .strtoi_invalid_char
 ALUOP_BL %A%+%AL%           # move AL char into BL
 POP_AL                      # restore AL from above
 
-CALL :shift16_a_left        # multiply A by two
+ALUOP16O_A %ALU16_A<<1%        # multiply A by two
 JO .strtoi_overflow      
 ALUOP_DH %A%+%AH%           # Save A (2a) in D
 ALUOP_DL %A%+%AL%           # |
-CALL :shift16_a_left        # continue to finish multiplying A by eight
+ALUOP16O_A %ALU16_A<<1%        # continue to finish multiplying A by eight
 JO .strtoi_overflow         # |
-CALL :shift16_a_left        # |
+ALUOP16O_A %ALU16_A<<1%        # |
 JO .strtoi_overflow         # |
 ALUOP_PUSH %B%+%BL%         # Save BL
 MOV_DH_BH                   # Get our old 2a value out of D into B

@@ -126,13 +126,13 @@ LD_AH $malloc_range_start
 LD_AL $malloc_range_start+1     # starting address in A
 LDI_BH 0x00
 LD_BL $malloc_segments          # number of segments in B
-CALL :shift16_b_left            # Shift left seven times to get total bytes
-CALL :shift16_b_left
-CALL :shift16_b_left
-CALL :shift16_b_left
-CALL :shift16_b_left
-CALL :shift16_b_left
-CALL :shift16_b_left
+ALUOP16O_B %ALU16_B<<1%            # Shift left seven times to get total bytes
+ALUOP16O_B %ALU16_B<<1%
+ALUOP16O_B %ALU16_B<<1%
+ALUOP16O_B %ALU16_B<<1%
+ALUOP16O_B %ALU16_B<<1%
+ALUOP16O_B %ALU16_B<<1%
+ALUOP16O_B %ALU16_B<<1%
 ALUOP16O_B %ALU16_B-1%                  # subtract 1 to get the last byte in the range
 ALUOP16O_B %ALU16_A+B%                # add total bytes to start address to get end address
 CALL :heap_push_BL
@@ -147,9 +147,9 @@ CALL :printf
 # Count up the free and used memory blocks
 LD_BL $malloc_segments          # Get the allocated number of segments into BL
 LDI_BH 0x00                     # Clear BH so we can shift all of B
-CALL :shift16_b_left            # Shift left three times to get the number of
-CALL :shift16_b_left            # | blocks, which is also the number of ledger
-CALL :shift16_b_left            # | bytes we will be examining
+ALUOP16O_B %ALU16_B<<1%            # Shift left three times to get the number of
+ALUOP16O_B %ALU16_B<<1%            # | blocks, which is also the number of ledger
+ALUOP16O_B %ALU16_B<<1%            # | bytes we will be examining
 CALL :extpage_d_push_zero       # get the zero page set in D page
 LDI_C 0xd000                    # start at the beginning of the ledger
 LDI_D 0x0000                    # We'll count used blocks in D
@@ -173,9 +173,9 @@ MOV_DL_BL
 
 LD_AL $malloc_segments          # Get the allocated number of segments into BL
 LDI_AH 0x00                     # Clear BH so we can shift all of B
-CALL :shift16_a_left            # Shift left three times to get the total number of blocks
-CALL :shift16_a_left
-CALL :shift16_a_left
+ALUOP16O_A %ALU16_A<<1%            # Shift left three times to get the total number of blocks
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%
 
 ALUOP16O_A %ALU16_A-B%           # A~free_blocks = total_blocks - allocated_blocks
 CALL :heap_push_A
@@ -188,9 +188,9 @@ CALL :printf
 # Remaining stats lines: list allocated ranges
 LD_BL $malloc_segments          # Get the allocated number of segments into BL
 LDI_BH 0x00                     # Clear BH so we can shift all of B
-CALL :shift16_b_left            # Shift left three times to get the number of
-CALL :shift16_b_left            # | blocks, which is also the number of ledger
-CALL :shift16_b_left            # | bytes we will be examining
+ALUOP16O_B %ALU16_B<<1%            # Shift left three times to get the number of
+ALUOP16O_B %ALU16_B<<1%            # | blocks, which is also the number of ledger
+ALUOP16O_B %ALU16_B<<1%            # | bytes we will be examining
 LDI_C 0xd000                    # start at the beginning of the ledger
 DECR_C                          # prepare for going into loop
 .list_loop
@@ -211,9 +211,9 @@ JEQ .block_alloc
 
 .seg_alloc
 LDI_AH 0x00
-CALL :shift16_a_left
-CALL :shift16_a_left
-CALL :shift16_a_left
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%
 CALL :heap_push_A
 JMP .push_addr
 

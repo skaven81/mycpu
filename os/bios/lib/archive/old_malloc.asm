@@ -192,9 +192,9 @@ ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
 LD16_B $malloc_range_start
 ALUOP16O_A %ALU16_A-B%                       # A = number of segments
-CALL :shift16_a_left
-CALL :shift16_a_left
-CALL :shift16_a_left                        # A = block aligned offset
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%                        # A = block aligned offset
 POP_BL                                      # BL = position mask
 .ledger_to_addr_shift_loop
 ALUOP_BL %B<<1%+%BL%                        # shift mask left
@@ -202,10 +202,10 @@ JO .ledger_to_addr_done_shifting            # if the shift resulted in a carryou
 ALUOP16O_A %ALU16_A+1%                              # add a block to the offset
 JMP .ledger_to_addr_shift_loop
 .ledger_to_addr_done_shifting
-CALL :shift16_a_left
-CALL :shift16_a_left
-CALL :shift16_a_left
-CALL :shift16_a_left                        # A = segment aligned offset
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%                        # A = segment aligned offset
 LD16_B $malloc_range_start
 ALUOP16O_A %ALU16_A+B%                            # A = real address
 POP_BH

@@ -440,11 +440,11 @@ INCR_C                              # |
 LDA_C_AL                            # |
 LDI_BH 0x00
 LD_BL $dirwalk_current_dir_idx      # current offset (incremented above) into BL
-CALL :shift16_b_left                # multiply index by 32 (shift left 5)
-CALL :shift16_b_left                # |
-CALL :shift16_b_left                # |
-CALL :shift16_b_left                # |
-CALL :shift16_b_left                # |
+ALUOP16O_B %ALU16_B<<1%                # multiply index by 32 (shift left 5)
+ALUOP16O_B %ALU16_B<<1%                # |
+ALUOP16O_B %ALU16_B<<1%                # |
+ALUOP16O_B %ALU16_B<<1%                # |
+ALUOP16O_B %ALU16_B<<1%                # |
 ALUOP16O_A %ALU16_A+B%                    # A now contains the memory address of the next dirent
 CALL :heap_push_A
 

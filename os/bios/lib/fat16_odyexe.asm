@@ -162,7 +162,7 @@ ALUOP_ADDR %B%+%BL% $odyexe_rewrites_remaining+1
 
 # Add C (addr of first offset) to B*2 (bytes of offsets) to get the
 # address of the first byte of the program , $odyexe_first_byte_of_program
-CALL :shift16_b_left        # multiply number of offsets by 2 to get bytes
+ALUOP16O_B %ALU16_B<<1%        # multiply number of offsets by 2 to get bytes
 MOV_CH_AH
 MOV_CL_AL
 ALUOP16O_A %ALU16_A+B%            # A now contains the address of the first byte of the program

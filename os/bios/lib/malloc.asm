@@ -144,10 +144,10 @@ RET
 ALUOP_PUSH %B%+%BH%
 ALUOP_PUSH %B%+%BL%
 
-CALL :shift16_a_left                        # get number of bytes by
-CALL :shift16_a_left                        # multiplying ledger offset
-CALL :shift16_a_left                        # by 16
-CALL :shift16_a_left
+ALUOP16O_A %ALU16_A<<1%                        # get number of bytes by
+ALUOP16O_A %ALU16_A<<1%                        # multiplying ledger offset
+ALUOP16O_A %ALU16_A<<1%                        # by 16
+ALUOP16O_A %ALU16_A<<1%
 
 LD16_B $malloc_range_start                  # Load memory base address into B
 ALUOP16O_A %ALU16_A+B%                            # A = A+B
@@ -307,9 +307,9 @@ ALUOP_PUSH %A%+%AL%             # save number of segments that will be written t
 
 ALUOP_BL %A%+%AL%               # number of segments into BL
 LDI_BH 0x00
-CALL :shift16_b_left            # multiply by 8 to get length of ledger run we need
-CALL :shift16_b_left            # ..
-CALL :shift16_b_left            # .
+ALUOP16O_B %ALU16_B<<1%            # multiply by 8 to get length of ledger run we need
+ALUOP16O_B %ALU16_B<<1%            # ..
+ALUOP16O_B %ALU16_B<<1%            # .
 CALL .find_unused_run           # B will either be a ledger address or zero
 ALUOP_FLAGS %B%+%BH%
 JNZ .valid_segment_allocation
@@ -388,9 +388,9 @@ CALL :heap_push_B                   # save it again, this one will stay the orig
 # store the address of the last byte in the ledger into C
 LD_AL $malloc_segments              # there are 8x this many bytes in the ledger
 LDI_AH 0x00
-CALL :shift16_a_left
-CALL :shift16_a_left
-CALL :shift16_a_left                # A contains the number of ledger bytes
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%                # A contains the number of ledger bytes
 LDI_B 0xd000
 ALUOP16O_A %ALU16_A+B%                    # A contains the address of the last ledger byte, plus one
 ALUOP_CH %A%+%AH%

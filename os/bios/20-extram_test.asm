@@ -24,8 +24,8 @@ CALL :cursor_goto_rowcol
 ALUOP_AL %B%+%BH%
 LDI_AH 0x00
 ALUOP16O_A %ALU16_A+1%
-CALL :shift16_a_left
-CALL :shift16_a_left
+ALUOP16O_A %ALU16_A<<1%
+ALUOP16O_A %ALU16_A<<1%
 
 CALL :heap_push_A                       # push KB amount
 LDI_C .memtest_str

@@ -82,7 +82,7 @@ RET
 #
 #LDI_A $user_input_buf           # User input buffer (malloc'd) address into D
 #LDA_A_DH                        # |
-#CALL :incr16_a                  # |
+#ALUOP16O_A %ALU16_A+1%          # |
 #LDA_A_DL                        # |
 #
 #CALL :heap_push_D               # Print the input string
