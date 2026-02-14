@@ -43,3 +43,6 @@ class SpecialFunctions():
         # no return value for print, nothing to pop
         self.emit(f"POP_CL", "Restore C after print")
         self.emit(f"POP_CH", "Restore C after print")
+
+    def custom_FuncCall_halt(self, node, mode, func, dest_reg='A', **kwargs):
+        self.emit("HLT", "Halt the system")
