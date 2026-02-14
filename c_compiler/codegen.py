@@ -136,26 +136,26 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             return
         elif mode == 'codegen':
             visited_toplevel_nodes = []
-            # Generate code for declaring global vars
-            self.emit_debug("#"*40)
-            with self._debug_block("Global var declaration"):
-                for c in node:
-                    if type(c) is c_ast.Decl:
-                        self.visit(c, mode=mode, generate_init=True, **kwargs)
-                        visited_toplevel_nodes.append(c)
-            self.emit_debug("#"*40)
-            self.emit_verbose("")
 
             # Call to initializer function at end of
-            # code, for declaring local static vars
-            localvar_init_label = self._get_label("local_static_init")
-            self.emit(f"CALL {localvar_init_label}")
+            # code, for declaring global and local static vars
+            global_local_init_label = '.__global_local_init__'
+            self.emit(f"CALL {global_local_init_label}")
 
             # Generate the jump-to-main if configured
             main_func = self.context.funcreg.lookup('main')
             if self.context.jmp_to_main and main_func:
                 self.emit(f"JMP {main_func.asm_name()}", "Initialization complete, go to main function")
                 self.emit("")
+
+            # Register global vars
+            with self._debug_block("Global var declaration"):
+                for c in node:
+                    if type(c) is c_ast.Decl:
+                        self.visit(c, mode=mode, generate_init=False, **kwargs)
+                        visited_toplevel_nodes.append(c)
+            self.emit_debug("#"*40)
+            self.emit_verbose("")
 
             # Generate the functions
             self.emit_debug("#"*40)
@@ -169,10 +169,16 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit_debug("#"*40)
             self.emit_verbose("")
 
-            # Generate the local static var initializer function
+            # Generate the global and local static var initializer function
             self.emit_debug("#"*40)
-            with self._debug_block("Static local var declaration"):
-                self.emit(f"{localvar_init_label}")
+            self.emit(f"{global_local_init_label}")
+            with self._debug_block("Global var initialization"):
+                for c in node:
+                    if type(c) is c_ast.Decl:
+                        self.visit(c, mode=mode, generate_init=True, **kwargs)
+                self.emit_verbose("")
+
+            with self._debug_block("Static local var initialization"):
                 for var in self.context.vartable.get_all_local_statics():
                     if not var.init_node:
                         raise SyntaxError(f"Variable {var.friendly_name()} has no initializer node")
@@ -186,7 +192,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                             self._emit_bulk_store(var, lvalue_reg='B', rvalue_reg='A', bytes=min(init_var.sizeof(), var.sizeof()))
                         else:
                             self.visit(c_ast.Assignment(op='=', lvalue=c_ast.ID(name=var.name), rvalue=var.init_node), mode='codegen')
-                self.emit("RET")
+            self.emit("RET")
 
             # Generate data block: constant literals
             prefix = self._get_static_prefix()
