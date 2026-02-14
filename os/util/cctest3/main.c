@@ -1,5 +1,6 @@
 #include "types.h"
 #include "terminal_output.h"
+#include "moretests.h"
 
 // ============================================================================
 // STRUCT DEFINITIONS (must be at top level per compiler requirements)
@@ -506,6 +507,7 @@ void main() {
     test_comma_operator();
     test_strings();
     test_address_calculation();
+    test_external_statics();
     
     printf("\n");
     printf("=== Test Results ===\n");
