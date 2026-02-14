@@ -192,7 +192,10 @@ logging.info("Generated grammar")
 logging.debug(grammar)
 
 #####
-# Replace ASM macros and localize labels in the source.  Also find and define global vars
+# Replace ASM macros and localize labels in the source.
+# Also find and define global vars
+# Also find C-generated global and local static var init function calls,
+# and collect them for insertion at the top of the compiled assembly
 #####
 logging.info("Replacing ASM macros, localizing labels, and finding global vars")
 line_num = 0
@@ -201,6 +204,7 @@ global_vars = { }
 global_arrays = { }
 next_global_var = 0x4f00 # hidden framebuffer, 256 bytes, when full goes to 0x5f10 (more hidden framebuffer)
 next_global_array = 0xbcff
+global_static_local_init_labels = []
 
 # If we are importing a symbol table, read that and update vars and arrays
 if args.symbols:
@@ -252,10 +256,6 @@ for input_file in args.sources:
             # versions that have the filename prepended
             newline = re.sub(r"\.([a-zA-Z0-9_]{3}[a-zA-Z0-9_]+)", f".{label_prefix}\\1", newline)
 
-            if newline != oldline:
-                logging.debug("{:16.16s} Line {}: [{}]->[{}]".format(input_file, line_num, oldline, newline))
-            concat_source.append((input_file, line_num, newline))
-
             # Look for global variable declarations
             try:
                 match = grammar.parseString(newline, parseAll=True).asDict()
@@ -287,7 +287,22 @@ for input_file in args.sources:
                             next_global_var = 0x5f10
                     assert (0x4f00 <= next_global_var <= 0x4fff) or (0x5f10 <= next_global_var <= 0x5fff)
 
+            # Look for CALLs to .<FILENAME_>__global_local_init__; these get queued in a list
+            # to be prepended to concat_source before final assembly.
+            if match and match.get('opcode','') == 'CALL' and match.get('args','').endswith('__global_local_init__'):
+                logging.debug("{:16.16s} Line {}: Noting CALL to global / static local var init {}".format(input_file, line_num, match['args']))
+                global_static_local_init_labels.append((input_file, line_num, newline))
+            else:
+                if newline != oldline:
+                    logging.debug("{:16.16s} Line {}: [{}]->[{}]".format(input_file, line_num, oldline, newline))
+                concat_source.append((input_file, line_num, newline))
 
+
+#####
+# Prepend any CALLs to global and local static init functions to the concatenated input
+#####
+if global_static_local_init_labels:
+    concat_source = global_static_local_init_labels + concat_source
 
 #####
 # Parse the assembly
