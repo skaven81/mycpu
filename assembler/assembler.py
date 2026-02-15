@@ -455,7 +455,10 @@ for input_file, line_num, line in concat_source:
 logging.info("Incomplete assembly")
 for idx, a in enumerate(assembly):
     if idx in label_addrs:
-        logging.info("{:04x} {:02x} {}     <-- {}".format(idx, a['val'], a['msg'], label_addrs[idx]))
+        if type(a['val']) is str:
+            logging.info("{:04x} {} {}     <-- {}".format(idx, a['val'], a['msg'], label_addrs[idx]))
+        else:
+            logging.info("{:04x} {:02x} {}     <-- {}".format(idx, a['val'], a['msg'], label_addrs[idx]))
     elif type(a['val']) is str:
         logging.info("{:04x} {} {}".format(idx, a['val'], a['msg']))
     else:
