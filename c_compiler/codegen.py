@@ -677,7 +677,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
     def visit_FuncDecl(self, node, mode, **kwargs):
         if mode == 'function_collection':
             new_funcdef = Function()
-            new_funcdef.return_type = self.visit(node.type, mode='return_typespec')
+            return_var = self.visit(node.type, mode='return_var')
+            new_funcdef.return_type = return_var.typespec
+            new_funcdef.return_is_pointer = return_var.is_pointer
+            new_funcdef.return_pointer_depth = return_var.pointer_depth
             offset = 0
             params = []
             if node.args:
@@ -810,11 +813,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"CALL :heap_retreat_BL")
 
                 # Set up return value
-                if func.return_type.sizeof() == 0:
+                if func.return_sizeof() == 0:
                     self.emit_debug("# void function, no push to heap")
-                elif func.return_type.sizeof() == 1:
+                elif func.return_sizeof() == 1:
                     self.emit("CALL :heap_push_AL", "Return value")
-                elif func.return_type.sizeof() == 2:
+                elif func.return_sizeof() == 2:
                     self.emit("CALL :heap_push_A", "Return value")
                 else:
                     raise NotImplementedError("Unable to return from function with > 2 bytes")
@@ -849,7 +852,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 if custom_func_call and func.storage == 'extern':
                     custom_func_call(node, mode, func=func, dest_reg=dest_reg, **kwargs)
                     if mode == 'generate_rvalue':
-                        return Variable(typespec=func.return_type, name=func.name, is_virtual=True)
+                        return Variable(typespec=func.return_type, name=func.name, is_virtual=True, is_pointer=func.return_is_pointer, pointer_depth=func.return_pointer_depth)
                     return
 
                 # Otherwise, it's a function with standard call semantics (heap_push
@@ -884,16 +887,16 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                                 else:
                                     raise ValueError("Unable to push parameters larger than 2 bytes")
                 self.emit(f"CALL {func.asm_name()}")
-                if func.return_type.sizeof() == 0:
+                if func.return_sizeof() == 0:
                     self.emit("# function returns nothing, not popping a return value")
-                elif func.return_type.sizeof() == 1:
+                elif func.return_sizeof() == 1:
                     self.emit(f"CALL :heap_pop_{dest_reg}L")
-                elif func.return_type.sizeof() == 2:
+                elif func.return_sizeof() == 2:
                     self.emit(f"CALL :heap_pop_{dest_reg}")
                 else:
                     raise NotImplementedError("Unable to handle function calls that return more than 2 bytes")
             if mode == 'generate_rvalue':
-                return Variable(typespec=func.return_type, name=func.name, is_virtual=True)
+                return Variable(typespec=func.return_type, name=func.name, is_virtual=True, is_pointer=func.return_is_pointer, pointer_depth=func.return_pointer_depth)
         else:
             raise NotImplementedError(f"visit_FuncCall mode {mode} not yet supported")
 
@@ -1922,6 +1925,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             new_var.offset = var.offset
             new_var.kind = var.kind
             self.emit(f"# Cast {var.friendly_name()} to {new_var.friendly_name()}")
+            # Widening cast: 1 byte → 2 bytes requires sign/zero extension
+            if var.sizeof() == 1 and new_var.sizeof() == 2:
+                self.emit_sign_extend(dest_reg, var.typespec)
             return new_var
 
     def visit_Assignment(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
