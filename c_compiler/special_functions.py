@@ -46,3 +46,162 @@ class SpecialFunctions():
 
     def custom_FuncCall_halt(self, node, mode, func, dest_reg='A', **kwargs):
         self.emit("HLT", "Halt the system")
+
+    # ---- Memory management (register-based) ----
+
+    def custom_FuncCall_free(self, node, mode, func, dest_reg='A', **kwargs):
+        # free() takes address in register A
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL {func.asm_name()}", "Free memory at address in A")
+
+    def custom_FuncCall_malloc_blocks(self, node, mode, func, dest_reg='A', **kwargs):
+        # malloc_blocks() takes size in AL, returns address in A
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL {func.asm_name()}", "Allocate blocks, size in AL, result in A")
+        if dest_reg != 'A':
+            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
+            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop return value into dest_reg")
+
+    def custom_FuncCall_calloc_blocks(self, node, mode, func, dest_reg='A', **kwargs):
+        # calloc_blocks() takes size in AL, returns address in A
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL {func.asm_name()}", "Allocate+zero blocks, size in AL, result in A")
+        if dest_reg != 'A':
+            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
+            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop return value into dest_reg")
+
+    # ---- Terminal output (register-based) ----
+
+    def custom_FuncCall_putchar(self, node, mode, func, dest_reg='A', **kwargs):
+        # putchar() takes character in AL register
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL {func.asm_name()}", "Print character in AL")
+
+    def custom_FuncCall_putchar_direct(self, node, mode, func, dest_reg='A', **kwargs):
+        # putchar_direct() takes character in AL register
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL {func.asm_name()}", "Print character directly in AL")
+
+    # ---- Multi-return FAT16 functions ----
+
+    def custom_FuncCall_fat16_dirent_filesize(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: push dirent addr → call → pop lo word, pop hi word
+        # C: uint16_t fat16_dirent_filesize(struct fat16_dirent *d, uint16_t *size_hi)
+        # Returns lo word; writes hi word to *size_hi
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Save output pointer on heap first (will be below ASM params)
+        rvalue_hi = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Save size_hi output pointer on heap")
+        # Push dirent address (the only ASM param)
+        rvalue_d = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Push dirent address param")
+        self.emit(f"CALL {func.asm_name()}")
+        # Heap now: lo_word(top), hi_word, size_hi_ptr(bottom)
+        # Pop lo word (return value), save on CPU stack
+        self.emit(f"CALL :heap_pop_{dest_reg}", "Pop lo word of file size (return value)")
+        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}H%", "Save return value")
+        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}L%", "Save return value")
+        # Pop hi word into A
+        self.emit("CALL :heap_pop_A", "Pop hi word of file size")
+        # Pop output pointer into D (save/restore frame pointer)
+        self.emit("PUSH_DH", "Save frame pointer")
+        self.emit("PUSH_DL", "Save frame pointer")
+        self.emit("CALL :heap_pop_D", "Pop size_hi output pointer")
+        # Store hi word at *size_hi (big-endian: high byte first)
+        self.emit("ALUOP_ADDR_D %A%+%AH%", "Store hi byte at *size_hi")
+        self.emit("INCR_D")
+        self.emit("ALUOP_ADDR_D %A%+%AL%", "Store lo byte at *(size_hi+1)")
+        self.emit("POP_DL", "Restore frame pointer")
+        self.emit("POP_DH", "Restore frame pointer")
+        # Restore return value
+        self.emit(f"POP_{dest_reg}L", "Restore return value")
+        self.emit(f"POP_{dest_reg}H", "Restore return value")
+
+    def custom_FuncCall_fat16_cluster_to_lba(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: push handle addr, push cluster → call → pop lo LBA, pop hi LBA
+        # C: uint16_t fat16_cluster_to_lba(struct fs_handle *h, uint16_t cluster, uint16_t *lba_hi)
+        # Returns lo word of LBA; writes hi word to *lba_hi
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Save output pointer on heap first (below ASM params)
+        rvalue_hi = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Save lba_hi output pointer on heap")
+        # Push ASM params in reverse C order: handle first (bottom), cluster second (top)
+        rvalue_h = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Push fs_handle address param")
+        rvalue_c = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Push cluster param")
+        self.emit(f"CALL {func.asm_name()}")
+        # Heap now: lo_lba(top), hi_lba, lba_hi_ptr(bottom)
+        # Pop lo word (return value), save on CPU stack
+        self.emit(f"CALL :heap_pop_{dest_reg}", "Pop lo word of LBA (return value)")
+        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}H%", "Save return value")
+        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}L%", "Save return value")
+        # Pop hi word into A
+        self.emit("CALL :heap_pop_A", "Pop hi word of LBA")
+        # Pop output pointer into D (save/restore frame pointer)
+        self.emit("PUSH_DH", "Save frame pointer")
+        self.emit("PUSH_DL", "Save frame pointer")
+        self.emit("CALL :heap_pop_D", "Pop lba_hi output pointer")
+        # Store hi word at *lba_hi
+        self.emit("ALUOP_ADDR_D %A%+%AH%", "Store hi byte at *lba_hi")
+        self.emit("INCR_D")
+        self.emit("ALUOP_ADDR_D %A%+%AL%", "Store lo byte at *(lba_hi+1)")
+        self.emit("POP_DL", "Restore frame pointer")
+        self.emit("POP_DH", "Restore frame pointer")
+        # Restore return value
+        self.emit(f"POP_{dest_reg}L", "Restore return value")
+        self.emit(f"POP_{dest_reg}H", "Restore return value")
+
+    # ---- Conditional-return FAT16 functions ----
+
+    def custom_FuncCall_fat16_pathfind(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: push path → call → conditional return:
+        #   Error: pop error_code (hi byte 0x00 or 0x01)
+        #   Success: pop dirent_addr (hi byte >= 0x02), then pop fs_handle_addr
+        # C: struct fat16_dirent *fat16_pathfind(char *path, struct fs_handle **fs_handle_out)
+        # Returns dirent pointer (NULL or error code on failure)
+        # Writes fs_handle pointer to *fs_handle_out on success
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        error_label = self._get_label("pathfind_err")
+        done_label = self._get_label("pathfind_done")
+        # Save fs_handle_out pointer on heap (below ASM params)
+        rvalue_out = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Save fs_handle_out pointer on heap")
+        # Push path address to heap (ASM param)
+        rvalue_path = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Push path address param")
+        self.emit(f"CALL {func.asm_name()}")
+        # Heap on success: dirent(top), fs_handle, out_ptr(bottom)
+        # Heap on error: error_code(top), out_ptr(bottom)
+        # Pop first value (dirent or error code)
+        self.emit("CALL :heap_pop_A", "Pop pathfind result")
+        # Save result on CPU stack
+        self.emit("ALUOP_PUSH %A%+%AH%", "Save result")
+        self.emit("ALUOP_PUSH %A%+%AL%", "Save result")
+        # Check if error: AH < 0x02 means error
+        # Right-shift AH: 0>>1=0, 1>>1=0, 2>>1=1, etc. So JZ = error
+        self.emit("ALUOP_FLAGS %A>>1%+%AH%", "Shift AH right: 0 if AH < 2 (error)")
+        self.emit(f"JZ {error_label}", "Jump to error path if AH < 0x02")
+        # Success: pop fs_handle, pop out_ptr, store fs_handle at *out_ptr
+        self.emit("CALL :heap_pop_A", "Pop fs_handle address")
+        self.emit("PUSH_DH", "Save frame pointer")
+        self.emit("PUSH_DL", "Save frame pointer")
+        self.emit("CALL :heap_pop_D", "Pop fs_handle_out pointer")
+        self.emit("ALUOP_ADDR_D %A%+%AH%", "Store fs_handle hi at *out")
+        self.emit("INCR_D")
+        self.emit("ALUOP_ADDR_D %A%+%AL%", "Store fs_handle lo at *(out+1)")
+        self.emit("POP_DL", "Restore frame pointer")
+        self.emit("POP_DH", "Restore frame pointer")
+        self.emit(f"JMP {done_label}")
+        # Error: discard saved out_ptr from heap
+        self.emit(f"{error_label}")
+        self.emit("CALL :heap_pop_word", "Discard saved fs_handle_out pointer")
+        # Done: restore result into dest_reg
+        self.emit(f"{done_label}")
+        self.emit(f"POP_{dest_reg}L", "Restore return value")
+        self.emit(f"POP_{dest_reg}H", "Restore return value")
