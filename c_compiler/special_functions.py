@@ -87,6 +87,142 @@ class SpecialFunctions():
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Print character directly in AL")
 
+    # ---- String functions (register-based) ----
+
+    def custom_FuncCall_strcmp(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=s1, D=s2 → CALL :strcmp → result in AL
+        # C: int8_t strcmp(char *s1, char *s2)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Evaluate args and stage on heap
+        rvalue_s1 = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage s1 on heap")
+        rvalue_s2 = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage s2 on heap")
+        # Save C and D
+        self.emit("PUSH_CH", "Save C before strcmp")
+        self.emit("PUSH_CL", "Save C before strcmp")
+        self.emit("PUSH_DH", "Save D before strcmp")
+        self.emit("PUSH_DL", "Save D before strcmp")
+        # Pop staged values into registers (LIFO: s2 into D, s1 into C)
+        self.emit("CALL :heap_pop_D", "Load s2 into D")
+        self.emit("CALL :heap_pop_C", "Load s1 into C")
+        self.emit(f"CALL {func.asm_name()}")
+        # Result is in AL; save on CPU stack
+        self.emit("ALUOP_PUSH %A%+%AL%", "Save strcmp result")
+        # Restore D, C (reverse order of save)
+        self.emit("POP_DL", "Restore D after strcmp")
+        self.emit("POP_DH", "Restore D after strcmp")
+        self.emit("POP_CL", "Restore C after strcmp")
+        self.emit("POP_CH", "Restore C after strcmp")
+        # Pop result into dest_reg low byte, clear high byte
+        self.emit(f"POP_{dest_reg}L", "strcmp result into dest_reg")
+        self.emit(f"LDI_{dest_reg}H 0x00", "Clear high byte for int8_t return")
+
+    def custom_FuncCall_strcpy(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=src, D=dest → CALL :strcpy → no return
+        # C: void strcpy(char *src, char *dest)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Evaluate args and stage on heap
+        rvalue_src = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage src on heap")
+        rvalue_dest = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage dest on heap")
+        # Save C and D
+        self.emit("PUSH_CH", "Save C before strcpy")
+        self.emit("PUSH_CL", "Save C before strcpy")
+        self.emit("PUSH_DH", "Save D before strcpy")
+        self.emit("PUSH_DL", "Save D before strcpy")
+        # Pop staged values into registers (LIFO: dest into D, src into C)
+        self.emit("CALL :heap_pop_D", "Load dest into D")
+        self.emit("CALL :heap_pop_C", "Load src into C")
+        self.emit(f"CALL {func.asm_name()}")
+        # No return value; restore D, C
+        self.emit("POP_DL", "Restore D after strcpy")
+        self.emit("POP_DH", "Restore D after strcpy")
+        self.emit("POP_CL", "Restore C after strcpy")
+        self.emit("POP_CH", "Restore C after strcpy")
+
+    def custom_FuncCall_strupper(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=src, D=dest → CALL :strupper → no return
+        # C: void strupper(char *src, char *dest)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Evaluate args and stage on heap
+        rvalue_src = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage src on heap")
+        rvalue_dest = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage dest on heap")
+        # Save C and D
+        self.emit("PUSH_CH", "Save C before strupper")
+        self.emit("PUSH_CL", "Save C before strupper")
+        self.emit("PUSH_DH", "Save D before strupper")
+        self.emit("PUSH_DL", "Save D before strupper")
+        # Pop staged values into registers (LIFO: dest into D, src into C)
+        self.emit("CALL :heap_pop_D", "Load dest into D")
+        self.emit("CALL :heap_pop_C", "Load src into C")
+        self.emit(f"CALL {func.asm_name()}")
+        # No return value; restore D, C
+        self.emit("POP_DL", "Restore D after strupper")
+        self.emit("POP_DH", "Restore D after strupper")
+        self.emit("POP_CL", "Restore C after strupper")
+        self.emit("POP_CH", "Restore C after strupper")
+
+    def custom_FuncCall_strprepend(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: AL=ch, D=str → CALL :strprepend → no return
+        # C: void strprepend(char ch, char *str)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Evaluate args and stage on heap
+        rvalue_ch = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage ch on heap (byte)")
+        rvalue_str = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage str on heap (word)")
+        # Save D
+        self.emit("PUSH_DH", "Save D before strprepend")
+        self.emit("PUSH_DL", "Save D before strprepend")
+        # Pop staged values into registers (LIFO: str into D, ch into AL)
+        self.emit("CALL :heap_pop_D", "Load str into D")
+        self.emit("CALL :heap_pop_AL", "Load ch into AL")
+        self.emit(f"CALL {func.asm_name()}")
+        # No return value; restore D
+        self.emit("POP_DL", "Restore D after strprepend")
+        self.emit("POP_DH", "Restore D after strprepend")
+
+    def custom_FuncCall_strsplit(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: AH=split_char, AL=alloc_size, C=str, D=array → CALL :strsplit → result in AH
+        # C: uint8_t strsplit(char split_char, uint8_t alloc_size, char *str, uint16_t *array)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Evaluate args and stage on heap
+        rvalue_split = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage split_char on heap (byte)")
+        rvalue_alloc = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage alloc_size on heap (byte)")
+        rvalue_str = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage str on heap (word)")
+        rvalue_arr = self.visit(arg_nodes[3], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage array on heap (word)")
+        # Save C and D
+        self.emit("PUSH_CH", "Save C before strsplit")
+        self.emit("PUSH_CL", "Save C before strsplit")
+        self.emit("PUSH_DH", "Save D before strsplit")
+        self.emit("PUSH_DL", "Save D before strsplit")
+        # Pop staged values into registers (LIFO order)
+        self.emit("CALL :heap_pop_D", "Load array into D")
+        self.emit("CALL :heap_pop_C", "Load str into C")
+        self.emit("CALL :heap_pop_AL", "Load alloc_size into AL")
+        self.emit("ALUOP_PUSH %A%+%AL%", "Save alloc_size temporarily")
+        self.emit("CALL :heap_pop_AH", "Load split_char into AH")
+        self.emit("POP_AL", "Restore alloc_size into AL")
+        self.emit(f"CALL {func.asm_name()}")
+        # Result is in AH; save on CPU stack
+        self.emit("ALUOP_PUSH %A%+%AH%", "Save strsplit result")
+        # Restore D, C (reverse order of save)
+        self.emit("POP_DL", "Restore D after strsplit")
+        self.emit("POP_DH", "Restore D after strsplit")
+        self.emit("POP_CL", "Restore C after strsplit")
+        self.emit("POP_CH", "Restore C after strsplit")
+        # Pop result into dest_reg low byte, clear high byte
+        self.emit(f"POP_{dest_reg}L", "strsplit result into dest_reg")
+        self.emit(f"LDI_{dest_reg}H 0x00", "Clear high byte for uint8_t return")
+
     # ---- Multi-return FAT16 functions ----
 
     def custom_FuncCall_fat16_dirent_filesize(self, node, mode, func, dest_reg='A', **kwargs):
