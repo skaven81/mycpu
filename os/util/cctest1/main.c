@@ -171,8 +171,23 @@ void test_shifts() {
     assert_equal_u8(lshift_u8, 8, "8-bit left shift by 3");
     
     // Left shift - 16-bit, constant value (uses ALUOP16O path)
-    uint16_t lshift_u16 = 1 << 8;
-    assert_equal_u16(lshift_u16, 256, "16-bit left shift by 8");
+    uint16_t shift_u16 = 1;
+    shift_u16 = shift_u16 << 8;
+    assert_equal_u16(shift_u16, 256, "16-bit left shift by 8");
+
+    // Right shift - 16-bit, constant value
+    shift_u16 = 0x0100 >> 8;
+    assert_equal_u16(shift_u16, 1, "16-bit right shift by 8");
+
+    // Left shift - 16-bit, large value (uses optimized path)
+    shift_u16 = 1;
+    shift_u16 = shift_u16 << 10;
+    assert_equal_u16(shift_u16, 0x0400, "16-bit left shift by 10");
+
+    // Right shift - 16-bit, large value (uses optimized path)
+    shift_u16 = 0x400;
+    shift_u16 = shift_u16 >> 10;
+    assert_equal_u16(shift_u16, 0x0001, "16-bit right shift by 10");
     
     // Right shift - 8-bit
     uint8_t rshift_u8 = 64 >> 2;

@@ -1736,9 +1736,26 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 if right_var_val:
                     if (op_size == 1 and right_var_val[0] > 8) or (op_size == 2 and right_var_val[0] > 16):
                         raise SyntaxError(f"Constant shifting {node.op} {right_var_val[0]} positions is pointless")
-                    for _ in range(right_var_val[0]):
+                    shift_positions = right_var_val[0]
+                    if op_size == 2 and shift_positions >= 8:
+                        # optimization for large shifts: copy the whole register value over first
+                        if node.op == '<<':
+                            self.emit(f"ALUOP_{dest_reg}H %{dest_reg}%+%{dest_reg}L%", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                            self.emit(f"LDI_{dest_reg}L 0x00", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                        else:
+                            self.emit(f"ALUOP_{dest_reg}L %{dest_reg}%+%{dest_reg}H%", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                            self.emit(f"LDI_{dest_reg}H 0x00", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                        shift_positions = shift_positions - 8
+
+                    # general case, for any remaining shifts
+                    for _ in range(shift_positions):
                         if op_size == 1:
                             self.emit(f"ALUOP_{dest_reg}L %{dest_reg}{node.op}1%+%{dest_reg}L%", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                        elif op_size == 2 and right_var_val[0] >= 8:
+                            if node.op == '<<':
+                                self.emit(f"ALUOP_{dest_reg}H %{dest_reg}{node.op}1%+%{dest_reg}H%", f"BinaryOp {node.op} {right_var_val[0]} positions")
+                            else:
+                                self.emit(f"ALUOP_{dest_reg}L %{dest_reg}{node.op}1%+%{dest_reg}L%", f"BinaryOp {node.op} {right_var_val[0]} positions")
                         else:
                             if node.op == '<<':
                                 self.emit(f"ALUOP16O_{dest_reg} %{dest_reg}<<1%+%{dest_reg}L% %{dest_reg}<<1%+%{dest_reg}H%+%Cin% %{dest_reg}<<1%+%{dest_reg}H%", f"BinaryOp {node.op} {right_var_val[0]} positions")
