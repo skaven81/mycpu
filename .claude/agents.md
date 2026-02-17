@@ -32,6 +32,12 @@ Source: https://github.com/skaven81/mycpu
 | TAH, TAL, TD | 8-bit | Microcode scratchpad only. Interrupts clobber these -- must MASKINT before direct use. |
 | Status | 3 flags | Z (zero), E (equal), O (overflow/carry-out). Backup in bits [7:6:5] for interrupts. |
 
+**CRITICAL - Status Flag Behavior:**
+- **Z (zero)** and **O (overflow/carry-out)** flags are computed by the ALU itself based on the result
+- **E (equal)** flag is computed OUTSIDE the ALU by XOR gates comparing the two input operands (A-side vs B-side)
+- The E flag is set when the two operands are equal, regardless of the ALU operation or result
+- Example: `ALUOP_FLAGS %A&B%+%AL%+%BH%` sets E flag if AL==BH (operand comparison), Z flag if (AL&BH)==0 (result comparison)
+
 C/D increment/decrement: `INCR_C`, `DECR_C`, `INCR_D`, `DECR_D`, `INCR4_D`, `INCR8_D`, `DECR4_D`, `DECR8_D`.
 
 ## Dual Stack/Heap Architecture
@@ -309,7 +315,7 @@ Read-only FAT16 over ATA (PIO mode). Drives `0:` and `1:` (master/slave). 512-by
 
 ## Important Code Patterns
 
-- **No CMP instruction**: compare via subtraction (`ALUOP_FLAGS %A-B%`) and check flags. O flag = unsigned comparison (underflow).
+- **No CMP instruction**: compare via subtraction (`ALUOP_FLAGS %A-B%`) and check flags. O flag = unsigned comparison (underflow). E flag compares operands directly (use any ALU op, even AND/OR).
 - **No hardware multiply/divide**: software in `math.asm` (`:mul16`, `:div8`). Multiply-by-10 = `8a + 2a` via shifts.
 - **MEMCPY/MEMFILL count is N-1**: AL=0 copies 1 unit, AL=255 copies 256.
 - **Hardware bulk ops**: `MEMCPY_C_D`, `MEMCPY4_C_D`, `MEMFILL4_C_PEEK`, `MEMFILL4_C_I` auto-increment C (and D for copies).
