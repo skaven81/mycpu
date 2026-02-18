@@ -24,10 +24,10 @@ Source: https://github.com/skaven81/mycpu
 
 | Register | Width | Notes |
 |----------|-------|-------|
-| A (AH, AL) | 8-bit each | ALU input. Can ONLY write to bus through ALU (use identity op to move). |
-| B (BH, BL) | 8-bit each | ALU input. Same ALU-only write constraint as A. |
-| C (CH, CL) | 16-bit | Hardware INCR/DECR without ALU. Used as address pointer. |
-| D (DH, DL) | 16-bit | Hardware INCR/DECR. Saved/restored during interrupts. |
+| A (AH, AL) | 8-bit each | ALU input. Can ONLY write to bus through ALU (use identity op). MOV from C/D to A exists (e.g. `MOV_CH_AH`). |
+| B (BH, BL) | 8-bit each | ALU input. Same ALU-only write constraint as A. MOV from C/D to B exists (e.g. `MOV_DL_BL`). |
+| C (CH, CL) | 16-bit | Hardware INCR/DECR without ALU. Used as address pointer. Can write to bus directly. |
+| D (DH, DL) | 16-bit | Hardware INCR/DECR. Saved/restored during interrupts. Can write to bus directly. |
 | SP | 8-bit | Stack at 0xBF00-0xBFFF (256 bytes). |
 | TAH, TAL, TD | 8-bit | Microcode scratchpad only. Interrupts clobber these -- must MASKINT before direct use. |
 | Status | 3 flags | Z (zero), E (equal), O (overflow/carry-out). Backup in bits [7:6:5] for interrupts. |
@@ -63,9 +63,18 @@ Two separate LIFO structures:
 - **Callee-save**: virtually every function saves/restores ALL registers it modifies using PUSH/POP pairs. Caller can assume registers are preserved.
 - **IRQ handler patching**: functions save current IRQ vector on stack, install temporary handler, restore after. Handlers communicate with main loop by modifying registers directly (e.g., spinlocks).
 
-## Macros
+## Opcode and Macro References
 
-`assembler/asm_macros` defines `%name%` text substitution macros (single-pass replacement). Used for ALU ops, register selectors, peripheral addresses, colors, etc.
+**When unsure about an instruction or macro, always consult these files before writing code.**
+
+- **`assembler/opcode_cheatsheet`** -- quick high-level overview of all available opcodes. Read this first to find what instructions exist.
+- **`assembler/opcodes.out`** -- canonical, authoritative reference of all opcodes with full microcode. This is a build artifact (may not exist after `make clean`), and is very large -- do NOT read the whole file. Instead, extract a single instruction's microcode with:
+  ```bash
+  awk '/<OPCODE>/,/^[[:space:]]*$/ {print; if (/^[[:space:]]*$/) exit}' assembler/opcodes.out
+  ```
+  Replace `<OPCODE>` with the instruction name (e.g. `MOV_DL_AL`, `ALUOP_BL`, `LDI_C`). Use this to gain confidence that an instruction does what you think it does. The opcodes.out file's header for each opcode looks like this: `[0xNN] OPCODE <args>` so your awk regular expression should not be pinned to the beginning of the line.
+
+- **`assembler/asm_macros`** -- `%name%` text substitution macros (single-pass replacement). Used for ALU ops, register selectors, peripheral addresses, colors, etc. **Cross-reference this file whenever working with ALU operations or any `%macro%` syntax** to understand what the macros expand to and what they mean.
 
 ## ALU Operations
 
@@ -333,7 +342,7 @@ Read-only FAT16 over ATA (PIO mode). Drives `0:` and `1:` (master/slave). 512-by
 - **Heap**: 2.5 KiB -- C frames + asm parameter passing
 - **RAM**: ~20 KiB (0x6000-0xAFFF) for malloc/ODY executables
 - **No linker**: assembler concatenates all source files as one unit
-- **A/B write through ALU only**: use identity op to copy
+- **A/B write to bus through ALU only**: use identity op to copy out. MOV instructions exist for C/D -> A/B direction only (e.g. `MOV_CH_AH`, `MOV_DL_BL`).
 
 ## printf Format Specifiers
 
