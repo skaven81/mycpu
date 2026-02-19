@@ -80,6 +80,8 @@ Two separate LIFO structures:
 
 Register selectors: `%AH%` (0x40), `%AL%` (0x00), `%BH%` (0x80), `%BL%` (0x00), `%Cin%` (0x20). **All ALU instructions must include register selection macros**, even for low registers, for readability.
 
+**Critical:** ALU operations have an "A" side and a "B" side.  The "A" side can only select from the two A registers (AH and AL), while the B side can only select from the two B registers (BH and BL). It is not possible to use the %A-B% ALU operation to subtract AH-AL for example. That is why there are complementary operations for %A-B% and %B-A% as well as separate %A% and %B% identity operations.  The %AH%, %AL%, %BH%, and %BL% macros are mostly to make the operations more readable for humans. The %AL% and %BL% macros are both zero, as selecting the AL and BL registers for input is the default state of the ALU. %AH% and %BH% set the appropriate bits in the ALU operation register to cause the A (or B) input muxes to select the high register for that side.
+
 | Opcode | Macro | Description |
 |--------|-------|-------------|
 | 0x00 | `%zero%` | Constant 0 |
