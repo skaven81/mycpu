@@ -326,7 +326,7 @@ Read-only FAT16 over ATA (PIO mode). Drives `0:` and `1:` (master/slave). 512-by
 
 ## Important Code Patterns
 
-- **No CMP instruction**: compare via subtraction (`ALUOP_FLAGS %A-B%`) and check flags. O flag = unsigned comparison (underflow). E flag compares operands directly (use any ALU op, even AND/OR).
+- **No CMP instruction**: compare via subtraction (`ALUOP_FLAGS %A-B%`) and check flags. **O flag for subtraction: O=1 means underflow (A < B), O=0 means no underflow (A >= B).** Use `JO` to branch when A < B, `JNO` to branch when A >= B. E flag compares operands directly (use any ALU op, even AND/OR).
 - **No hardware multiply/divide**: software in `math.asm` (`:mul16`, `:div8`). Multiply-by-10 = `8a + 2a` via shifts.
 - **MEMCPY/MEMFILL count is N-1**: AL=0 copies 1 unit, AL=255 copies 256.
 - **Hardware bulk ops**: `MEMCPY_C_D`, `MEMCPY4_C_D`, `MEMFILL4_C_PEEK`, `MEMFILL4_C_I` auto-increment C (and D for copies).
