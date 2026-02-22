@@ -82,6 +82,15 @@ class SpecialFunctions():
             self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
             self.emit(f"CALL :heap_pop_{dest_reg}", "Pop return value into dest_reg")
 
+    def custom_FuncCall_calloc_segments(self, node, mode, func, dest_reg='A', **kwargs):
+        # calloc_segments() takes size in AL, returns address in A
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL {func.asm_name()}", "Allocate segments, size in AL, result in A")
+        if dest_reg != 'A':
+            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
+            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop return value into dest_reg")
+
     # ---- Terminal output (register-based) ----
 
     def custom_FuncCall_putchar(self, node, mode, func, dest_reg='A', **kwargs):
