@@ -24,13 +24,14 @@ extern char *fat16_dirent_filename(struct fat16_dirent *dirent);
 // Returns attribute byte from dirent.
 extern uint8_t fat16_dirent_attribute(struct fat16_dirent *dirent);
 
-// Returns starting cluster (byte-swapped to native big-endian).
+// Returns start cluster from dirent (works with BE-parsed entries).
 extern uint16_t fat16_dirent_cluster(struct fat16_dirent *dirent);
 
 // Returns allocated 48-byte formatted string. Caller must free().
+// Expects a parsed (BE) directory entry.
 extern char *fat16_dirent_string(struct fat16_dirent *dirent);
 
-// Returns lo word of file size; writes hi word to *size_hi.
+// Returns file size as two words (works with BE-parsed entries).
 // Uses custom call handler for 2-word return.
 extern uint16_t fat16_dirent_filesize(struct fat16_dirent *dirent, uint16_t *size_hi);
 

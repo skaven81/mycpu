@@ -1,3 +1,165 @@
+2026-02-22: FAT16 refactor + cmd_cd rewrite (claude)
+====================================================
+
+This was a pretty hefty round of work, done almost entirely with Claude AI.
+The underlying theme: the FAT16 stack had accumulated several correctness
+bugs, and the code was also showing its age in terms of API design.  This
+commit cleans all of that up.
+
+**Big-endian parsing in fat16_dirent.**  The Odyssey is big-endian, but FAT16
+on disk is little-endian.  The dirent struct fields (starting cluster, file
+size, timestamps) were being read in the wrong byte order.  The fix was to
+add a `fat16_dirent_parse` step that byte-swaps all the multi-byte fields in
+place, so that once an entry is in memory, all fields can be read directly in
+the natural big-endian order the CPU expects.  This simplifies everything
+downstream.
+
+**Context-based dirwalk.**  The old `fat16_dirwalk_start/next/end` functions
+used global variables to track state, which meant you couldn't have two
+concurrent directory walks in flight (not reentrant-safe).  The new design
+allocates a small `fat16_dirwalk_ctx` struct on the heap (one malloc block =
+16 bytes) and passes the pointer around.  The struct holds the filesystem
+handle, current LBA, sector buffer pointer, directory index, and remaining
+sector count.  `fat16_dir_find` was updated to use the new context-based
+walker internally.
+
+**Streaming readfile.**  `fat16_readfile` grew a state-struct mode.  Mode 1
+(state pointer = NULL) is the old one-shot behavior.  Modes 2 and 3 allow
+incremental reads: mode 2 initializes the state and reads the first N sectors,
+mode 3 resumes from where mode 2 left off.  The state struct records the
+current cluster, LBA, and an EOF flag.  This is the groundwork needed for the
+`type` command and eventually video playback.
+
+**fat16_pathfind dot/dotdot handling.**  The pathfind function previously let
+`.` and `..` fall through to `fat16_dir_find`, which works fine when you're
+inside a subdirectory but fails at the root (root has no `.` or `..` entries).
+The fix: pathfind now inspects each token before calling dir_find.  If the
+token is `.`, it's silently skipped.  If the token is `..` and we're already
+at root (cluster == 0), it's also skipped (stay at root).  Otherwise, the
+token is passed to dir_find as usual.
+
+**Bare root path synthesis.**  Paths like `/`, `0:/`, `cd .` from root, or
+`cd ..` from root all reduce to "no tokens left to search, current cluster is
+the answer."  Previously, pathfind would fall through to the not-found path in
+these cases.  Now, when the token list is exhausted, pathfind synthesizes a
+32-byte directory entry on the heap (attribute=0x10 for directory,
+start_cluster=current cluster) and returns it just like a normal successful
+find.  This makes the bare root case work everywhere.
+
+**pathfind utility fix.**  The `pathfind SYS` shell command was returning
+"Error: unparseable path spec" despite pathfind succeeding.  Root cause: the
+error check was `BH & 0x01` to detect success vs. error, but if the returned
+malloc address happened to have an even high byte (e.g. 0xAE), `0xAE & 0x01`
+is zero and it looked like a failure.  Fixed by checking BH for zero first
+(not-found/syntax error), then comparing BH == 0x01 for ATA error, and letting
+anything else fall through as success.
+
+**cmd_cd rewrite.**  The old `cmd_cd` called `fat16_dir_find` directly and
+could only handle a single directory name token.  The new version uses
+`fat16_pathfind` as the canonical resolver, which means compound paths
+(`SYS/../FOO`), absolute paths (`/SYS`), drive-prefixed paths (`0:/SYS`), and
+bare root paths (`/`) all just work.  After pathfind resolves the path, cmd_cd
+verifies the result is a directory, extracts the cluster, stores it in the
+filesystem handle at offset 0x36, and updates `$current_fs_handle_ptr` (so
+`cd 0:/SYS` also switches drives).  The CWD string is rebuilt from the
+original argument by walking it component-by-component, handling drive prefix,
+leading slash, `.`, `..`, and normal names.  Components are buffered into a
+16-byte global (`$cd_comp_buf`) to avoid in-place delimiter fiddling.
+
+**cctest4 + cctest5.**  cctest4 gained a warning printed at startup if you run
+it from a non-root directory (relative path tests would give wrong results).
+cctest5 is a new test suite that exercises dirwalk, dir_find, readfile
+(verifying the ODY magic bytes at the start of SYSTEM.ODY), and pathfind,
+all via the C API.  The readfile test was the key one that confirmed the
+malloc_segments fix from a prior session was actually working correctly, since
+`buf[0..2]` came back as `4f 44 59` ("ODY") as expected.  cctest5 also tests
+`SYS/..` (returns synthesized entry with cluster=0) and bare `/` (synthesized
+entry with dir attribute and cluster=0).
+
+
+2026-02-18: C compiler complete, major refactor, and roadmap (claude)
+=====================================================================
+
+C Compiler -- Done!
+-------------------
+
+The C compiler is now complete and passes a comprehensive test suite.  This is
+a major milestone for the Odyssey project.  Going forward, all new application
+code will be written in C.  Library functions that live in the BIOS ROM will
+remain in pure assembly for performance and size reasons -- the overhead of the
+C calling convention is acceptable in application code but not in tight inner
+loops or frequently-called OS primitives.
+
+Codebase Refactor & Makefile overhaul
+--------------------------------------
+
+The entire codebase has been refactored and the Makefile structure has been
+redesigned from scratch to be more scalable and flexible.  The old monolithic
+build system was becoming unwieldy as the number of source files and build
+targets grew.  The new structure should make it much easier to add new
+applications and libraries going forward.
+
+Current focus: FAT16 + pathfind cleanup (with Claude Code)
+-----------------------------------------------------------
+
+Working with Claude Code to refactor the FAT16 functions so they are callable
+from C code, and to finally fix the longstanding pathfind bugs (memory leak,
+multi-cluster directory traversal failure).  Getting FAT16 into a clean,
+C-callable state is a prerequisite for writing any disk-accessing application
+code in C.
+
+Next up: SYSTEM.ODY redesign
+-----------------------------
+
+Once the FAT16 work is done, the plan is to rework SYSTEM.ODY so that it no
+longer needs to remain resident in memory while a command is executing.  The
+new model will work as follows:
+
+  1. SYSTEM.ODY resolves the command name and arguments, writes them to a
+     well-known global memory location, then exits (frees its memory and
+     returns to the BIOS).
+  2. The BIOS detects that a command is pending, performs load_and_run_ody
+     for the requested command binary.
+  3. When the command exits, the BIOS reloads SYSTEM.ODY and returns the
+     user to the shell prompt.
+
+This eliminates the current situation where SYSTEM.ODY occupies main memory
+for the entire lifetime of a running command, which severely limits the memory
+available to that command.  Under the new model, SYSTEM.ODY only needs to be
+in memory long enough to parse the command line, after which all of main memory
+is available to the command.
+
+As a side benefit, SYSTEM.ODY can now be written in C and can grow to as large
+as ~16KiB without impacting command memory availability.  This opens the door
+to a much more sophisticated shell, with features like command history, line
+editing, tab completion, and more capable built-in utilities.
+
+After that: Bad Apple
+----------------------
+
+With the infrastructure solidified, I want to return to the Bad Apple demo.
+The key outstanding issues are:
+  * FAT16 directory traversal breaking at cluster boundaries (directories
+    spanning more than one cluster, as in the BADAPPLE frame directory with
+    its 1096 files)
+  * The pathfind memory leak that was slowing down command execution
+  * Need to implement :fat16_streamfile for efficient streaming reads
+  * Pre-loading all frame directory entries into extended memory so the
+    playback loop can skip the pathfind step entirely
+
+After that: Dynamic library loading with trampoline tables
+-----------------------------------------------------------
+
+Longer term, I want to implement a dynamic library loading system.  The idea
+is to keep ODY executables small by storing most library code in extended
+memory rather than baking it into every binary.  A trampoline table in a
+well-known location in main memory would provide stable entry points: each
+slot in the table is a small stub that pages in the correct extended memory
+window and jumps to the real function.  ODY executables call library functions
+via the trampoline table, keeping their own footprint small and leaving the
+bulk of available main memory free for data.
+
+
 2025-11-15: C compiler musing
 =============================
 

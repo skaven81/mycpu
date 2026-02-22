@@ -125,31 +125,25 @@ void test_fs_handle() {
 
 void test_dirwalk() {
     struct fs_handle *h = &drive_0_fs_handle;
-    uint16_t result = fat16_dirwalk_start(h, 0);
-    if ((result >> 8) == 0) {
+    struct fat16_dirwalk_ctx *ctx = fat16_dirwalk_start(h, 0);
+    uint16_t ctx_addr = (uint16_t)ctx;
+    if ((ctx_addr >> 8) == 0) {
         fail_test("dirwalk_start");
         return;
     }
     pass();
 
-    struct fat16_dirent *entry = (struct fat16_dirent *)result;
     uint8_t count = 0;
 
     while (count < 20) {
-        uint8_t fb = entry->filename[0];
-        if (fb == 0) {
-            break;
-        }
-        if (fb != 0xe5) {
-            count++;
-        }
-        entry = fat16_dirwalk_next();
+        struct fat16_dirent *entry = fat16_dirwalk_next(ctx);
         uint16_t addr = (uint16_t)entry;
         if ((addr >> 8) == 0) {
             break;
         }
+        count++;
     }
-    fat16_dirwalk_end();
+    fat16_dirwalk_end(ctx);
     if (count >= 2) { pass(); } else { fail_test("dirwalk count>=2"); }
 }
 
@@ -160,16 +154,16 @@ void test_dir_find() {
     struct fat16_dirent *found = fat16_dir_find(0xff, 0x00, "SYS", 0, h);
     uint16_t addr = (uint16_t)found;
 
-    if (addr == 0 || (addr >> 8) < 2) {
+    if (addr == 0 || (addr >> 8) < 0x40) {
         fail_test("dir_find SYS found");
         return;
     }
     pass();
 
-    uint8_t attr = fat16_dirent_attribute(found);
+    uint8_t attr = found->attribute;
     if (attr & 0x10) { pass(); } else { fail_test("dir_find SYS is dir"); }
 
-    uint16_t cluster = fat16_dirent_cluster(found);
+    uint16_t cluster = found->start_cluster;
     if (cluster > 0) { pass(); } else { fail_test("dir_find SYS cluster>0"); }
 
     free(found);
@@ -180,42 +174,37 @@ void test_dir_find() {
 
 void test_filesize() {
     struct fs_handle *h = &drive_0_fs_handle;
-    uint16_t result = fat16_dirwalk_start(h, 0);
-    if ((result >> 8) == 0) {
+    struct fat16_dirwalk_ctx *ctx = fat16_dirwalk_start(h, 0);
+    uint16_t ctx_addr = (uint16_t)ctx;
+    if ((ctx_addr >> 8) == 0) {
         fail_test("filesize dirwalk_start");
         return;
     }
 
-    struct fat16_dirent *entry = (struct fat16_dirent *)result;
     uint8_t count = 0;
 
     while (count < 10) {
-        uint8_t fb = entry->filename[0];
-        if (fb == 0) {
-            break;
-        }
-        if (fb != 0xe5) {
-            uint16_t size_hi;
-            uint16_t size_lo = fat16_dirent_filesize(entry, &size_hi);
-            uint8_t attr = fat16_dirent_attribute(entry);
-
-            if (attr & 0x18) {
-                // Directory or volume label: size must be 0
-                assert_u16(size_hi, 0, "dir/vol size_hi==0");
-                assert_u16(size_lo, 0, "dir/vol size_lo==0");
-            } else {
-                // Regular file: size must be > 0
-                if (size_hi > 0 || size_lo > 0) { pass(); } else { fail_test("file size>0"); }
-            }
-            count++;
-        }
-        entry = fat16_dirwalk_next();
+        struct fat16_dirent *entry = fat16_dirwalk_next(ctx);
         uint16_t addr = (uint16_t)entry;
         if ((addr >> 8) == 0) {
             break;
         }
+
+        uint16_t size_hi = entry->file_size.hi;
+        uint16_t size_lo = entry->file_size.lo;
+        uint8_t attr = entry->attribute;
+
+        if (attr & 0x18) {
+            // Directory or volume label: size must be 0
+            assert_u16(size_hi, 0, "dir/vol size_hi==0");
+            assert_u16(size_lo, 0, "dir/vol size_lo==0");
+        } else {
+            // Regular file: size must be > 0
+            if (size_hi > 0 || size_lo > 0) { pass(); } else { fail_test("file size>0"); }
+        }
+        count++;
     }
-    fat16_dirwalk_end();
+    fat16_dirwalk_end(ctx);
     if (count >= 2) { pass(); } else { fail_test("filesize count>=2"); }
 }
 
@@ -225,12 +214,12 @@ void test_cluster_chain() {
     struct fs_handle *h = &drive_0_fs_handle;
     struct fat16_dirent *sys = fat16_dir_find(0xff, 0x00, "SYS", 0, h);
     uint16_t saddr = (uint16_t)sys;
-    if (saddr == 0 || (saddr >> 8) < 2) {
+    if (saddr == 0 || (saddr >> 8) < 0x40) {
         fail_test("cluster_chain SYS not found");
         return;
     }
 
-    uint16_t cluster = fat16_dirent_cluster(sys);
+    uint16_t cluster = sys->start_cluster;
     free(sys);
     if (cluster > 0) { pass(); } else { fail_test("SYS start cluster>0"); }
 
@@ -263,50 +252,49 @@ void test_cluster_to_lba() {
     if (lba_hi > 0 || lba_lo > 0) { pass(); } else { fail_test("cluster2 lba>0"); }
 }
 
-// ---- Section 10: pathfind (KNOWN BROKEN -- verbose for debugging) ----
+// ---- Section 10: pathfind ----
 
-void test_pathfind_one(char *path) {
-    printf("  pathfind(");
-    print(path);
-    printf("): ");
-
+void test_pathfind_expect(char *path, uint8_t expect_found) {
     struct fs_handle *h;
     struct fat16_dirent *entry = fat16_pathfind(path, &h);
     uint16_t result = (uint16_t)entry;
 
-    if (result == 0) {
-        printf("not found\n");
-        return;
+    if (expect_found) {
+        if (result != 0 && (result >> 8) >= 0x40) {
+            pass();
+            free(entry);
+        } else {
+            fail_test(path);
+        }
+    } else {
+        if (result == 0) {
+            pass();
+        } else if ((result >> 8) >= 0x40) {
+            fail_test(path);
+            free(entry);
+        } else {
+            fail_test(path);
+        }
     }
-    if (result == 0x0001) {
-        printf("syntax error\n");
-        return;
-    }
-    if ((result >> 8) == 0x01) {
-        printf("ATA err 0x%X\n", result);
-        return;
-    }
-
-    char *name = fat16_dirent_filename(entry);
-    printf("found ");
-    print(name);
-    printf("\n");
-    free(name);
-    free(entry);
 }
 
 void test_pathfind() {
-    printf("pathfind (KNOWN BROKEN):\n");
-    test_pathfind_one("SYS");
-    test_pathfind_one("/SYS");
-    test_pathfind_one("0:/SYS");
-    test_pathfind_one("NOEXIST.TXT");
+    test_pathfind_expect("SYS", 1);
+    test_pathfind_expect("/SYS", 1);
+    test_pathfind_expect("0:/SYS", 1);
+    test_pathfind_expect("NOEXIST.TXT", 0);
 }
 
 // ---- Main ----
 
 void main() {
     printf("=== cctest4: FAT16 C API ===\n\n");
+
+    struct fs_handle *h0 = &drive_0_fs_handle;
+    if (h0->current_dir_cluster != 0) {
+        printf("WARNING: not in root dir (cluster=%U)\n", h0->current_dir_cluster);
+        printf("Relative pathfind tests may fail.\n\n");
+    }
 
     test_types();
     test_memory();

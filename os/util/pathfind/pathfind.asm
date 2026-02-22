@@ -15,10 +15,12 @@ CALL :heap_push_A               # address of path string
 CALL :fat16_pathfind
 CALL :heap_pop_B                # directory entry (or error)
 
+ALUOP_FLAGS %B%+%BH%              # test BH identity (Z=1 if BH==0)
+JZ .retzero                        # BH==0x00 -> not-found or syntax error
 LDI_AL 0x01
-ALUOP_FLAGS %A&B%+%BH%+%AL%     # Check high byte for error
-JZ .retzero
-JEQ .ataerr
+ALUOP_FLAGS %A&B%+%AL%+%BH%       # E flag: set if BH==AL (i.e., BH==0x01)
+JEQ .ataerr                        # BH==0x01 -> ATA error
+# Fall through -> success (BH >= 0x02, valid malloc address)
 
 # If here, entry was found, and B contains the address
 # of the directory entry. The address of the filesystem handle

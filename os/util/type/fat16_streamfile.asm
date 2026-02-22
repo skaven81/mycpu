@@ -49,9 +49,16 @@ VAR global byte $fat16_streamfile_device_id
 # Pop directory entry and get our current/starting cluster, store in D
 ######
 CALL :heap_pop_A                # directory entry address in A
-CALL :heap_push_A
-CALL :fat16_dirent_cluster
-CALL :heap_pop_D                # starting cluster in D
+# Get starting cluster from dirent (BE at offset 0x1A)
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%             # save dirent base
+LDI_B 0x001a
+ALUOP16O_A %ALU16_A+B%          # A = dirent + 0x1A
+LDA_A_DH                        # DH = cluster high byte
+ALUOP16O_A %ALU16_A+1%
+LDA_A_DL                        # DL = cluster low byte
+POP_AL
+POP_AH                          # A = dirent base restored
 ST_DH $fat16_streamfile_current_cluster
 ST_DL $fat16_streamfile_current_cluster+1
 
@@ -60,10 +67,12 @@ ST_DL $fat16_streamfile_current_cluster+1
 # low word) and convert it to a number of sectors.  Then pop the max sectors byte
 # and replace the file size derived count if nonzero.
 ######
-CALL :heap_push_A               # push directory entry address
-CALL :fat16_dirent_filesize
-CALL :heap_pop_B                # low word of file size in B
-CALL :heap_pop_word             # discard high word of file size
+# Get file size low word from dirent (BE at offset 0x1E)
+LDI_B 0x001e
+ALUOP16O_A %ALU16_A+B%          # A = dirent + 0x1E (low word of filesize, BE)
+LDA_A_BH                        # BH = filesize low word high byte
+ALUOP16O_A %ALU16_A+1%
+LDA_A_BL                        # BL = filesize low word low byte
 ALUOP_BH %B>>1%+%BH%            # BH contains number of sectors (bottom 9
 ALUOP_BH %B+1%+%BH%             # bits discarded, plus one)
 CALL :heap_pop_AL               # max sectors in AL

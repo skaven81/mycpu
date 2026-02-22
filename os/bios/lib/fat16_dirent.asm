@@ -8,7 +8,7 @@
 #  1. Push the address word of a FAT16 directory entry
 #  2. Call the function
 #  3. Pop the address word of the string
-#  4. Call :free with size 0 (16 bytes) to release the memory allocated for the string
+#  4. Call :free to release the memory allocated for the string
 :fat16_dirent_filename
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
@@ -104,9 +104,11 @@ POP_AH
 RET
 
 ####
-# Retrieve the file size as a 32-bit number (pair of words)
+# Retrieve the file size as a 32-bit number (pair of words).
+# The entry must be big-endian parsed (returned by fat16_dirwalk_next,
+# fat16_dir_find, or fat16_dirent_parse) -- raw LE entries will give wrong results.
 # To use:
-#  1. Push the address word of a FAT16 directory entry
+#  1. Push the address word of a FAT16 directory entry (must be BE-parsed)
 #  2. Call the function
 #  3. Pop the low word of the size
 #  4. Pop the high word of the size
@@ -121,15 +123,15 @@ PUSH_DH
 PUSH_DL
 
 CALL :heap_pop_A                # directory entry address in A
-LDI_B 0x001c                    # offset 0x1c = file size, 4 bytes
-ALUOP16O_A %ALU16_A+B%                # A points at the first byte (LSB) of the file size
-LDA_A_DL
+LDI_B 0x001c                    # offset 0x1c = file size, 4 bytes (BE order)
+ALUOP16O_A %ALU16_A+B%                # A points at the first byte (MSB) of the file size
+LDA_A_CH                        # byte 0 -> CH (MSB of high word)
 ALUOP16O_A %ALU16_A+1%
-LDA_A_DH
+LDA_A_CL                        # byte 1 -> CL (LSB of high word)
 ALUOP16O_A %ALU16_A+1%
-LDA_A_CL
+LDA_A_DH                        # byte 2 -> DH (MSB of low word)
 ALUOP16O_A %ALU16_A+1%
-LDA_A_CH
+LDA_A_DL                        # byte 3 -> DL (LSB of low word)
 CALL :heap_push_C               # push the high word onto the heap
 CALL :heap_push_D               # push the low word onto the heap
 
@@ -144,9 +146,11 @@ POP_AH
 RET
 
 ####
-# Retrieve the starting cluster of the directory entry
+# Retrieve the starting cluster of the directory entry.
+# The entry must be big-endian parsed (returned by fat16_dirwalk_next,
+# fat16_dir_find, or fat16_dirent_parse) -- raw LE entries will give wrong results.
 # To use:
-#  1. Push the address word of a FAT16 directory entry
+#  1. Push the address word of a FAT16 directory entry (must be BE-parsed)
 #  2. Call the function
 #  3. Pop the cluster word
 :fat16_dirent_cluster
@@ -158,11 +162,11 @@ PUSH_DH
 PUSH_DL
 
 CALL :heap_pop_A                # directory entry address in A
-LDI_B 0x001a                    # offset 0x1a = starting cluster, 2 bytes
-ALUOP16O_A %ALU16_A+B%                # A points at the first byte (LSB) of the cluster
-LDA_A_DL
+LDI_B 0x001a                    # offset 0x1a = starting cluster, 2 bytes (BE order)
+ALUOP16O_A %ALU16_A+B%                # A points at the first byte (MSB) of the cluster
+LDA_A_DH                        # byte 0 -> DH (high byte)
 ALUOP16O_A %ALU16_A+1%
-LDA_A_DH
+LDA_A_DL                        # byte 1 -> DL (low byte)
 CALL :heap_push_D               # push the cluster onto the heap
 
 POP_DL
@@ -179,7 +183,7 @@ RET
 #  1. Push the address word of the first byte of the timestamp
 #  2. Call the function
 #  3. Pop the address word of the string
-#  4. Free the string (size 1, 32 bytes)
+#  4. Call :free to release the memory allocated for the string
 # Returned string will be in form YYYY-MM-DD HH:MM
 .get_timestamp_string
 ALUOP_PUSH %A%+%AH%
@@ -192,9 +196,8 @@ PUSH_DH
 PUSH_DL
 
 # Timestamp format (offset 0x0e, creation; offset 0x16, last write)
-# Note that due to endianness, the two words are in order but the
-# bytes are reversed
-# | 0x0f / 0x17   | 0x0e / 0x16   | 0x11 / 0x19   | 0x10 / 0x18   |
+# After fat16_dirent_parse, timestamps are big-endian:
+# | byte 0 (hi_t) | byte 1 (lo_t) | byte 2 (hi_d) | byte 3 (lo_d) |
 # |7|6|5|4|3|2|1|0|7|6|5|4|3|2|1|0|7|6|5|4|3|2|1|0|7|6|5|4|3|2|1|0|
 # |hour 0-23| min 0-59  |sec 0-29 | year 0-127  | 1-12  |day 1-31 |
 # | 5 bits  |  6 bits   | 5 bits  |  7 bits     |4 bits | 5 bits  |
@@ -203,19 +206,17 @@ PUSH_DL
 
 # Strategy is to extract each component from the final string from
 # right to left, then use sprintf to generate the string, popping
-# the individual values from the heap.  That way we don't have to
-# retain the values in registers, just compute them each individually.
+# the individual values from the heap.
 
-CALL :heap_pop_C                # timestamp address in C
+CALL :heap_pop_C                # timestamp address in C (byte 0 = hi_t)
 
 # minute
-INCR_C                          # second byte
-LDA_C_AH                        # hour/min byte in AH
+LDA_C_AH                        # byte 0 = hi_t: [hhhhh|mmm], hour/min byte in AH
 ALUOP_AH %A<<1%+%AH%
 ALUOP_AH %A<<1%+%AH%
 ALUOP_AH %A<<1%+%AH%            # shift hour/min byte left 3 positions
-DECR_C                          # first byte
-LDA_C_BH                        # min/sec byte in BH
+INCR_C                          # byte 1
+LDA_C_BH                        # byte 1 = lo_t: [mmm|sssss], min/sec byte in BH
 ALUOP_BH %B>>1%+%BH%
 ALUOP_BH %B>>1%+%BH%
 ALUOP_BH %B>>1%+%BH%
@@ -230,8 +231,8 @@ CALL :double_dabble_byte        # AL converted to BCD across AH+AL
 CALL :heap_push_AL              # push minutes (tens and units) onto heap
 
 # hour
-INCR_C                          # second byte
-LDA_C_AL                        # hour/min in AL
+DECR_C                          # byte 0
+LDA_C_AL                        # byte 0 = hi_t: [hhhhh|mmm]
 ALUOP_AL %A>>1%+%AL%
 ALUOP_AL %A>>1%+%AL%
 ALUOP_AL %A>>1%+%AL%            # shift right three places to get hour
@@ -239,17 +240,19 @@ CALL :double_dabble_byte        # AL converted to BCD across AH+AL
 CALL :heap_push_AL              # push hours (tens and units) onto heap
 
 # day
-INCR_C                          # third byte
-LDA_C_AL                        # mon/day in AL
+INCR_C                          # byte 1
+INCR_C                          # byte 2
+INCR_C                          # byte 3
+LDA_C_AL                        # byte 3 = lo_d: [mmmm|ddddd], mon/day in AL
 LDI_BL 0x1f                     # mask for lower 5 bits
 ALUOP_AL %A&B%+%AL%+%BL%        # day in AL
 CALL :double_dabble_byte        # AL converted to BCD across AH+AL
 CALL :heap_push_AL              # push day (tens and units) onto heap
 
 # month
-LDA_C_BH                        # mon/day in BH
-INCR_C                          # fourth byte
-LDA_C_AH                        # year/mon in AH
+LDA_C_BH                        # byte 3 = lo_d: [mmmm|ddddd], mon/day in BH
+DECR_C                          # byte 2
+LDA_C_AH                        # byte 2 = hi_d: [yyyyyyy|m], year/mon in AH
 LDI_BL 0x01
 ALUOP_AH %A&B%+%AH%+%BL%        # only last bit is used
 ALUOP_AH %A<<1%+%AH%
@@ -265,11 +268,11 @@ CALL :double_dabble_byte        # AL converted to BCD across AH+AL
 CALL :heap_push_AL              # push month (tens and units) onto heap
 
 # year
-LDA_C_AL                        # year/month in AL
+LDA_C_AL                        # byte 2 = hi_d: [yyyyyyy|m], year/month in AL
 ALUOP_AL %A>>1%+%AL%            # shift right one position
 LDI_AH 0x00
 LDI_B 1980
-ALUOP16O_A %ALU16_A+B%                # AH now has year
+ALUOP16O_A %ALU16_A+B%           # AH now has year
 CALL :heap_push_A
 
 # allocate memory for return string
@@ -386,10 +389,27 @@ CALL :strcpy
 JMP .dirent_string_done
 
 .dirent_string_file
-CALL :heap_push_B               # push directory entry address
-CALL :fat16_dirent_filesize     # file size on heap, as 2 words
-CALL :heap_pop_B                # low word in B
-CALL :heap_pop_A                # high word in A
+# Read file size directly from BE-parsed entry
+# B = directory entry base, D = output string position
+PUSH_DH
+PUSH_DL
+ALUOP_AH %B%+%BH%
+ALUOP_AL %B%+%BL%              # A = dirent base
+LDI_B 0x001c
+ALUOP16O_A %ALU16_A+B%         # A points to file size (BE: MSB first)
+LDA_A_DH                       # byte 0 = MSB -> DH
+ALUOP16O_A %ALU16_A+1%
+LDA_A_DL                       # byte 1 -> DL
+ALUOP16O_A %ALU16_A+1%
+LDA_A_BH                       # byte 2 -> BH
+ALUOP16O_A %ALU16_A+1%
+LDA_A_BL                       # byte 3 = LSB -> BL
+# D = high word, B = low word of file size
+MOV_DH_AH
+MOV_DL_AL                      # A = high word
+POP_DL
+POP_DH                         # D = output string position restored
+# A = high word, B = low word
 ALUOP_FLAGS %A%+%AH%
 JNZ .dirent_string_bigsize
 ALUOP_FLAGS %A%+%AL%

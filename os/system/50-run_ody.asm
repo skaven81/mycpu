@@ -29,9 +29,11 @@ ALUOP_CL %A%+%AL%               # save temp memory address for freeing later
 
 CALL :heap_push_B               # filesystem handle
 CALL :heap_push_C               # target memory address
-LDI_AL 1                        # one sector to load
-CALL :heap_push_AL
+LDI_A 0x0001                    # one sector to load
+CALL :heap_push_A               # n_sectors (word)
 CALL :heap_push_D               # directory entry
+LDI_A 0x0000
+CALL :heap_push_A               # state = NULL (one-shot)
 CALL :fat16_readfile
 CALL :heap_pop_AL               # status byte
 ALUOP_FLAGS %A%+%AL%
@@ -123,10 +125,16 @@ JMP .run_ody_done
 
 .malloc_main
 # Round the file size up to the nearest 512 bytes
-CALL :heap_push_D               # directory entry
-CALL :fat16_dirent_filesize
-CALL :heap_pop_A                # low word of file size
-CALL :heap_pop_word             # high word of file size (ignored)
+# Entry in D is already parsed to BE; read low word of filesize at offset 0x1E
+MOV_DH_AH
+MOV_DL_AL                       # A = entry pointer
+LDI_B 0x001e                    # offset 0x1E = high byte of low word (BE)
+ALUOP16O_A %ALU16_A+B%          # A = entry + 0x1E
+LDA_A_BH                        # BH = filesize high byte of low word
+ALUOP16O_A %ALU16_A+1%
+LDA_A_BL                        # BL = filesize low byte of low word
+ALUOP_AH %B%+%BH%               # AH = high byte
+ALUOP_AL %B%+%BL%               # AL = low byte; A = low word of file size
 
 # Our goal is to take the 16-bit filesize and convert it to a malloc
 # number that is rounded up to the nearest 512 bytes.
@@ -181,9 +189,10 @@ LD_AH $shell_ody_fh
 LD_AL $shell_ody_fh+1
 CALL :heap_push_A               # filesystem handle on heap
 CALL :heap_push_C               # target memory address
-LDI_AL 0                        # load all sectors
-CALL :heap_push_AL
+LDI_A 0x0000
+CALL :heap_push_A               # n_sectors = 0 (read entire file)
 CALL :heap_push_D               # directory entry
+CALL :heap_push_A               # state = NULL (0x0000, A still zero)
 CALL :fat16_readfile
 CALL :heap_pop_AL               # status byte
 ALUOP_FLAGS %A%+%AL%

@@ -58,10 +58,14 @@ CALL :printf
 # Round the file size up to the nearest 512 bytes
 ALUOP_DH %A%+%AH%               # copy dirent to D for safekeeping
 ALUOP_DL %A%+%AL%
-CALL :heap_push_D               # directory entry
-CALL :fat16_dirent_filesize
-CALL :heap_pop_A                # low word of file size
-CALL :heap_pop_word             # high word of file size (ignored)
+# Get file size low word from dirent (BE at offset 0x1E)
+LDI_B 0x001e
+ALUOP16O_A %ALU16_A+B%          # A = dirent + 0x1E (low word of filesize, BE)
+LDA_A_BH                        # BH = filesize low word high byte
+ALUOP16O_A %ALU16_A+1%
+LDA_A_BL                        # BL = filesize low word low byte
+ALUOP_AH %B%+%BH%
+ALUOP_AL %B%+%BL%               # A = low word of file size
 
 CALL :heap_push_AL              # push filesize for printf later
 CALL :heap_push_AH
@@ -102,9 +106,10 @@ LD_BH $boot_fs_handle_ptr
 LD_BL $boot_fs_handle_ptr+1
 CALL :heap_push_B               # filesystem handle
 CALL :heap_push_C               # target memory address
-LDI_AL 0                        # load all sectors
-CALL :heap_push_AL
+LDI_A 0x0000
+CALL :heap_push_A               # n_sectors = 0 (read entire file)
 CALL :heap_push_D               # directory entry
+CALL :heap_push_A               # state = NULL (0x0000, A still zero)
 CALL :fat16_readfile
 CALL :heap_pop_AL               # status byte
 ALUOP_FLAGS %A%+%AL%
