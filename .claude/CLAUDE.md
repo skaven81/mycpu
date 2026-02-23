@@ -1,3 +1,15 @@
+# General code and documentation reference
+
+## Unicode characters
+
+NEVER use unicode characters like em-dashes or arrow glyphs in code you write for this project. Use only the standard ASCII character set.
+
+## Comments
+
+All assembly functions MUST include leading comments that explain how to call them.  The comments must include the calling convention (e.g. what registers to set or what to push to the heap, and in what order) and how the return value is obtained after execution.
+
+Any side-effects from executing the function must be noted.
+
 # Wire Wrap Odyssey - Agent Reference
 
 Custom 8-bit computer built from discrete 7400-series HC logic ICs. NOT a pre-existing architecture (not 6502, Z80, etc.) -- the CPU, instruction set, and toolchain are entirely original.
