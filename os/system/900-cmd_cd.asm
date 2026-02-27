@@ -226,6 +226,10 @@ ALUOP_ADDR_D %zero%             # erase character
 JMP .cwd_strip_erase
 
 .cwd_append_comp
+# Uppercase the component in $cd_comp_buf in-place (FAT16 names are uppercase)
+LDI_C $cd_comp_buf
+LDI_D $cd_comp_buf
+CALL :strupper                   # C and D end up at the null; D reloaded below
 # Append component name + "/" to end of CWD
 # Find end of CWD string
 LD_DH $cd_fshandle_ptr

@@ -71,21 +71,17 @@ INCR_D                          # D now points at the next command
 JMP .check_builtin_cmd_loop     # loop to next builtin command
 
 .try_files                      # Look for .ODY files matching the command
-# Copy argv[0] to :shell_ody_lookup and uppercase it for FAT16 lookup.
-# The original argv[0] string is preserved lowercase (POSIX convention).
-LDI_D :shell_ody_lookup         # D = scratch buffer for uppercase name
+# Copy argv[0] to :shell_ody_lookup and append .ODY suffix.
+# fat16_dir_find uses strcasecmp, so no uppercasing is needed here.
+LDI_D :shell_ody_lookup         # D = scratch buffer for command name
 CALL :strcpy                    # copy argv[0] (C) to :shell_ody_lookup (D)
-ALUOP_ADDR_D %zero%             # null-terminate (strcpy doesn't copy the null)
-# Uppercase the copy in-place
-LDI_C :shell_ody_lookup
-LDI_D :shell_ody_lookup
-CALL :strupper                  # C,D now point at null terminator
+ALUOP_ADDR_D %zero%             # null-terminate; D now at null = where to append
 # Append .ODY suffix (D points at null = where to append)
 LDI_C .ody_suffix
-CALL :strcpy                    # append ".ODY" to uppercase name
+CALL :strcpy                    # append ".ODY" to name
 ALUOP_ADDR_D %zero%             # null-terminate (strcpy doesn't copy the null)
 
-# :shell_ody_lookup now contains "COMMAND.ODY" - search current dir first
+# :shell_ody_lookup now contains "command.ODY" - search current dir first
 LDI_C :shell_ody_lookup
 CALL :heap_push_C
 CALL :fat16_pathfind

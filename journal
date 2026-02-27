@@ -1,3 +1,39 @@
+2026-02-27: Case-insensitive FAT16 filename matching (claude)
+=============================================================
+
+FAT16 8.3 directory entries always store filenames in uppercase, but the shell
+was doing a byte-exact strcmp for path lookups, forcing users to type commands
+and paths in ALL CAPS.  Fixed with a four-file surgical change:
+
+- `os/bios/lib/string.asm`: added `:strcasecmp`, a case-insensitive variant of
+  `:strcmp`.  Uses the same toupper logic as `:strupper` (check 'a'-'z' range,
+  clear bit 5).  Hardware stack holds `toupper(s1[i])` while computing
+  `toupper(s2[i])`; the result is saved across `heap_pop_all` the same way
+  `:strcmp` saves its result.  Null-termination check uses BL (which holds
+  `toupper(s2[i])`) rather than AL (which holds the subtraction result and is
+  always 0 when chars are equal, not just when both are null).
+
+- `os/bios/lib/string.h`: added `extern int8_t strcasecmp(char *s1, char *s2)`.
+
+- `c_compiler/special_functions.py`: added `custom_FuncCall_strcasecmp` handler
+  (identical calling convention to `strcmp`).
+
+- `os/bios/lib/fat16_dir.asm`: changed `CALL :strcmp` to `CALL :strcasecmp` at
+  the single directory-entry comparison point.  All callers of `fat16_pathfind`
+  and `fat16_dir_find` benefit automatically -- no changes needed in individual
+  commands.
+
+Two follow-on shell fixes:
+
+- `os/system/900-cmd_cd.asm`: `.cwd_append_comp` now calls `:strupper` on
+  `$cd_comp_buf` in-place before appending the component to the CWD string,
+  so the prompt always shows the canonical uppercase path regardless of how
+  the user typed it.
+
+- `os/system/40-parse_command.asm`: removed the now-redundant `:strupper` call
+  that uppercased `argv[0]` before the `.ODY` file search.  `fat16_dir_find`
+  handles case folding, so the extra copy-and-uppercase step was dead work.
+
 2026-02-27: Roll 5 utilities into SYSTEM.ODY + new `type` command in C (claude)
 ================================================================================
 

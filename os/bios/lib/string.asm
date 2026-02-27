@@ -148,6 +148,73 @@ POP_AL
 RET
 
 #######
+# Case-insensitive string compare.  Identical to strcmp but converts both
+# characters to uppercase before comparing.  Suitable for comparing
+# user-supplied filenames against FAT16 directory entry names, which are
+# always stored in uppercase per the FAT16 specification.
+#
+# Inputs:
+#  C: address of null-terminated string s1
+#  D: address of null-terminated string s2
+#
+# Outputs:
+#  AL: 0 if equal, negative if s1 < s2, positive if s1 > s2
+#      (case-insensitively)
+:strcasecmp
+CALL :heap_push_all
+ALUOP_AL %zero%
+
+.strcasecmp_loop
+# Load char from C (s1) into AL and convert to uppercase
+LDA_C_AL
+LDI_BL 'a'
+ALUOP_FLAGS %A-B%+%AL%+%BL%    # if AL < 'a', O=1 (underflow), skip uppercasing
+JO .strcasecmp_c_done
+LDI_BL 'z'
+ALUOP_FLAGS %B-A%+%AL%+%BL%    # if AL > 'z', O=1 (BL-AL underflows), skip uppercasing
+JO .strcasecmp_c_done
+LDI_BL 0b00100000
+ALUOP_AL %A&~B%+%AL%+%BL%      # clear bit 5 -> uppercase
+.strcasecmp_c_done
+# Save toupper(s1[i]) on hardware stack while we process s2[i]
+ALUOP_PUSH %A%+%AL%
+
+# Load char from D (s2) into AL and convert to uppercase
+LDA_D_AL
+LDI_BL 'a'
+ALUOP_FLAGS %A-B%+%AL%+%BL%
+JO .strcasecmp_d_done
+LDI_BL 'z'
+ALUOP_FLAGS %B-A%+%AL%+%BL%
+JO .strcasecmp_d_done
+LDI_BL 0b00100000
+ALUOP_AL %A&~B%+%AL%+%BL%
+.strcasecmp_d_done
+# toupper(s2[i]) is in AL; move it to BL for comparison
+ALUOP_BL %A%+%AL%
+# Restore toupper(s1[i]) into AL
+POP_AL
+
+# Compare: AL = toupper(s1[i]) - toupper(s2[i])
+ALUOP_AL %A-B%+%AL%+%BL%
+JNZ .strcasecmp_done            # mismatch -- exit with AL != 0
+
+# Chars are equal; BL still holds toupper(s2[i]).  Exit if it was null.
+# (AL=0 here means equal, NOT necessarily null, so check BL instead)
+ALUOP_FLAGS %B%+%BL%
+JZ .strcasecmp_done             # both null -- strings are equal
+
+INCR_C
+INCR_D
+JMP .strcasecmp_loop
+
+.strcasecmp_done
+ALUOP_PUSH %A%+%AL%             # save result across heap_pop_all
+CALL :heap_pop_all
+POP_AL
+RET
+
+#######
 # Splits a string, into multiple strings.
 #
 # Walks the string referenced in C, and upon encountering the split character

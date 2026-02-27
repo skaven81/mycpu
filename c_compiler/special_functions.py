@@ -136,6 +136,35 @@ class SpecialFunctions():
         self.emit(f"POP_{dest_reg}L", "strcmp result into dest_reg")
         self.emit(f"LDI_{dest_reg}H 0x00", "Clear high byte for int8_t return")
 
+    def custom_FuncCall_strcasecmp(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=s1, D=s2 -> CALL :strcasecmp -> result in AL
+        # C: int8_t strcasecmp(char *s1, char *s2)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Evaluate args and stage on heap
+        rvalue_s1 = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage s1 on heap")
+        rvalue_s2 = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage s2 on heap")
+        # Save C and D
+        self.emit("PUSH_CH", "Save C before strcasecmp")
+        self.emit("PUSH_CL", "Save C before strcasecmp")
+        self.emit("PUSH_DH", "Save D before strcasecmp")
+        self.emit("PUSH_DL", "Save D before strcasecmp")
+        # Pop staged values into registers (LIFO: s2 into D, s1 into C)
+        self.emit("CALL :heap_pop_D", "Load s2 into D")
+        self.emit("CALL :heap_pop_C", "Load s1 into C")
+        self.emit(f"CALL {func.asm_name()}")
+        # Result is in AL; save on CPU stack
+        self.emit("ALUOP_PUSH %A%+%AL%", "Save strcasecmp result")
+        # Restore D, C (reverse order of save)
+        self.emit("POP_DL", "Restore D after strcasecmp")
+        self.emit("POP_DH", "Restore D after strcasecmp")
+        self.emit("POP_CL", "Restore C after strcasecmp")
+        self.emit("POP_CH", "Restore C after strcasecmp")
+        # Pop result into dest_reg low byte, clear high byte
+        self.emit(f"POP_{dest_reg}L", "strcasecmp result into dest_reg")
+        self.emit(f"LDI_{dest_reg}H 0x00", "Clear high byte for int8_t return")
+
     def custom_FuncCall_strcpy(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: C=src, D=dest → CALL :strcpy → no return
         # C: void strcpy(char *src, char *dest)

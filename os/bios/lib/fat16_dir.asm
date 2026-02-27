@@ -173,7 +173,7 @@ ALUOP_PUSH %A%+%AL%
 MOV_CL_AL                           # Copy C to A to free
 MOV_CH_AH
 CALL :free                          # free the filename string
-CALL :strcmp                        # Compare C and D, result in AL
+CALL :strcasecmp                    # Compare C and D case-insensitively, result in AL
 ALUOP_FLAGS %A%+%AL%
 
 POP_AL                              # restore entry ptr
