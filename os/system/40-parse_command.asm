@@ -189,6 +189,11 @@ RET
 .cmd_050 "mount\0"          :cmd_mount
 .cmd_060 "peek\0"           :cmd_peek
 .cmd_070 "poke\0"           :cmd_poke
+.cmd_080 "ascii\0"         :cmd_ascii
+.cmd_090 "clock\0"         :cmd_clock
+.cmd_100 "colors\0"        :cmd_colors
+.cmd_110 "hexdump\0"       :cmd_hexdump
+.cmd_120 "setserial\0"     :cmd_setserial
 .cmd_end 0x00
 
 #####
