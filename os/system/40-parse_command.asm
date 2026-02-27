@@ -194,6 +194,7 @@ RET
 .cmd_100 "colors\0"        :cmd_colors
 .cmd_110 "hexdump\0"       :cmd_hexdump
 .cmd_120 "setserial\0"     :cmd_setserial
+.cmd_130 "type\0"          :cmd_type
 .cmd_end 0x00
 
 #####

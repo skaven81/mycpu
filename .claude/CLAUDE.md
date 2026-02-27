@@ -308,14 +308,45 @@ LD16_A $my_word_var             # load 16-bit variable into AH:AL
 
 Note: all instructions above are left-justified in actual code. Indentation here is for document readability only.
 
+### Troubleshooting assembly code
+
+Some static analysis of assembly is reasonable.  But once the problem gets complex, it's better to take a step back
+and collect additional information through tracing.  Any .asm file may have :trace_N (:trace_0, :trace_1, etc.) calls
+inserted at strategic locations.  See also os/bios/lib/trace.asm.  For example:
+
+```
+CALL :trace_0  # comment about what we expect to see here
+```
+
+The trace functions are entirely idempotent -- they do not cause any changes to any registers or memory (aside from
+printing the trace data to the console).  Every trace call prints to the console:
+ - an identifier, `DEBUG0`, `DEBUG1` ... `DEBUG7`
+ - the memory address where the CALL to trace was initiated
+ - The current values stored in all four primary registers (A, B, C, D)
+ - The current extended memory pages used by 0xe... and 0xd...
+
+When you are trying to solve a tricky problem in assembly, insert strategic CALLs to :trace functions into the assembly
+directly.  When debugging code generated from C, you can first `make <c-file-basename>.asm` to generate the assembly file,
+then directly edit the generated .asm file to insert trace calls.  Then `make` to assemble the output binary.  As long
+as you don't make any edits to the .c file, you can keep editing the .asm file to move or add traces, and `make` will
+keep regenerating the binary without clobbering your traces.
+
+Have me run the command and tell me what you are looking for in the trace output.  I will feed that information back
+to you, to assist you with the troubleshooting process.
+
 ## C Compiler
 
 `c_compiler/c_compiler.py` -- C99 with caveats, generates unoptimized Odyssey assembly.
 
 - Types: `char` (8-bit), `int`/`short` (16-bit), pointers (16-bit). No `long`/`float`.
 - Convention: params on heap, D register as frame pointer, caller-cleanup.
-- Special codegen: `printf()`, `print()`, `halt()`.
+- Special codegen: `printf()`, `print()`, `halt()`. Assembly-callable functions needing non-standard call sequences are handled in `c_compiler/special_functions.py`.
 - Uses GCC `cpp` for preprocessing. Headers in `os/bios/lib/*.h`.
+
+### C Compiler Known Quirks (TODOs)
+
+- **TODO: Inline cast-to-pointer as function argument fails.** `func((void *)0xD000)` produces "Incompatible types" because `visit_Typename` in cast expressions does not propagate `is_pointer` in `return_typespec` mode. Workaround: declare a typed local variable (`char *buf = (char *)0xD000;`) and pass that instead. Fix: propagate `is_pointer` through `visit_Typename` in `return_typespec` mode in `codegen.py`.
+- **TODO: String literals cannot begin with `:` or `.`.** The assembler treats leading `:` as a global label and leading `.` as a local label or directive, so string data starting with those characters will be misassembled. Workaround: restructure strings to avoid leading `:` or `.`, or emit the first byte separately.
 
 ## ODY Executable Format
 

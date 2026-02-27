@@ -1658,7 +1658,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
             alu_map = {
                 '+': {'byte':f'ALUOP_{dest_reg}L %A+B%+%AL%+%BL%', 'word':f'ALUOP16O_{dest_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%'},
-                '-': {'byte':f'ALUOP_{dest_reg}L %{dest_reg}-{other_reg}%+%AL%+%BL%', 'word':f'ALUOP16O_{dest_reg} %{dest_reg}-{other_reg}%+%AL%+%BL% %{dest_reg}-{other_reg}%+%AH%+%BH%+%Cin% %{dest_reg}+{other_reg}%+%AH%+%BH%'},
+                '-': {'byte':f'ALUOP_{dest_reg}L %{dest_reg}-{other_reg}%+%AL%+%BL%', 'word':f'ALUOP16O_{dest_reg} %{dest_reg}-{other_reg}%+%AL%+%BL% %{dest_reg}-{other_reg}%+%AH%+%BH%+%Cin% %{dest_reg}-{other_reg}%+%AH%+%BH%'},
                 '&': {'byte':f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', 'word':f'ALUOP16_{dest_reg} %A&B%+%AL%+%BL% %A&B%+%AH%+%BH%'},
                 '&&': {'byte':f'ALUOP_{dest_reg}L %A&B%+%AL%+%BL%', 'word':f'ALUOP16_{dest_reg} %A&B%+%AL%+%BL% %A&B%+%AH%+%BH%'},
                 '|': {'byte':f'ALUOP_{dest_reg}L %A|B%+%AL%+%BL%', 'word':f'ALUOP16_{dest_reg} %A|B%+%AL%+%BL% %A|B%+%AH%+%BH%'},

@@ -359,3 +359,71 @@ class SpecialFunctions():
         self.emit(f"{done_label}")
         self.emit(f"POP_{dest_reg}L", "Restore return value")
         self.emit(f"POP_{dest_reg}H", "Restore return value")
+
+    # ---- Extended memory management (heap-based) ----
+
+    def custom_FuncCall_extmalloc(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: no inputs -> pushes page number (byte) to heap
+        # C: uint8_t extmalloc(void)
+        self.emit(f"CALL {func.asm_name()}", "Allocate extended memory page")
+        self.emit("CALL :heap_pop_AL", "Pop page number into AL")
+        self.emit("LDI_AH 0x00", "Clear AH (byte return)")
+        if dest_reg != 'A':
+            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
+            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop into dest_reg")
+
+    def custom_FuncCall_extfree(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: push page number (byte) to heap -> no return
+        # C: void extfree(uint8_t page)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Push page number for extfree")
+        self.emit(f"CALL {func.asm_name()}", "Free extended memory page")
+
+    def custom_FuncCall_extpage_d_push(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: push page number (byte) to heap -> no return
+        # C: void extpage_d_push(uint8_t page)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Push page number for extpage_d_push")
+        self.emit(f"CALL {func.asm_name()}", "Map page into D-window")
+
+    def custom_FuncCall_extpage_d_pop(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: no inputs -> pushes restored page ID to heap
+        # C: uint8_t extpage_d_pop(void)
+        self.emit(f"CALL {func.asm_name()}", "Restore previous D-window mapping")
+        self.emit("CALL :heap_pop_AL", "Pop restored page number into AL")
+        self.emit("LDI_AH 0x00", "Clear AH (byte return)")
+        if dest_reg != 'A':
+            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
+            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop into dest_reg")
+
+    def custom_FuncCall_extpage_e_push(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: push page number (byte) to heap -> no return
+        # C: void extpage_e_push(uint8_t page)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Push page number for extpage_e_push")
+        self.emit(f"CALL {func.asm_name()}", "Map page into E-window")
+
+    def custom_FuncCall_extpage_e_pop(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: no inputs -> pushes restored page ID to heap
+        # C: uint8_t extpage_e_pop(void)
+        self.emit(f"CALL {func.asm_name()}", "Restore previous E-window mapping")
+        self.emit("CALL :heap_pop_AL", "Pop restored page number into AL")
+        self.emit("LDI_AH 0x00", "Clear AH (byte return)")
+        if dest_reg != 'A':
+            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
+            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop into dest_reg")
+
+    # ---- Shell argument access (SYSTEM.ODY built-ins only) ----
+
+    def custom_FuncCall_shell_get_argv_n(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: AL = index n -> A = argv[n] string address (0x0000 if beyond argc)
+        # C: char *shell_get_argv_n(uint8_t n)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL {func.asm_name()}", "Get argv[n] string address into A")
+        if dest_reg != 'A':
+            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
+            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop into dest_reg")

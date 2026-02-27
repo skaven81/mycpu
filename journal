@@ -1,3 +1,63 @@
+2026-02-27: Roll 5 utilities into SYSTEM.ODY + new `type` command in C (claude)
+================================================================================
+
+Two-phase campaign to shrink disk access on common shell operations and add a
+proper streaming file viewer.
+
+**Phase 1: ascii, colors, setserial, clock, hexdump as built-in commands.**
+SYSTEM.ODY was only ~3.4 KiB out of a 16 KiB maximum, so five utilities that
+previously lived on disk as external ODY files were rolled in as built-in shell
+commands.  Each utility became a new `900-cmd_*.asm` file in `os/system/`.
+
+The two key differences between external utilities and built-in commands:
+
+  1. *Argument access.* External utilities call `argv_init` + `memcpy_blocks`
+     to get a local `.argv_buf` copy.  Built-ins must NOT do this -- the shell
+     has already parsed argv into `:shell_argv_ptr`.  Instead they call
+     `:shell_get_argv_n` with the index in AL to get each argument address.
+
+  2. *Exit convention.* External utilities push a return code to the heap and
+     RET.  Built-ins simply RET -- the shell dispatch loop does not expect or
+     pop a return code.  All `LDI_A 0x0000 / CALL :heap_push_A` lines and
+     `.program_exit` labels were replaced with `JMP .cmd_done` / `RET`.
+
+After verifying on hardware, the six source directories were removed:
+`os/util/ascii`, `os/util/colors`, `os/util/setser`, `os/util/clock`,
+`os/util/hexdump`, and `os/util/type` (the old broken type utility).
+
+**Phase 2: `type` command implemented in C.**  The old type utility was a
+partial assembly stub that was never fully working.  The replacement is written
+in C (`os/system/900-cmd_type.c`) and uses the FAT16 streaming read API with a
+4 KiB extended-memory buffer to avoid consuming main RAM.
+
+The read loop calls `fat16_readfile` with 8 sectors (4096 bytes) per
+iteration, storing data in the D-window (0xD000-0xDFFF).  After each read it
+prints exactly `min(remaining, 4096)` bytes to avoid printing garbage past
+EOF.  The loop exits when either the EOF flag (ctx->flags & 0x02) is set or
+the remaining byte count reaches zero.
+
+Three new supporting files were added:
+
+  - `os/bios/lib/extmalloc.h` -- C declarations for extmalloc, extfree,
+    extpage_d_push, extpage_d_pop, extpage_e_push, extpage_e_pop.
+  - `os/bios/lib/shell_argv.h` -- C declaration for shell_get_argv_n.
+  - `c_compiler/special_functions.py` -- new handlers for each of those six
+    functions, translating C call syntax into the correct heap-based ABI.
+
+**Bug found: 16-bit subtraction in codegen.py.**  During hardware testing,
+`type` would print the file correctly but then hang instead of returning to the
+shell.  Tracing with `:trace_N` calls inserted into the generated assembly
+revealed that `remaining - to_print` was producing 0x1000 instead of 0x0000
+when both operands were equal (0x0835 - 0x0835).
+
+Root cause: in `codegen.py` the `ALUOP16O_A` instruction for 16-bit
+subtraction had the wrong third operand (the high-byte operation when no
+borrow occurs from the low byte).  The template used `%{dest}-{other}+%` --
+i.e., addition -- instead of `%{dest}-{other}%` -- subtraction.  The
+asm_macros file contains the authoritative `%ALU16_A-B%` definition confirming
+the correct operands.  One character fix in the f-string on line 1661 of
+`codegen.py` resolved it.
+
 2026-02-24: BIOS exec loop + SYSTEM.ODY rewrite + argc/argv ABI (claude)
 ========================================================================
 
