@@ -2,9 +2,15 @@
 
 :cmd_extmalloc
 
+# Initialize argv: AL=argc, C=argv base
+CALL :argv_init
+LDI_D .argv_buf
+LDI_AL 3                         # 4 blocks = 64 bytes
+CALL :memcpy_blocks              # copy argv array to local buffer
+
 # Check first argument so we know what subcommand to run
-LD_CH $user_input_tokens+2
-LD_CL $user_input_tokens+3      # pointer to second token string in C
+LD_CH .argv_buf+2
+LD_CL .argv_buf+3      # pointer to second token string in C
 MOV_CH_AL                       # high byte of pointer into AL
 ALUOP_FLAGS %A%+%AL%            # check if zero
 JZ .usage                       # no first argument if zero, so usage
@@ -32,7 +38,7 @@ CALL :extpage_d_push            # use ID on heap to set D page
 CALL :heap_push_AL
 LDI_C .done_d
 CALL :printf
-RET
+JMP .program_exit
 
 .alloc_e
 CALL :extmalloc                 # page ID on heap
@@ -42,12 +48,12 @@ CALL :extpage_e_push            # use ID on heap to set E page
 CALL :heap_push_AL
 LDI_C .done_e
 CALL :printf
-RET
+JMP .program_exit
 
 .do_free
 # Check second argument so we know if it's D or E to free
-LD_CH $user_input_tokens+4
-LD_CL $user_input_tokens+5      # pointer to third token string in C
+LD_CH .argv_buf+4
+LD_CL .argv_buf+5      # pointer to third token string in C
 MOV_CH_AL                       # high byte of pointer into AL
 ALUOP_FLAGS %A%+%AL%            # check if zero
 JZ .usage                       # no first argument if zero, so usage
@@ -72,7 +78,7 @@ CALL :extfree
 CALL :heap_push_AL
 LDI_C .done_fd
 CALL :printf
-RET
+JMP .program_exit
 
 .free_e
 CALL :extpage_e_pop             # freed page ID is on heap
@@ -82,13 +88,16 @@ CALL :extfree
 CALL :heap_push_AL
 LDI_C .done_fe
 CALL :printf
-RET
-
-RET
+JMP .program_exit
 
 .usage
 LDI_C .helpstr
 CALL :print
+JMP .program_exit
+
+.program_exit
+LDI_A 0x0000
+CALL :heap_push_A
 RET
 
 .done_fd "Freed page 0x%x from 0xd000\n\0"
@@ -98,3 +107,4 @@ RET
 .helpstr "Usage:\n  extmallc [de] - allocate a new extended memory page and assign to D or E page\n  extmallc f [de] - free the D or E page\n\0"
 .error_command "ERR: invalid subcommand provided, expecting one of [def]\n\0"
 .error_command2 "ERR: free command requires [de] argument\n\0"
+.argv_buf "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"

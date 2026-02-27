@@ -2,8 +2,14 @@
 
 :cmd_type
 
-# Ensure we have an argument
-LDI_D $user_input_tokens+2      # D points at first argument pointer
+# Initialize argv: AL=argc, C=argv base
+CALL :argv_init
+LDI_D .argv_buf
+LDI_AL 3                         # 4 blocks = 64 bytes
+CALL :memcpy_blocks              # copy argv array to local buffer
+
+# Ensure we have an argument (argv[1])
+LDI_D .argv_buf+2               # D points at first argument pointer
 LDA_D_AH                        # put high byte of first arg pointer into AH
 INCR_D
 LDA_D_AL                        # put low byte of first arg pointer into AL
@@ -39,7 +45,7 @@ ALUOP_AH %B%+%BH%               # copy directory entry address to A
 ALUOP_AL %B%+%BL%
 CALL :free                      # and free that memory
 
-RET
+JMP .program_exit
 
 # If here, either there was a syntax error with the path, or
 # the path was not found.
@@ -49,13 +55,13 @@ JZ .notfound
 # If here, syntax error
 LDI_C .syntax_err
 CALL :print
-RET
+JMP .program_exit
 
 # If here, no error, but not found
 .notfound
 LDI_C .notfound_str
 CALL :print
-RET
+JMP .program_exit
 
 # If here, a directory entry was found, but it was a directory,
 # not a file.
@@ -63,7 +69,7 @@ RET
 CALL :heap_pop_word             # discard filesystem handle address
 LDI_C .notfile_str
 CALL :print
-RET
+JMP .program_exit
 
 # If here, an ATA error was raised,
 # and BL contains the error
@@ -71,11 +77,16 @@ RET
 LDI_C .ataerr_str
 CALL :heap_push_BL
 CALL :printf
-RET
+JMP .program_exit
 
 .usage
 LDI_C .helpstr
 CALL :print
+JMP .program_exit
+
+.program_exit
+LDI_A 0x0000
+CALL :heap_push_A
 RET
 
 .helpstr "Usage: type PATH\n\0"
@@ -83,3 +94,4 @@ RET
 .notfound_str "File not found\n\0"
 .notfile_str "Path is a directory, not a file\n\0"
 .ataerr_str "ATA error: %x\n\0"
+.argv_buf "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"

@@ -12,10 +12,8 @@ VAR global word $cd_fshandle_ptr
 VAR global 16 $cd_comp_buf
 
 # Get first argument
-LDI_D $user_input_tokens+2      # D points at first argument pointer
-LDA_D_AH                        # put high byte of first arg pointer into AH
-INCR_D
-LDA_D_AL                        # put low byte of first arg pointer into AL
+LDI_AL 1
+CALL :shell_get_argv_n          # A = argv[1] string address
 ALUOP_FLAGS %A%+%AH%            # check if null
 JZ .usage
 

@@ -13,8 +13,14 @@
 
 :cmd_hexdump
 
-# Get our first argument
-LDI_D $user_input_tokens+2      # D points at first argument pointer
+# Initialize argv: AL=argc, C=argv base
+CALL :argv_init
+LDI_D .argv_buf
+LDI_AL 3                         # 4 blocks = 64 bytes
+CALL :memcpy_blocks              # copy argv array to local buffer
+
+# Get our first argument (argv[1])
+LDI_D .argv_buf+2      # D points at first argument pointer
 LDA_D_AH                        # put high byte of first arg pointer into AH
 INCR_D
 LDA_D_AL                        # put low byte of first arg pointer into AL
@@ -23,7 +29,7 @@ ALUOP_FLAGS %A%+%AH%            # check if null
 JZ .usage
 
 # Get our second argument
-LDI_D $user_input_tokens+4      # D points at second argument pointer
+LDI_D .argv_buf+4      # D points at second argument pointer
 LDA_D_AH                        # put high byte of second arg pointer into AH
 INCR_D
 LDA_D_AL                        # put low byte of second arg pointer into AL
@@ -32,9 +38,9 @@ ALUOP_FLAGS %A%+%AH%            # check if null
 JZ .usage
 
 # Handle two-arg form
-LDI_A $user_input_tokens+2      # Get pointer to first arg into C
+LDI_A .argv_buf+2      # Get pointer to first arg into C
 LDA_A_CH                        # |
-LDI_A $user_input_tokens+3      # |
+LDI_A .argv_buf+3      # |
 LDA_A_CL                        # |
 CALL :strtoi                    # Convert to number in A, BL has flags
 ALUOP_FLAGS %B%+%BL%
@@ -42,9 +48,9 @@ JNZ .abort_bad_start_address
 ALUOP_PUSH %A%+%AH%             # store start address on the stack for now
 ALUOP_PUSH %A%+%AL%             # |
 
-LDI_A $user_input_tokens+4      # Get pointer to second arg into C
+LDI_A .argv_buf+4      # Get pointer to second arg into C
 LDA_A_CH                        # |
-LDI_A $user_input_tokens+5      # |
+LDI_A .argv_buf+5      # |
 LDA_A_CL                        # |
 LDA_C_BL                        # Get first char of arg into BL
 ALUOP_PUSH %A%+%AL%
@@ -186,14 +192,14 @@ POP_BL
 JNO .process_range_loop
 # Turn color rendering off
 ST $term_color_enabled 0x00
-RET
+JMP .program_exit
 
 .abort_bad_start_address
 CALL :heap_push_BL
 CALL :heap_push_C
 LDI_C .bad_start_addr_str
 CALL :printf
-RET
+JMP .program_exit
 
 .abort_bad_end_address
 POP_TD                          # the start address was on the stack,
@@ -202,7 +208,7 @@ CALL :heap_push_BL
 CALL :heap_push_C
 LDI_C .bad_end_addr_str
 CALL :printf
-RET
+JMP .program_exit
 
 .abort_bad_range
 POP_TD                          # the start address was on the stack,
@@ -212,12 +218,17 @@ DECR_C                          # back to the "+"
 CALL :heap_push_C
 LDI_C .bad_range_str
 CALL :printf
-RET
+JMP .program_exit
 
 
 .usage
 LDI_C .helpstr
 CALL :print
+JMP .program_exit
+
+.program_exit
+LDI_A 0x0000
+CALL :heap_push_A
 RET
 
 .helpstr "Usage: hexdump <start-addr> {<end-addr>|+<delta>}\n\0"
@@ -227,3 +238,4 @@ RET
 .start_end_str "Dump of 0x%x%x - 0x%x%x\n\0"
 .row_format1 "@350x%x%x@37|@33%x@36%x@33%x@36%x @33%x@36%x@33%x@36%x @33%x@36%x@33%x@36%x @33%x@36%x@33%x@36%x@37|@33%c@36%c@33%c@36%c @33%c@36%c@33%c@36%c @33%c@36%c@33%c@36%c @33%c@36%c@33%c@36%c@37|\0"
 .row_format2 "@250x%x%x@37|@23%x@26%x@23%x@26%x @23%x@26%x@23%x@26%x @23%x@26%x@23%x@26%x @23%x@26%x@23%x@26%x@37|@23%c@26%c@23%c@26%c @23%c@26%c@23%c@26%c @23%c@26%c@23%c@26%c @23%c@26%c@23%c@26%c@37|\0"
+.argv_buf "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"

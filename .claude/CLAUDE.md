@@ -245,7 +245,7 @@ mycpu2/
 
 ## Build System
 
-From `os/` directory: `make all|bios|system|util`. Install: `make sdcard` (mounts at `/media/skaven/ODYSSEY`).
+From `os/` directory: `make all|bios|system|util`. Install: `make sdcard` (mounts at `/media/skaven/ODYSSEY`). For broad builds (especially after `make clean`), use `make -j12` for much faster parallel builds.
 
 Pipeline: `.c` -> `cpp` -> `c_compiler.py` -> `.asm` -> `assembler.py` -> `.ody` (or `.hex` for BIOS).
 

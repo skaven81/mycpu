@@ -5,27 +5,22 @@
 :cmd_poke
 
 # Check for a first argument
-LDI_D $user_input_tokens+2      # D points at first argument pointer
-LDA_D_AH                        # put high byte of first arg pointer into AH
-INCR_D
-LDA_D_AL                        # put low byte of first arg pointer into AL
-INCR_D
+LDI_AL 1
+CALL :shell_get_argv_n          # A = argv[1] string address
 ALUOP_FLAGS %A%+%AH%            # check if null
 JZ .usage
 
 # Check for a second argument
-LDA_D_AH                        # put second arg pointer into A
-INCR_D                          # |
-LDA_D_AL                        # |
-INCR_D                          # |
+LDI_AL 2
+CALL :shell_get_argv_n          # A = argv[2] string address
 ALUOP_FLAGS %A%+%AH%            # check if null
 JZ .usage
 
 # Load and check address
-LDI_A $user_input_tokens+2      # Get pointer to first arg into C
-LDA_A_CH                        # |
-LDI_A $user_input_tokens+3      # |
-LDA_A_CL                        # |
+LDI_AL 1
+CALL :shell_get_argv_n          # A = argv[1] string address
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # C = argv[1] string
 CALL :strtoi                    # Convert to number in A, BL has flags
 ALUOP_FLAGS %B%+%BL%
 JNZ .abort_bad_address
@@ -35,10 +30,10 @@ ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
 
 # Load and check byte
-LDI_A $user_input_tokens+4      # Get pointer to second arg into C
-LDA_A_CH                        # |
-LDI_A $user_input_tokens+5      # |
-LDA_A_CL                        # |
+LDI_AL 2
+CALL :shell_get_argv_n          # A = argv[2] string address
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # C = argv[2] string
 CALL :strtoi8                   # Convert to number in AL, BL has flags
 ALUOP_FLAGS %B%+%BL%
 JNZ .abort_bad_byte

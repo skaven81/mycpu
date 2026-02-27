@@ -5,10 +5,10 @@
 :cmd_setdrive
 
 ## Load and check drive selection
-LDI_A $user_input_tokens        # Get pointer to command
-LDA_A_CH                        # |
-LDI_A $user_input_tokens+1      # |
-LDA_A_CL                        # |
+LDI_AL 0
+CALL :shell_get_argv_n          # A = argv[0] string address ("0:" or "1:")
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # C = argv[0] string
 LDA_C_AL                        # Load first character of command into AL
 
 LDI_BL '0'

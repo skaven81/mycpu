@@ -5,36 +5,32 @@
 :cmd_peek
 
 # Get our first argument
-LDI_D $user_input_tokens+2      # D points at first argument pointer
-LDA_D_AH                        # put high byte of first arg pointer into AH
-INCR_D
-LDA_D_AL                        # put low byte of first arg pointer into AL
-INCR_D
+LDI_AL 1
+CALL :shell_get_argv_n          # A = argv[1] string address
 ALUOP_FLAGS %A%+%AH%            # check if null
 JZ .usage
 
-LDA_D_AH                        # put second arg pointer into A
-INCR_D                          # |
-LDA_D_AL                        # |
-INCR_D                          # |
+# Check for second argument
+LDI_AL 2
+CALL :shell_get_argv_n          # A = argv[2] string address
 ALUOP_FLAGS %A%+%AH%            # check if null
 JZ .peek_single_arg
 
 # Handle two-arg form
-LDI_A $user_input_tokens+2      # Get pointer to first arg into C
-LDA_A_CH                        # |
-LDI_A $user_input_tokens+3      # |
-LDA_A_CL                        # |
+LDI_AL 1
+CALL :shell_get_argv_n          # A = argv[1] string address
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # C = argv[1] string
 CALL :strtoi                    # Convert to number in A, BL has flags
 ALUOP_FLAGS %B%+%BL%
 JNZ .abort_bad_start_address
 ALUOP_PUSH %A%+%AH%             # store start address on the stack for now
 ALUOP_PUSH %A%+%AL%             # |
 
-LDI_A $user_input_tokens+4      # Get pointer to second arg into C
-LDA_A_CH                        # |
-LDI_A $user_input_tokens+5      # |
-LDA_A_CL                        # |
+LDI_AL 2
+CALL :shell_get_argv_n          # A = argv[2] string address
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # C = argv[2] string
 LDA_C_BL                        # Get first char of arg into BL
 ALUOP_PUSH %A%+%AL%
 LDI_AL '+'
@@ -91,10 +87,10 @@ RET
 
 # Handle single-arg form
 .peek_single_arg
-LDI_A $user_input_tokens+2      # Get pointer to first arg into C
-LDA_A_CH                        # |
-LDI_A $user_input_tokens+3      # |
-LDA_A_CL                        # |
+LDI_AL 1
+CALL :shell_get_argv_n          # A = argv[1] string address
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # C = argv[1] string
 CALL :strtoi                    # Convert to number in A, BL has flags
 ALUOP_FLAGS %B%+%BL%
 JNZ .abort_bad_start_address

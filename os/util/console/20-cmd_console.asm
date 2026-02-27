@@ -20,6 +20,12 @@
 
 :cmd_console
 
+# Initialize argv: AL=argc, C=argv base
+CALL :argv_init
+LDI_D .argv_buf
+LDI_AL 3                         # 4 blocks = 64 bytes
+CALL :memcpy_blocks              # copy argv array to local buffer
+
 VAR global word $console_vars
 LDI_AL 1                # one block, 16 bytes
 CALL :malloc_blocks     # A contains our memory address
@@ -31,9 +37,9 @@ ALUOP_ADDR %A%+%AL% $console_vars+1
 # $console_vars[3] - IRQ5 hi
 # $console_vars[4] - IRQ5 lo
 
-# Get our first argument
+# Get our first argument (argv[1])
 LDI_BL 0x00                     # default to not raw mode
-LDI_D $user_input_tokens+2      # D points at first argument pointer
+LDI_D .argv_buf+2               # D points at first argument pointer
 LDA_D_AH                        # put high byte of first arg pointer into AH
 INCR_D
 LDA_D_AL                        # put low byte of first arg pointer into AL
@@ -154,6 +160,9 @@ LD_DH $console_vars
 LD_DL $console_vars+1
 LDI_AL 0x00
 CALL :free
+.program_exit
+LDI_A 0x0000
+CALL :heap_push_A
 RET
 
 .usage
@@ -356,3 +365,4 @@ RET
 .done "^ESC\nBreak, exiting\n\0"
 .raw_str "raw\0"
 .usage_str "Usage: console [raw]\n\0"
+.argv_buf "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"

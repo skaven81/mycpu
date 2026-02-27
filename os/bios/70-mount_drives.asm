@@ -42,9 +42,6 @@ VAR global word $boot_fs_handle_ptr
 ST $boot_fs_handle_ptr   0x00
 ST $boot_fs_handle_ptr+1 0x00
 
-# Global vars used by shell so commands can parse command line args
-VAR global word $user_input_buf
-VAR global 32 $user_input_tokens # store up to 16 tokens
 
 # Print blank line
 LDI_AL '\n'

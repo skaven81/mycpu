@@ -1,3 +1,78 @@
+2026-02-24: BIOS exec loop + SYSTEM.ODY rewrite + argc/argv ABI (claude)
+========================================================================
+
+This was a big architectural campaign spread across three Claude sessions.  The
+goal: SYSTEM.ODY should be able to fully unload itself from memory before
+launching an external command, and all programs (shell and utilities alike)
+should use a clean C-style argc/argv calling convention instead of the old
+shared-global approach.
+
+**Phase 1: BIOS exec loop rewrite.**  The BIOS exec loop in
+`80-run_system_ody.asm` was reworked from the ground up.  Previously, the BIOS
+loaded SYSTEM.ODY, called it, and that was it -- the shell stayed resident and
+handled everything internally.  Now the BIOS owns the full lifecycle:
+
+  1. Load and call SYSTEM.ODY with argc/argv on the heap.
+  2. Pop a 16-bit return code after SYSTEM.ODY returns.
+  3. Check heap integrity (did the program leave the heap in a sane state?).
+  4. Check for an IPC block: four globals (`$exec_fsh_ptr`, `$exec_dirent_ptr`,
+     `$exec_argc`, `$exec_argv_ptr`) that tell the BIOS to chain-load another
+     executable.
+  5. If an IPC block is present, free the argv strings and array that SYSTEM.ODY
+     allocated, load the requested ODY file, and call it with the new argc/argv.
+  6. Loop back to step 1 (reload SYSTEM.ODY from scratch).
+
+This means SYSTEM.ODY's memory is completely freed before any external command
+runs, and the BIOS is resilient -- if a command crashes or corrupts the heap,
+the BIOS detects it and recovers by reloading the shell.
+
+**Phase 2: SYSTEM.ODY rewrite.**  The shell was gutted and rebuilt to work with
+the new exec loop.  The old approach had the shell directly loading and calling
+external ODY files while staying resident.  Now the shell's job is simpler:
+parse the command line, and if the command is external, set up the IPC block
+and return to the BIOS, which handles the actual loading.
+
+The five built-in commands (cd, mount, setdrive, peek, poke) were updated to
+use a new `:shell_get_argv_n` helper that retrieves arguments by index from the
+argv array, replacing the old `$user_input_tokens` global access pattern.
+
+The command input pipeline was also reworked.  `30-read_command.asm` now uses
+`calloc_blocks(4)` to allocate a 64-byte argv array (room for 31 args + null
+terminator), and `strsplit` tokenizes the input into the array.  A TODO was
+left for future overflow detection if someone types a command with more than 31
+arguments.
+
+**Phase 3: utility updates (all 16 utilities).**  Every utility that previously
+read from `$user_input_tokens` was updated to use the new argc/argv convention.
+Each utility now begins with:
+
+    CALL :argv_init
+    LDI_D .argv_buf
+    LDI_AL 3
+    CALL :memcpy_blocks
+
+This pops argc and the argv base pointer from the heap (pushed by the BIOS exec
+loop), then copies the 64-byte argv array into a static local `.argv_buf`.
+After that, all `$user_input_tokens+N` references become `.argv_buf+N` -- a
+mechanical substitution.
+
+Every utility also now pushes a 16-bit return code (0x0000 for success) to the
+heap before returning, which the BIOS exec loop pops after the CALL_D returns.
+This was done by adding a shared `.program_exit` label at the end of each
+program's main code, and changing all program-exit RETs to `JMP .program_exit`.
+Internal subroutine RETs (like the `.printclock`, `.printdate`, `.send_vt220`
+helpers in clock and console) were left as plain RETs.
+
+After all three phases, no code references `$user_input_tokens` or
+`$user_input_buf` anymore -- the old shared-global IPC mechanism is dead.  The
+only remaining shared globals are the four IPC block variables for chained
+loading, which is by design.
+
+Utilities updated: ascii, ataid, ataread, atawr, clock, cls2lba, console,
+extfree, extmallc, hexdump, lba2cls, malloc, nextcls, pathfind, rand, setser,
+type.
+
+
 2026-02-22: FAT16 refactor + cmd_cd rewrite (claude)
 ====================================================
 

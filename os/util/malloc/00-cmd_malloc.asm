@@ -4,9 +4,15 @@
 
 :cmd_malloc
 
+# Initialize argv: AL=argc, C=argv base
+CALL :argv_init
+LDI_D .argv_buf
+LDI_AL 3                         # 4 blocks = 64 bytes
+CALL :memcpy_blocks              # copy argv array to local buffer
+
 # Check first argument so we know what subcommand to run
-LD_CH $user_input_tokens+2
-LD_CL $user_input_tokens+3      # pointer to second token string in C
+LD_CH .argv_buf+2
+LD_CL .argv_buf+3      # pointer to second token string in C
 MOV_CH_AL                       # high byte of pointer into AL
 ALUOP_FLAGS %A%+%AL%            # check if zero
 JZ .usage                       # no first argument if zero, so usage
@@ -37,8 +43,8 @@ JMP .usage
 
 # 's' or 'b' is in BH; check for next argument
 .get_size
-LD_CH $user_input_tokens+4      # Pointer to second argument in C
-LD_CL $user_input_tokens+5
+LD_CH .argv_buf+4      # Pointer to second argument in C
+LD_CL .argv_buf+5
 MOV_CH_AL                       # high byte of pointer into AL
 ALUOP_FLAGS %A%+%AL%            # check if zer
 JZ .usage                       # no second argumen tif zero, so usage
@@ -70,7 +76,7 @@ CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .malloc_print
 CALL :printf
-RET
+JMP .program_exit
 
 .do_calloc_blocks
 CALL :calloc_blocks
@@ -78,7 +84,7 @@ CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .calloc_print
 CALL :printf
-RET
+JMP .program_exit
 
 .do_malloc_segments
 CALL :malloc_segments
@@ -86,7 +92,7 @@ CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .malloc_print
 CALL :printf
-RET
+JMP .program_exit
 
 .do_calloc_segments
 CALL :calloc_segments
@@ -94,14 +100,14 @@ CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .calloc_print
 CALL :printf
-RET
+JMP .program_exit
 
 
 ##### User wants to free()
 # 'f' is in BH, check for next argument
 .do_free
-LD_CH $user_input_tokens+4      # Pointer to second argument in C
-LD_CL $user_input_tokens+5
+LD_CH .argv_buf+4      # Pointer to second argument in C
+LD_CL .argv_buf+5
 MOV_CH_AL                       # high byte of pointer into AL
 ALUOP_FLAGS %A%+%AL%            # check if zer
 JZ .usage                       # no second argument if zero, so usage
@@ -117,7 +123,7 @@ CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_C .free_print
 CALL :printf
-RET
+JMP .program_exit
 
 ##### User wants to get memory usage stats
 # First stats line, malloc address range
@@ -247,11 +253,16 @@ JNZ .list_loop
 
 CALL :extpage_d_pop
 CALL :heap_pop_byte             # discard the zero page value
-RET
+JMP .program_exit
 
 .usage
 LDI_C .helpstr
 CALL :print
+JMP .program_exit
+
+.program_exit
+LDI_A 0x0000
+CALL :heap_push_A
 RET
 
 .helpstr "Usage:\n  malloc [sS] size - malloc / calloc segments\n  malloc [bB] size - malloc / calloc blocks\n  malloc f addr - free memory\n  malloc l - list allocations and memory stats\n\0"
@@ -262,3 +273,4 @@ RET
 .stats_1 "Malloc range 0x%x%x-0x%x%x\n\0"
 .stats_2 "%U total allocatable 16-byte blocks, %U free, %U allocated\n\0"
 .stats_3 "0x%x%x %U blocks\n\0"
+.argv_buf "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"

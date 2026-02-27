@@ -1,7 +1,16 @@
 # vim: syntax=asm-mycpu
 
 ###
-# Parses the command in $user_input_tokens[0] and executes it.
+# :parse_and_run_command -- parses argv[0] and executes the command
+#
+# Reads the command name from :shell_argv_ptr (via :shell_get_argv_n),
+# checks built-in commands, then searches for a matching .ODY file.
+#
+# For built-in commands: dispatches via CALL_D, returns normally.
+# For external ODY files: sets IPC block ($exec_dirent_ptr, $exec_fsh_ptr,
+# $exec_argc, $exec_argv_ptr) and returns; the shell loop detects the
+# non-zero $exec_dirent_ptr and returns to the BIOS exec loop.
+###
 
 :parse_and_run_command
 ALUOP_PUSH %A%+%AH%
@@ -13,15 +22,16 @@ PUSH_CL
 PUSH_DH
 PUSH_DL
 
-LDI_B $user_input_tokens        # B now points at the first entry in the token array
-
-LDA_B_CH                        # CH=hi byte of token[0] string pointer
-ALUOP16O_B %ALU16_B+1%
-LDA_B_CL                        # CL=lo byte of token[0] string pointer
-
-# C is a pointer to the first token provided by the user (the command), with the
-# rest of the tokens in the $user_input_tokens array being the arguments.
-# We now search for a command matching the string in C.
+# Get argv[0] (command name) into C
+LDI_AL 0
+CALL :shell_get_argv_n          # A = argv[0] string address
+ALUOP_FLAGS %A%+%AH%
+JNZ .have_cmd
+ALUOP_FLAGS %A%+%AL%
+JZ .cmd_return                  # null ptr = no command (defensive)
+.have_cmd
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # C = argv[0] string (command name, lowercase)
 
 # If the string is empty, the user just pressed enter so just exit
 # without running a command.
@@ -61,18 +71,22 @@ INCR_D                          # D now points at the next command
 JMP .check_builtin_cmd_loop     # loop to next builtin command
 
 .try_files                      # Look for .ODY files matching the command
-PUSH_CH
-PEEK_DH
-PUSH_CL
-PEEK_DL                         # Make C and D point to same address, the command string
-CALL :strupper                  # make uppercase; C and D point at terminating null
+# Copy argv[0] to :shell_ody_lookup and uppercase it for FAT16 lookup.
+# The original argv[0] string is preserved lowercase (POSIX convention).
+LDI_D :shell_ody_lookup         # D = scratch buffer for uppercase name
+CALL :strcpy                    # copy argv[0] (C) to :shell_ody_lookup (D)
+ALUOP_ADDR_D %zero%             # null-terminate (strcpy doesn't copy the null)
+# Uppercase the copy in-place
+LDI_C :shell_ody_lookup
+LDI_D :shell_ody_lookup
+CALL :strupper                  # C,D now point at null terminator
+# Append .ODY suffix (D points at null = where to append)
 LDI_C .ody_suffix
-CALL :strcpy                    # append .ODY suffix
-ALUOP_ADDR_D %zero%             # write terminating null to D address
-POP_CL                          # restore C pointer to beginning of string,
-POP_CH                          # which is now uppercase, with .ODY extension
+CALL :strcpy                    # append ".ODY" to uppercase name
+ALUOP_ADDR_D %zero%             # null-terminate (strcpy doesn't copy the null)
 
-# C points at a string that is COMMAND.ODY - search for this first
+# :shell_ody_lookup now contains "COMMAND.ODY" - search current dir first
+LDI_C :shell_ody_lookup
 CALL :heap_push_C
 CALL :fat16_pathfind
 CALL :heap_pop_A                # A will be 0x00.. or 0x01.. if not found
@@ -85,18 +99,15 @@ JMP .found_ody
 
 # command was not found in current dir, try {boot_drive}:/SYS/COMMAND.ODY
 .try_sys_path
-PUSH_CH
-PUSH_CL
 LD_CH $boot_fs_handle_ptr
 LD_CL $boot_fs_handle_ptr+1
 CALL :heap_push_C
-CALL :fat16_handle_get_ataid    # 0 or 1 on heap
-CALL :heap_pop_AL
-POP_CL
-POP_CH
+CALL :fat16_handle_get_ataid    # pushes drive id (0 or 1) to heap
+CALL :heap_pop_AL               # AL = drive id (0 or 1)
 
-CALL :heap_push_C               # still the COMMAND.ODY string
-CALL :heap_push_AL              # the 0 or 1
+LDI_C :shell_ody_lookup
+CALL :heap_push_C               # push %s arg (COMMAND.ODY string)
+CALL :heap_push_AL              # push %u arg (drive number)
 LDI_C .sys_path_template
 LDI_D .sys_path
 CALL :sprintf                   # .sys_path now contains {0,1}:/SYS/COMMAND.ODY
@@ -111,14 +122,29 @@ LDI_BL 0x01
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JEQ .tryfiles_failed_notfound
 
-# Binary is found, A contains the address of a copy
-# of the directory entry (which needs to be freed)
+# Binary is found. A = dirent_ptr, fsh_ptr still on heap from pathfind.
 .found_ody
-                                # fs handle is already on heap
-CALL :heap_push_A               # directory entry
-CALL :run_ody
-# free the directory entry
-CALL :free
+CALL :heap_pop_C                # C = fsh_ptr (was still on heap from pathfind)
+
+# Set IPC block for BIOS exec loop
+ALUOP_ADDR %A%+%AH% $exec_dirent_ptr
+ALUOP_ADDR %A%+%AL% $exec_dirent_ptr+1
+ST_CH $exec_fsh_ptr
+ST_CL $exec_fsh_ptr+1
+
+# Copy :shell_argc to $exec_argc
+LDI_C :shell_argc
+LDA_C_AL
+ALUOP_ADDR %A%+%AL% $exec_argc
+
+# Copy :shell_argv_ptr to $exec_argv_ptr
+LDI_C :shell_argv_ptr
+LDA_C_AH
+INCR_C
+LDA_C_AL
+ALUOP_ADDR %A%+%AH% $exec_argv_ptr
+ALUOP_ADDR %A%+%AL% $exec_argv_ptr+1
+
 JMP .cmd_return
 
 .tryfiles_failed_notfound
@@ -199,6 +225,57 @@ CALL :print
 CALL :putchar
 RET
 
+###
+# :shell_get_argv_n -- get a pointer to argv[n]
+#
+# Reads the argv pointer array from :shell_argv_ptr and returns
+# the pointer at index n.
+#
+# Input:
+#   AL = index n (0-based)
+#
+# Output:
+#   A = argv[n] string address (0x0000 if beyond end of array)
+#
+# Saves/restores: BL, C
+# Clobbers: A (output)
+###
+:shell_get_argv_n
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+
+ALUOP_BL %A%+%AL%               # BL = index n
+
+# Load argv array base address from :shell_argv_ptr into C
+LDI_C :shell_argv_ptr
+LDA_C_AH
+INCR_C
+LDA_C_AL
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%               # C = argv array base address
+
+# Advance C by 2*BL positions (skip BL (hi,lo) pairs)
+ALUOP_FLAGS %B%+%BL%
+JZ .get_argv_n_read              # index=0, no advance needed
+.get_argv_n_advance
+INCR_C
+INCR_C                           # skip one (hi,lo) pair
+ALUOP_BL %B-1%+%BL%             # BL--
+ALUOP_FLAGS %B%+%BL%
+JNZ .get_argv_n_advance
+
+.get_argv_n_read
+# Read (hi, lo) pair from C into A
+LDA_C_AH                        # AH = hi byte of string pointer
+INCR_C
+LDA_C_AL                        # AL = lo byte of string pointer
+
+POP_CL
+POP_CH
+POP_BL
+RET
+
 .sys_path_template "%u:/SYS/%s\0"
 # inline variable as this will be executed from RAM. Maximum length of
 # .sys_path string is 1:/SYS/FILENAME.ODY (8+3 filename) which makes
@@ -206,8 +283,5 @@ RET
 .sys_path "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
 .ody_suffix "\.ODY\0"
 .cmd_unknown_str "Unrecognized command\n\0"
-.cmd_failed_ataerr "ATA error looking for command: 0x%x\n\0"
-.cmd_failed_nodrive "Drive not set, can't seek .ODYs\n\0"
 .cmd_help_header "The following built-in commands are available:\n\0"
 .cmd_help_header2 "Also, any .ODY files are executable by typing their name.\n\0"
-
