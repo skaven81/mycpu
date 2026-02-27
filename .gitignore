@@ -5,3 +5,4 @@ __pycache__/
 *.ody
 *.swp
 *~
+.claude/plan.md
