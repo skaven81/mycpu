@@ -9,8 +9,8 @@
 # This function also handles metacharacters, specifically:
 #  0x08 backspace   cursor moves left one space, display updates to first null
 #  0x7f delete      cursor stays in place, display  updates to first null
-#  0x0d enter       cursor moves to next line, first column
-#  0x0a newline     handled same as enter
+#  0x0d carriage return  cursor moves to first column of current line
+#  0x0a newline          cursor moves to next line, first column
 #
 # In all cases, if the next cursor location is beyond the display, the display
 # is scrolled to accommodate.
@@ -42,9 +42,9 @@ JEQ .putchar_backspace
 LDI_BL 0x7f                         # Delete
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .putchar_delete
-LDI_BL 0x0d                         # Enter
+LDI_BL 0x0d                         # Carriage return
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .putchar_newline
+JEQ .putchar_cr
 LDI_BL 0x0a                         # Newline
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .putchar_newline
@@ -82,7 +82,14 @@ LD_DL $crsr_addr_chars+1        # cursor location in D
 CALL .term_strcpy               # copy everything from C (right of the cursor) to D (left one spot)
 JMP .putchar_done
 
-# Newline
+# Carriage return - move to first column of current line
+.putchar_cr
+LD_AH $crsr_row                 # load current row of cursor
+LDI_AL 0x00                     # set column to zero
+CALL :cursor_goto_rowcol
+JMP .putchar_done
+
+# Newline - move down one line, first column
 .putchar_newline
 CALL .cursor_down_scroll
 LD_AH $crsr_row                 # load current row of cursor

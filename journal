@@ -1,3 +1,23 @@
+2026-03-01: putchar \r now moves to first column only (claude)
+==================================================================
+
+Changed the behavior of \r (0x0d) in :putchar so it acts as a true carriage
+return: moves the cursor to column 0 of the current line, without advancing
+to the next row.  Previously \r and \n both behaved identically (move to next
+line, first column, Unix-style).
+
+New behavior:
+  \r (0x0d) - cursor to first column of current line (pure carriage return)
+  \n (0x0a) - cursor to first column of next line (Unix newline, unchanged)
+
+\r\n together still produce the same net result as a Unix \n, so any DOS/
+Windows line endings in files will work correctly.  The terminal_input code
+was verified to not be affected -- it consumes \r to exit the input loop and
+never passes it to :putchar.
+
+This change is primarily motivated by wanting to overwrite the current line
+for progress indicators, video frame output, and similar use cases.
+
 2026-02-28: FAT16 directory walking across cluster boundaries (claude)
 =====================================================================
 
