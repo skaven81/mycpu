@@ -34,6 +34,43 @@ class SpecialFunctions():
         self.emit(f"POP_CL", "Restore C after printf")
         self.emit(f"POP_CH", "Restore C after printf")
 
+    def custom_FuncCall_sprintf(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=fmt, D=dest, format args on heap -> CALL :sprintf -> no return
+        # C: void sprintf(char *dest, char *fmt, ...)
+        # D is the frame pointer, so we evaluate dest into A and stage on heap,
+        # then pop into D after saving the frame pointer.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        for idx, an in reversed([*enumerate(arg_nodes)]):
+            with self._debug_block(f"Push param idx {idx}"):
+                if idx > 1:
+                    rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A')
+                    if rvalue_var.sizeof() == 1:
+                        self.emit(f"CALL :heap_push_AL", f"Push parameter {rvalue_var.friendly_name()}")
+                    elif rvalue_var.sizeof() == 2:
+                        self.emit(f"CALL :heap_push_A", f"Push parameter {rvalue_var.friendly_name()}")
+                    elif rvalue_var.is_array or rvalue_var.typespec.is_struct:
+                        self.emit(f"CALL :heap_push_A", f"Push parameter {rvalue_var.friendly_name()} (pointer)")
+                    else:
+                        raise ValueError("Unable to push parameters larger than 2 bytes")
+                elif idx == 1:
+                    self.emit(f"PUSH_CH", "Save C before sprintf")
+                    self.emit(f"PUSH_CL", "Save C before sprintf")
+                    rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='C')
+                else:
+                    # Evaluate dest into A (not D, since D is frame pointer)
+                    rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A')
+                    self.emit(f"CALL :heap_push_A", "Stage dest on heap")
+        # Save D (frame pointer), pop dest into D
+        self.emit(f"PUSH_DH", "Save D before sprintf")
+        self.emit(f"PUSH_DL", "Save D before sprintf")
+        self.emit(f"CALL :heap_pop_D", "Load dest into D")
+        self.emit(f"CALL {func.asm_name()}")
+        # Restore D and C
+        self.emit(f"POP_DL", "Restore D after sprintf")
+        self.emit(f"POP_DH", "Restore D after sprintf")
+        self.emit(f"POP_CL", "Restore C after sprintf")
+        self.emit(f"POP_CH", "Restore C after sprintf")
+
     def custom_FuncCall_print(self, node, mode, func, dest_reg='A', **kwargs):
         arg_nodes = self.visit(node.args, mode='return_nodes')
         self.emit(f"PUSH_CH", "Save C before printf")
