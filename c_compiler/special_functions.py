@@ -307,6 +307,87 @@ class SpecialFunctions():
         self.emit(f"POP_{dest_reg}L", "strsplit result into dest_reg")
         self.emit(f"LDI_{dest_reg}H 0x00", "Clear high byte for uint8_t return")
 
+    def custom_FuncCall_strtoi(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=str -> CALL :strtoi -> A=result (16-bit), BL=flags
+        # C: uint16_t strtoi(char *str, uint8_t *flags)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Step 1: Evaluate flags ptr (arg 1) into A, push to heap (deepest)
+        rvalue_flags = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage flags ptr on heap")
+        # Step 2: Evaluate str (arg 0) into A, push to heap (on top of flags ptr)
+        # Never use dest_reg='C' in generate_rvalue; route through A+heap instead.
+        rvalue_str = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage str ptr on heap")
+        # Step 3: Save caller's C, then pop str ptr into C
+        self.emit("PUSH_CH", "Save C before strtoi")
+        self.emit("PUSH_CL", "Save C before strtoi")
+        self.emit("CALL :heap_pop_C", "Load str ptr into C")
+        # Step 4: Call :strtoi -> A=result, BL=flags
+        self.emit(f"CALL {func.asm_name()}")
+        # Step 5: Save 16-bit result on CPU stack (AH pushed first, AL on top)
+        self.emit("ALUOP_PUSH %A%+%AH%", "Save strtoi result hi")
+        self.emit("ALUOP_PUSH %A%+%AL%", "Save strtoi result lo")
+        # Step 6: Restore caller's C
+        self.emit("POP_CL", "Restore C after strtoi")
+        self.emit("POP_CH", "Restore C after strtoi")
+        # Step 7: Save frame pointer D
+        self.emit("PUSH_DH", "Save frame pointer")
+        self.emit("PUSH_DL", "Save frame pointer")
+        # Step 8: Pop flags ptr into D
+        self.emit("CALL :heap_pop_D", "Pop flags ptr into D")
+        # Step 9: Write BL (flags) to *flags (BL still live from step 4)
+        self.emit("ALUOP_ADDR_D %B%+%BL%", "Write flags byte to *flags")
+        # Step 10: Restore frame pointer
+        self.emit("POP_DL", "Restore frame pointer")
+        self.emit("POP_DH", "Restore frame pointer")
+        # Step 11: Pop result into A, then move to dest_reg if needed.
+        # Only A and B are supported as dest_reg; C/D lack symmetric move instructions.
+        self.emit("POP_AL", "Pop strtoi result lo")
+        self.emit("POP_AH", "Pop strtoi result hi")
+        if dest_reg == 'B':
+            self.emit("ALUOP_BH %A%+%AH%", "Copy result hi to BH")
+            self.emit("ALUOP_BL %A%+%AL%", "Copy result lo to BL")
+
+    def custom_FuncCall_strtoi8(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=str -> CALL :strtoi8 -> AL=result (8-bit, AH callee-saved), BL=flags
+        # C: uint8_t strtoi8(char *str, uint8_t *flags)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        # Step 1: Evaluate flags ptr (arg 1) into A, push to heap (deepest)
+        rvalue_flags = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage flags ptr on heap")
+        # Step 2: Evaluate str (arg 0) into A, push to heap (on top of flags ptr)
+        # Never use dest_reg='C' in generate_rvalue; route through A+heap instead.
+        rvalue_str = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage str ptr on heap")
+        # Step 3: Save caller's C, then pop str ptr into C
+        self.emit("PUSH_CH", "Save C before strtoi8")
+        self.emit("PUSH_CL", "Save C before strtoi8")
+        self.emit("CALL :heap_pop_C", "Load str ptr into C")
+        # Step 4: Call :strtoi8 -> AL=result, BL=flags (AH callee-saved)
+        self.emit(f"CALL {func.asm_name()}")
+        # Step 5: Save 8-bit result on CPU stack (AL only)
+        self.emit("ALUOP_PUSH %A%+%AL%", "Save strtoi8 result")
+        # Step 6: Restore caller's C
+        self.emit("POP_CL", "Restore C after strtoi8")
+        self.emit("POP_CH", "Restore C after strtoi8")
+        # Step 7: Save frame pointer D
+        self.emit("PUSH_DH", "Save frame pointer")
+        self.emit("PUSH_DL", "Save frame pointer")
+        # Step 8: Pop flags ptr into D
+        self.emit("CALL :heap_pop_D", "Pop flags ptr into D")
+        # Step 9: Write BL (flags) to *flags (BL still live from step 4)
+        self.emit("ALUOP_ADDR_D %B%+%BL%", "Write flags byte to *flags")
+        # Step 10: Restore frame pointer
+        self.emit("POP_DL", "Restore frame pointer")
+        self.emit("POP_DH", "Restore frame pointer")
+        # Step 11: Pop result into A, then move to dest_reg if needed.
+        # Only A and B are supported as dest_reg; C/D lack symmetric move instructions.
+        self.emit("POP_AL", "Pop strtoi8 result")
+        self.emit("LDI_AH 0x00", "Clear high byte for uint8_t return")
+        if dest_reg == 'B':
+            self.emit("ALUOP_BH %A%+%AH%", "Copy zero to BH")
+            self.emit("ALUOP_BL %A%+%AL%", "Copy result to BL")
+
     # ---- Multi-return FAT16 functions ----
 
     def custom_FuncCall_fat16_dirent_filesize(self, node, mode, func, dest_reg='A', **kwargs):
