@@ -174,7 +174,7 @@ RET
 
 ######
 # strhextoi - takes a string that is expected to contain
-# just [0-9a-f] characters, and converts it into a number.
+# just [0-9a-fA-F] characters, and converts it into a number.
 #
 # Inputs:
 #  C - address of null-terminated string to convert
@@ -199,6 +199,16 @@ ALUOP_PUSH %A%+%AL%
 LDA_C_AL                    # next character into AL
 ALUOP_FLAGS %A%+%AL%
 JZ .strhextoi_done          # if we hit null, we are done
+# Normalize uppercase A-F to lowercase a-f
+LDI_BL 'A'
+ALUOP_FLAGS %A-B%+%BL%+%AL% # see if char < 'A'
+JO .strhextoi_not_upper      # if char < 'A', not an uppercase hex letter
+LDI_BL 'F'
+ALUOP_FLAGS %B-A%+%BL%+%AL% # see if char > 'F'
+JO .strhextoi_not_upper      # if char > 'F', not an uppercase hex letter
+LDI_BL 0x20
+ALUOP_AL %A+B%+%AL%+%BL%    # add 0x20 to convert uppercase to lowercase
+.strhextoi_not_upper
 LDI_BL '0'
 ALUOP_FLAGS %A-B%+%BL%+%AL% # see if char is < '0'
 JO .strtoi_invalid_char  # if so, abort
