@@ -494,14 +494,16 @@ RET
 #
 # Heap params: context_ptr (word)
 # Heap return: entry_ptr (word)
-#   - high byte >= 0x40 = valid parsed entry (fields big-endian)
+#   - high byte >= 0x40 = valid entry, already parsed to native big-endian
 #   - 0x0000 = end of directory
 #   - 0x00nn (nn>0) = ATA error
 #
 # Automatically skips 0xE5 (deleted) entries and detects 0x00 (end).
-# Auto-parses each returned entry via fat16_dirent_parse (in-place).
-# IMPORTANT: The returned pointer is into the internal sector buffer;
-# do NOT call :free on it. The buffer is freed by fat16_dirwalk_end.
+# Each valid entry is parsed in-place via fat16_dirent_parse before returning,
+# so all multi-byte numeric fields are big-endian and can be read directly.
+# IMPORTANT: The returned pointer is into the internal sector buffer.
+# Do NOT call :free on it -- the buffer is freed by fat16_dirwalk_end.
+# The returned entry is only valid until the next dirwalk_next/dirwalk_end call.
 ######################################################
 :fat16_dirwalk_next
 ALUOP_PUSH %A%+%AH%

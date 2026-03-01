@@ -13,10 +13,14 @@ struct fat16_dirwalk_ctx {
 // High byte >= 0x60 = success, 0x00nn = error (nn = ATA error byte).
 extern struct fat16_dirwalk_ctx *fat16_dirwalk_start(struct fs_handle *h, uint16_t dir_cluster);
 
-// Advance to next valid directory entry. Skips deleted (0xE5) entries,
-// detects end-of-directory (0x00), and auto-parses each entry to big-endian.
-// Returns entry pointer: high byte >= 0x40 = valid, 0x0000 = end, 0x00nn = error.
-// Returned entry points into internal sector buffer (do NOT free it).
+// Advance to next valid directory entry. Skips deleted (0xE5) entries and
+// detects end-of-directory (0x00). Each valid entry is parsed in-place via
+// fat16_dirent_parse(), byte-swapping all multi-byte fields to native big-endian
+// before returning. Fields in the returned struct can be accessed directly.
+// Returns entry pointer: high byte >= 0x40 = valid (parsed, BE), 0x0000 = end,
+// 0x00nn = ATA error.
+// Returned pointer is into the internal sector buffer -- do NOT free it.
+// Valid only until the next fat16_dirwalk_next() or fat16_dirwalk_end() call.
 extern struct fat16_dirent *fat16_dirwalk_next(struct fat16_dirwalk_ctx *ctx);
 
 // Free sector buffer and context struct.

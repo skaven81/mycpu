@@ -1,8 +1,9 @@
 // FAT16 directory entry (32 bytes)
 // On-disk fields are little-endian; the CPU is big-endian.
-// Raw entries (from dirwalk or ATA reads) still have LE fields — use the
-// getter functions below or call fat16_dirent_parse() to byte-swap into
-// a native-endian struct where fields can be accessed directly.
+// Entries returned by fat16_dirwalk_next() are already parsed to native
+// big-endian in-place -- all multi-byte fields can be read directly.
+// Entries read directly from disk via raw ATA reads still have LE fields;
+// call fat16_dirent_parse() to byte-swap them into native-endian format.
 struct fat16_dirent {
     char filename[8];                // 0x00: space-padded 8.3 name
     char extension[3];               // 0x08: space-padded extension
