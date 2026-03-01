@@ -1,3 +1,20 @@
+2026-02-28: FAT16 directory walking across cluster boundaries (claude)
+=====================================================================
+
+Directories with more than 64 entries (one cluster of 4 sectors x 16 entries)
+would return garbage after the first cluster because `dirwalk_next` blindly
+read the next sequential sector instead of following the FAT cluster chain.
+
+Fixed in `os/bios/lib/fat16_dir.asm`: added a `$dirwalk_current_cluster`
+field (context bytes 0x0A-0x0B) that tracks which cluster is being read.
+When `sectors_remaining` hits zero, the code now calls `:fat16_next_cluster`
+to look up the next cluster in the FAT, validates it (rejecting free, error,
+reserved, bad-sector, and EOF markers), computes the new LBA via
+`:fat16_cluster_to_lba`, resets the sector counter, and continues reading.
+Root directory walks (cluster=0) still terminate normally since they have
+no cluster chain.
+
+
 2026-02-27: Case-insensitive FAT16 filename matching (claude)
 =============================================================
 

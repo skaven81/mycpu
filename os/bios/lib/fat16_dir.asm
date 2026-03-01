@@ -13,7 +13,9 @@
 #   0x07: sector_data ptr low byte
 #   0x08: dir_idx (0xFF = before-first sentinel)
 #   0x09: sectors_remaining
-#   0x0A-0x0F: reserved
+#   0x0A: current_cluster high byte
+#   0x0B: current_cluster low byte
+#   0x0C-0x0F: reserved
 #
 # To manually walk a directory:
 #  1. Push the cluster number (or 0 for root dir)
@@ -51,6 +53,7 @@ VAR global dword $dirwalk_next_sector_lba
 VAR global word $dirwalk_current_sector_data
 VAR global byte $dirwalk_current_dir_idx
 VAR global byte $dirwalk_num_sectors_remaining
+VAR global word $dirwalk_current_cluster
 # Filter globals -- used only within dir_find (not part of dirwalk context)
 VAR global byte $dirwalk_find_filter_out
 VAR global byte $dirwalk_find_filter_in
@@ -326,9 +329,13 @@ ALUOP16O_B %ALU16_A+B%
 LDA_B_AL
 ALUOP_ADDR %A%+%AL% $dirwalk_num_sectors_remaining
 
+ALUOP_ADDR %zero% $dirwalk_current_cluster
+ALUOP_ADDR %zero% $dirwalk_current_cluster+1
 JMP .dirwalk_start_lba_done
 
 .dirwalk_start_subdir
+ALUOP_ADDR %A%+%AH% $dirwalk_current_cluster
+ALUOP_ADDR %A%+%AL% $dirwalk_current_cluster+1
 CALL :heap_push_D                   # fs_handle
 CALL :heap_push_A                   # cluster number
 CALL :fat16_cluster_to_lba
@@ -526,7 +533,80 @@ LDI_BL 15
 ALUOP_FLAGS %B-A%+%BL%+%AL%         # overflow means AL > 15
 JNO .dirwalk_next_no_new_sector
 
-# Need to load next sector
+# Need next sector -- check if current cluster has sectors remaining
+LD_AL $dirwalk_num_sectors_remaining
+ALUOP_FLAGS %A%+%AL%
+JNZ .dirwalk_next_read_sector
+
+# Sectors exhausted -- follow cluster chain (or end if root dir)
+LD_AH $dirwalk_current_cluster
+LD_AL $dirwalk_current_cluster+1
+ALUOP_FLAGS %A%+%AH%
+JNZ .dirwalk_next_follow_chain
+ALUOP_FLAGS %A%+%AL%
+JNZ .dirwalk_next_follow_chain
+JMP .dirwalk_next_end_of_dir        # root dir (cluster=0), no chain to follow
+
+.dirwalk_next_follow_chain
+# Look up next cluster in FAT
+LD_AH $dirwalk_current_fs_handle
+LD_AL $dirwalk_current_fs_handle+1
+CALL :heap_push_A                   # fs_handle
+LD_AH $dirwalk_current_cluster
+LD_AL $dirwalk_current_cluster+1
+CALL :heap_push_A                   # current cluster
+CALL :fat16_next_cluster
+CALL :heap_pop_A                    # A = next cluster number
+
+# Validate: if AH == 0x00, check AL < 0x03 (free/error/reserved)
+ALUOP_FLAGS %A%+%AH%
+JNZ .dirwalk_next_check_high_cluster
+LDI_BL 0x03
+ALUOP_FLAGS %A-B%+%AL%+%BL%         # AL - 3: O=1 if AL < 3
+JO .dirwalk_next_end_of_dir
+JMP .dirwalk_next_valid_cluster
+
+.dirwalk_next_check_high_cluster
+# AH != 0x00: check if AH == 0xFF and AL >= 0xF0 (reserved/bad/EOF)
+LDI_BH 0xFF
+ALUOP_FLAGS %A&B%+%AH%+%BH%         # E flag set if AH == 0xFF
+JNE .dirwalk_next_valid_cluster      # AH in 0x01-0xFE: always valid
+LDI_BL 0xF0
+ALUOP_FLAGS %A-B%+%AL%+%BL%         # AL - 0xF0: O=0 if AL >= 0xF0
+JNO .dirwalk_next_end_of_dir         # 0xFFF0-0xFFFF: end of chain
+# Fall through: 0xFF00-0xFFEF is valid
+
+.dirwalk_next_valid_cluster
+# Store new cluster number
+ALUOP_ADDR %A%+%AH% $dirwalk_current_cluster
+ALUOP_ADDR %A%+%AL% $dirwalk_current_cluster+1
+
+# Convert new cluster to LBA
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%                 # save cluster on stack
+LD_AH $dirwalk_current_fs_handle
+LD_AL $dirwalk_current_fs_handle+1
+CALL :heap_push_A                   # fs_handle
+POP_AL
+POP_AH                              # restore cluster
+CALL :heap_push_A                   # cluster number
+CALL :fat16_cluster_to_lba
+CALL :heap_pop_B                    # B = low word of LBA
+CALL :heap_pop_A                    # A = high word of LBA
+ALUOP_ADDR %A%+%AH% $dirwalk_next_sector_lba
+ALUOP_ADDR %A%+%AL% $dirwalk_next_sector_lba+1
+ALUOP_ADDR %B%+%BH% $dirwalk_next_sector_lba+2
+ALUOP_ADDR %B%+%BL% $dirwalk_next_sector_lba+3
+
+# Reset sectors_remaining from SectorsPerCluster in fs_handle
+LD_AH $dirwalk_current_fs_handle
+LD_AL $dirwalk_current_fs_handle+1
+LDI_B 0x003a                        # sectors per cluster offset
+ALUOP16O_B %ALU16_A+B%
+LDA_B_AL
+ALUOP_ADDR %A%+%AL% $dirwalk_num_sectors_remaining
+
+.dirwalk_next_read_sector
 CALL .dirwalk_read_next_sector
 CALL :heap_pop_AL                   # ATA read status byte
 ALUOP_FLAGS %A%+%AL%
@@ -633,14 +713,15 @@ ALUOP_ADDR %A%+%AL% $dirwalk_current_dir_idx       # 0x08
 INCR_D
 LDA_D_AL
 ALUOP_ADDR %A%+%AL% $dirwalk_num_sectors_remaining # 0x09
+INCR_D
+LDA_D_AL
+ALUOP_ADDR %A%+%AL% $dirwalk_current_cluster       # 0x0A
+INCR_D
+LDA_D_AL
+ALUOP_ADDR %A%+%AL% $dirwalk_current_cluster+1     # 0x0B
 
 # Restore D to base
-DECR_D
-DECR_D
-DECR_D
-DECR_D
-DECR_D
-DECR_D
+DECR8_D
 DECR_D
 DECR_D
 DECR_D
@@ -684,14 +765,15 @@ ALUOP_ADDR_D %A%+%AL%               # 0x08
 INCR_D
 LD_AL $dirwalk_num_sectors_remaining
 ALUOP_ADDR_D %A%+%AL%               # 0x09
+INCR_D
+LD_AL $dirwalk_current_cluster
+ALUOP_ADDR_D %A%+%AL%               # 0x0A
+INCR_D
+LD_AL $dirwalk_current_cluster+1
+ALUOP_ADDR_D %A%+%AL%               # 0x0B
 
 # Restore D to base
-DECR_D
-DECR_D
-DECR_D
-DECR_D
-DECR_D
-DECR_D
+DECR8_D
 DECR_D
 DECR_D
 DECR_D
@@ -715,10 +797,7 @@ PUSH_DL
 CALL :heap_pop_D                    # D = context_ptr
 
 # Read sector_data ptr from context (offset 0x06-0x07)
-INCR_D                              # 0x01
-INCR_D                              # 0x02
-INCR_D                              # 0x03
-INCR_D                              # 0x04
+INCR4_D                             # 0x01..0x04
 INCR_D                              # 0x05
 INCR_D                              # 0x06
 LDA_D_AH
@@ -727,10 +806,7 @@ LDA_D_AL                            # A = sector_data address
 CALL :free                          # free the 512-byte sector buffer
 
 # Restore D to base
-DECR_D
-DECR_D
-DECR_D
-DECR_D
+DECR4_D
 DECR_D
 DECR_D
 DECR_D
