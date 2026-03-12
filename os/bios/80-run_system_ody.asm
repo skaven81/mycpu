@@ -36,6 +36,7 @@ VAR global byte $exec_loop_argc         # argc to push and count for argv free
 VAR global word $exec_loop_argv_ptr     # argv array address (freed after exec)
 VAR global byte $exec_loop_flags        # ODY flags byte for post-exec cleanup dispatch
 VAR global word $exec_loop_fsh_ptr      # fsh_ptr saved across load phases
+VAR global word $exec_loop_saved_fsh_ptr  # saved $current_fs_handle_ptr before fallback search
 
 ###
 # :boot_system_ody
@@ -103,10 +104,6 @@ ST $exec_argv_ptr+1 0x00
 ALUOP_ADDR %A%+%AH% $exec_loop_argv_ptr
 ALUOP_ADDR %A%+%AL% $exec_loop_argv_ptr+1
 
-# Set $current_fs_handle_ptr to the requested drive
-ST_CH $current_fs_handle_ptr
-ST_CL $current_fs_handle_ptr+1
-
 # D = dirent_ptr, C = fsh_ptr; proceed to load
 JMP .exec_load_binary
 
@@ -114,6 +111,13 @@ JMP .exec_load_binary
 # Fallback: IPC dirent pointer is invalid.  Find and run /SYSTEM.ODY.
 ###
 .exec_loop_fallback
+
+# Save $current_fs_handle_ptr so we can restore the user's drive selection
+# after the fallback search overwrites it.  0x0000 means "not yet set" (cold boot).
+LD_AH $current_fs_handle_ptr
+LD_AL $current_fs_handle_ptr+1
+ALUOP_ADDR %A%+%AH% $exec_loop_saved_fsh_ptr
+ALUOP_ADDR %A%+%AL% $exec_loop_saved_fsh_ptr+1
 
 # No argv for SYSTEM.ODY fallback
 ST $exec_loop_argc 0x00
@@ -206,6 +210,16 @@ ALUOP_DL %A%+%AL%               # D = dirent_ptr
 # Ensure current fs handle matches the drive we found the file on
 ST_CH $current_fs_handle_ptr
 ST_CL $current_fs_handle_ptr+1
+# Restore user's drive selection if one was set before the fallback search.
+# Valid fs_handle addresses are 0xBAxx-0xBCxx (global arrays region), so a
+# saved high byte of 0x00 means the pointer was uninitialized (cold boot).
+LD_AH $exec_loop_saved_fsh_ptr
+LD_AL $exec_loop_saved_fsh_ptr+1
+ALUOP_FLAGS %A%+%AH%
+JZ .exec_keep_boot_drive        # high byte 0x00 = cold boot, keep boot drive
+ALUOP_ADDR %A%+%AH% $current_fs_handle_ptr
+ALUOP_ADDR %A%+%AL% $current_fs_handle_ptr+1
+.exec_keep_boot_drive
 
 # Fall through to load path: D = dirent_ptr, C = fsh_ptr
 
