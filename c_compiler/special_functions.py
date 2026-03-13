@@ -574,3 +574,21 @@ class SpecialFunctions():
         if dest_reg != 'A':
             self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
             self.emit(f"CALL :heap_pop_{dest_reg}", "Pop into dest_reg")
+
+    # ---- Clear screen ----
+    def custom_FuncCall_clear_screen(self, node, mode, func, dest_reg='A', **kwargs):
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        self.emit(f"ALUOP_PUSH %A%+%AH%", "Save A before clear_screen")
+        self.emit(f"ALUOP_PUSH %A%+%AL%", "Save A before clear_screen")
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        # character is in AL
+        self.emit(f"ALUOP_AH %A%+%AL%", "Copy character to AH")
+        # character now in AH
+        rvalue_var = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        # color is in AL
+        self.emit(f"CALL {func.asm_name()}")
+        # no return value for clear_screen, nothing to pop
+        self.emit(f"POP_AL", "Restore A after clear_screen")
+        self.emit(f"POP_AH", "Restore A after clear_screen")
+
+
