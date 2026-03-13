@@ -1931,6 +1931,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             raise NotImplementedError(f"visit_Compound mode {mode} not yet supported")
 
+    def visit_EmptyStatement(self, node, mode, **kwargs):
+        # nothing to do for an empty statement
+        pass
+
     def visit_Cast(self, node, mode, dest_reg='A', dest_var=None, **kwargs):
         if mode == 'generate_rvalue':
             var = self.visit(node.expr, mode=mode, dest_reg=dest_reg, dest_var=dest_var, **kwargs)
