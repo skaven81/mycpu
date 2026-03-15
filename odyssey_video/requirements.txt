@@ -1,0 +1,4 @@
+Pillow>=9.0
+numpy>=1.21
+imageio>=2.16
+imageio-ffmpeg>=0.4
