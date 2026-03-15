@@ -1,3 +1,37 @@
+2026-03-15: Bad apple! Finally!
+===============================
+
+I finally have bad apple working.  The video plays at about 14fps (0.07 sec
+timer interrupts). Interestingly, it plays better from the spinning drive
+than the SD card, I guess it responds more quickly to reads than the SD card.
+With the spinning drive I can push it to 0.06 sec (about 16fps) and it's able
+to keep up without running out of buffer over the course of the video.
+
+While working on bad apple, I realize I need to implement another way of
+playing videos/animations, using the color palette instead of displaying
+ASCII characters.  The ASCII method is good for (sort of) improving resolution
+by using ASCII glyphs, but it will always look like ASCII art. What I want
+to do instead is fill the display with 0xff characters, and have the "video"
+be color data fed into 0x5000 color data range.  This would be an even better
+showcase of the Odyssey's 64-color palette AND its ability to render high
+speed "video" frames (albeit at a paltry 64x60 "pixel" resolution).
+
+Getting bad apple working required a number of changes, detailed in the
+journal entries below.  The biggest of which is to recognize that heap
+operations are not allowed in ISRs, and how multiple functions using the
+hardware timer simultaneously caused problems.  Removing the timer use from
+the ATA functions resolved the timer conflicts, and eliminating heap use
+from timer ISRs cleared up jitter and weird behaviors.
+
+Next stops:
+ * Color video renderer
+ * Refactor terminal input and output code for performance and ease of use
+ * Add 4K RAM at 0xf000 memory region, and move heap+kb+serial buffers
+   to that memory area, making 0x6000-0xbeff region usable for malloc
+ * Additional hardware timers (using 82C52?)
+ * Hardware multiplication unit
+
+
 2026-03-13: ATA boot-time responsiveness gate with 1-second watchdog (claude)
 ==============================================================================
 
@@ -43,6 +77,7 @@ If bugs appear related to ATA timeouts at boot: check that the drive ID
 in AL is correct at the call site, and that the IRQ3 vector save/restore
 is not interfering with any other active IRQ3 user. The :sleep function uses
 the same IRQ3/watchdog pattern and was the reference for this implementation.
+
 
 2026-03-01: putchar \r now moves to first column only (claude)
 ==================================================================
@@ -117,6 +152,7 @@ Two follow-on shell fixes:
   that uppercased `argv[0]` before the `.ODY` file search.  `fat16_dir_find`
   handles case folding, so the extra copy-and-uppercase step was dead work.
 
+
 2026-02-27: Roll 5 utilities into SYSTEM.ODY + new `type` command in C (claude)
 ================================================================================
 
@@ -176,6 +212,7 @@ i.e., addition -- instead of `%{dest}-{other}%` -- subtraction.  The
 asm_macros file contains the authoritative `%ALU16_A-B%` definition confirming
 the correct operands.  One character fix in the f-string on line 1661 of
 `codegen.py` resolved it.
+
 
 2026-02-24: BIOS exec loop + SYSTEM.ODY rewrite + argc/argv ABI (claude)
 ========================================================================
