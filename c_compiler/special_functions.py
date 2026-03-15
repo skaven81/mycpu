@@ -423,6 +423,19 @@ class SpecialFunctions():
         self.emit(f"POP_{dest_reg}L", "Restore return value")
         self.emit(f"POP_{dest_reg}H", "Restore return value")
 
+    def custom_FuncCall_fat16_next_cluster(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM convention: push h (bottom), push cluster (top) -> call -> pop next cluster
+        # C: uint16_t fat16_next_cluster(struct fs_handle *h, uint16_t cluster)
+        # Default C compiler would push cluster first (bottom), h second (top) -- wrong order.
+        # This handler pushes h first (bottom), cluster second (top) to match ASM convention.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_h = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Push fs_handle address param (bottom)")
+        rvalue_c = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Push cluster param (top)")
+        self.emit(f"CALL {func.asm_name()}")
+        self.emit(f"CALL :heap_pop_{dest_reg}", "Pop next cluster number")
+
     def custom_FuncCall_fat16_cluster_to_lba(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: push handle addr, push cluster → call → pop lo LBA, pop hi LBA
         # C: uint16_t fat16_cluster_to_lba(struct fs_handle *h, uint16_t cluster, uint16_t *lba_hi)
