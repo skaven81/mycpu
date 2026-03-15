@@ -1,3 +1,49 @@
+2026-03-13: ATA boot-time responsiveness gate with 1-second watchdog (claude)
+==============================================================================
+
+The `.ata_wait_ready` function was previously refactored from a hardware
+watchdog timer (500ms) to a software countdown loop (~255 iterations, a few
+ms). This is correct for normal sector reads on a running drive, but broke
+boot-time behavior: during `:ata_identify` and `:fat16_mount` the drive may
+still be spinning up and legitimately needs several hundred ms before BSY
+clears. The short software loop caused these functions to time out on a
+present-but-not-yet-ready drive.
+
+Fix: added a new global function `:ata_drive_responsive` in
+`os/bios/lib/ata.asm`. It passively polls the ATA status register (BSY=0,
+RDY=1) with a 1-second hardware watchdog timer timeout. No ATA command is
+issued -- per ATA spec, the host must wait for BSY=0/DRDY=1 before issuing
+any command, and writing to the command register while BSY=1 is explicitly
+prohibited. An absent drive leaves the bus floating at 0xFF (BSY=1 forever),
+causing timeout after 1 second.
+
+The function saves/restores AH, BH, BL, and the IRQ3 vector. It uses BH
+as an in-place timer-fired counter (via the :timer_incr_bh ISR), installs
+and tears down the watchdog within a MASKINT/UMASKINT section, then polls
+the ATA status register in a tight loop with interrupts unmasked so the ISR
+can fire.
+
+Calling convention:
+  * Input: AL = drive ID (0=master, 1=slave), consumed
+  * Output: Z flag set = drive responsive; Z flag clear = timeout
+  * Callee-saves: AH, BH, BL, IRQ3 vector
+
+Injection points:
+  * `:ata_identify` (ata.asm): called right after heap args are consumed
+    (AL still holds drive ID from the earlier heap_pop_AL; C holds the
+    sector buffer address). Jumps to existing .ata_id_timeout on failure.
+  * `:fat16_mount` (fat16_mount.asm): called after heap args are consumed
+    but BEFORE :extmalloc, so no resources need to be freed on timeout.
+    Uses MOV_CL_AL to move the drive ID from CL into AL. A new abort label
+    .mount_abort_no_device pops the one extra hardware stack slot (the saved
+    start-sector high byte), discards the fs handle address from the heap,
+    pushes 0xff, and jumps to .mount_done.
+
+If bugs appear related to ATA timeouts at boot: check that the drive ID
+in AL is correct at the call site, and that the IRQ3 vector save/restore
+is not interfering with any other active IRQ3 user. The :sleep function uses
+the same IRQ3/watchdog pattern and was the reference for this implementation.
+
 2026-03-01: putchar \r now moves to first column only (claude)
 ==================================================================
 

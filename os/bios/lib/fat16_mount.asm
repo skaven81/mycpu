@@ -57,6 +57,12 @@ CALL :heap_pop_B                # low word of start sector
 CALL :heap_pop_A                # high word of start sector
 ALUOP_PUSH %A%+%AL%             # Save the start sector, we'll need it if ATA read is successful
 
+# Gate on drive responsiveness before allocating any resources.
+# Uses 1-second watchdog timeout for boot-time spin-up tolerance.
+MOV_CL_AL                           # AL = drive ID (CL -> AL)
+CALL :ata_drive_responsive          # Z flag set = responsive
+JNZ .mount_abort_no_device          # if not responsive, abort early
+
 # Get a 4k memory page in extended memory for scratch
 CALL :extmalloc
 CALL :heap_pop_AL
@@ -437,6 +443,14 @@ LDI_CL 0x00
 CALL :heap_push_CL              # push OK status byte to heap
 CALL :extpage_d_pop             # Restore D page to previous value, old value is on heap
 CALL :extfree                   # free the page on the heap
+JMP .mount_done
+
+# abort vector if drive is not responsive (before any resources allocated)
+.mount_abort_no_device
+POP_AL                          # discard saved start sector high byte (from ALUOP_PUSH %A%+%AL% above)
+CALL :heap_pop_word             # discard fs handle address from heap
+LDI_AL 0xff
+CALL :heap_push_AL              # push "drive not attached" status
 JMP .mount_done
 
 # abort vector if extmalloc failed

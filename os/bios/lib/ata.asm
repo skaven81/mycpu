@@ -198,6 +198,11 @@ ST_SLOW %ata_lba3% %ata_lba3_master%
 # Pop the address we'll be writing to, into C
 CALL :heap_pop_C
 
+# Gate on drive responsiveness with 1-second watchdog timeout before
+# committing to the identify operation.
+CALL :ata_drive_responsive          # AL = drive ID
+JNZ .ata_id_timeout                 # if not responsive, abort
+
 # Wait for the newly selected drive to become ready - returns
 # status via the ALU zero flag
 CALL .ata_wait_ready
@@ -395,44 +400,26 @@ RET
 
 ########
 # .ata_wait_ready
-# Wait for the drive to become ready. If successful,
-# ALU flags will have the zero flag set.  If timeout,
-# ALU flags will not have zero flag set.
+# Wait for the drive to become ready. Uses BH as a software
+# countdown counter (~255 iterations, several ms at 2.2MHz),
+# which is more than sufficient for a responding drive. A hardware
+# watchdog timer is not needed here: drives that are present and
+# spinning become ready in well under 1ms. The hardware watchdog
+# is only appropriate during initial device detection (ata_identify)
+# where a missing drive would otherwise loop forever.
+# If successful, ALU flags will have the zero flag set.
+# If timeout, ALU flags will not have zero flag set.
 .ata_wait_ready
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %B%+%BL%
 ALUOP_PUSH %B%+%BH%
 
-MASKINT
-LD16_B %IRQ3addr%               # save IRQ3 vector
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %B%+%BL%
-ST16 %IRQ3addr% :timer_incr_bh  # increment BH when timer fires
-
-ST %tmr_wdog_sec%       0x00    # set watchdog timer to 500ms
-ST %tmr_wdog_subsec%    0x50
-
-LDI_BH 0x00                     # set initial timer state
-
-LD_TD   %tmr_ctrl_a%            # read control_a register, this
-                                # clears any pending interrupts
-# set control_b (control) bits
-# TE=1 (enable transfers)
-# CS=0 (don't care)
-# BME=0 (disable burst mode)
-# TPE=0 (alarm power-enable)
-# TIE=0 (alarm interrupt-enable)
-# KIE=0 (kickstart enable)
-# WDE=1 (watchdog enabled)
-# WDS=0 (watchdog steers to IRQ)
-ST      %tmr_ctrl_b%        %tmr_TE_mask%+%tmr_WDE_mask%
-# enable interrupts
-UMASKINT
+LDI_BH 0xFF                     # loop counter: 255 iterations before timeout
 
 # Wait for busy flag to clear and ready flag to be set
 .ata_wait_loop
-ALUOP_FLAGS %B%+%BH%            # check timer flag
-JNZ .ata_wait_timeout           # abort on timeout
+ALUOP_BH %B-1%+%BH%             # decrement loop counter
+JO .ata_wait_timeout             # underflow (was 0x00): timeout
 LD_SLOW_PUSH %ata_cmd_stat%
 POP_AL
 LDI_BL %ata_stat_busy%
@@ -449,13 +436,6 @@ JMP .ata_wait_done
 ALUOP_AL %one%                  # timeout, so ensure zero flag will not be set
 
 .ata_wait_done
-MASKINT
-POP_BL
-POP_BH
-ALUOP_ADDR %B%+%BH% %IRQ3addr%
-ALUOP_ADDR %B%+%BL% %IRQ3addr%+1
-UMASKINT
-
 # Set the ALU flags based on AL, which is zero on success
 # or one on failure
 ALUOP_FLAGS %A%+%AL%
@@ -463,6 +443,88 @@ ALUOP_FLAGS %A%+%AL%
 POP_BH
 POP_BL
 POP_AL
+RET
+
+########
+# :ata_drive_responsive
+# Check if an ATA drive is responsive by passively polling the ATA
+# status register (BSY=0, RDY=1) with a 1-second hardware watchdog
+# timeout. No ATA command is issued: per ATA spec, the host must wait
+# for BSY=0 and DRDY=1 before issuing any command, and writing to the
+# command register while BSY=1 is explicitly prohibited. The drive
+# asserting BSY=0/RDY=1 is itself the proof of presence; an absent
+# drive leaves the bus floating at 0xFF (BSY=1 forever), causing timeout.
+#
+# To use this function:
+#  * AL = drive ID (0=master, 1=slave). AL is consumed (not preserved).
+#  * Call the function.
+#  * Z flag set   = drive is responsive (BSY=0, RDY=1 within 1 second)
+#  * Z flag clear = drive did not respond (timeout)
+#  * Clobbers: AL (consumed as input), AH (used for timer args, then restored)
+#  * Saves/restores: AH, BH, BL, IRQ3 vector
+:ata_drive_responsive
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+
+# Select the drive
+ALUOP_FLAGS %A%+%AL%
+JZ .adr_master
+ST_SLOW %ata_lba3% %ata_lba3_slave%
+JMP .adr_selected
+.adr_master
+ST_SLOW %ata_lba3% %ata_lba3_master%
+.adr_selected
+
+# Save IRQ3 vector, install timer_incr_bh, arm 1-second watchdog
+MASKINT
+LD16_B %IRQ3addr%
+ALUOP_PUSH %B%+%BH%             # save old IRQ3 high byte
+ALUOP_PUSH %B%+%BL%             # save old IRQ3 low byte
+ST16 %IRQ3addr% :timer_incr_bh # install handler
+LDI_BH 0x00                     # BH = timer fire counter (0 = not yet fired)
+LD_TD %tmr_ctrl_a%              # clear any pending timer interrupt
+LDI_AH 0x01                     # 1 second watchdog
+LDI_AL 0x00                     # 0 subseconds
+CALL :timer_set_watchdog        # arm watchdog (consumes AH and AL)
+UMASKINT
+
+# Poll loop: wait for BSY=0, RDY=1
+.adr_wait_loop
+ALUOP_FLAGS %B%+%BH%
+JNZ .adr_timeout                # BH!=0 means timer fired: drive not responsive
+LD_SLOW_PUSH %ata_cmd_stat%
+POP_AL
+LDI_BL %ata_stat_busy%
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JNZ .adr_wait_loop              # still busy, keep polling
+LDI_BL %ata_stat_rdy%
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JZ .adr_wait_loop               # not ready yet, keep polling
+
+# Drive is responsive
+ALUOP_AL %zero%
+JMP .adr_done
+
+.adr_timeout
+ALUOP_AL %one%
+
+.adr_done
+# Disable watchdog and restore IRQ3 vector
+MASKINT
+ST %tmr_ctrl_b% %tmr_TE_mask%  # clear WDE bit, disable watchdog
+POP_BL                           # old IRQ3 low byte
+POP_BH                           # old IRQ3 high byte
+ALUOP_ADDR %B%+%BH% %IRQ3addr%
+ALUOP_ADDR %B%+%BL% %IRQ3addr%+1
+UMASKINT
+
+# Set Z flag for caller: AL=0 -> Z set (success), AL=1 -> Z clear (timeout)
+ALUOP_FLAGS %A%+%AL%
+
+POP_BL
+POP_BH
+POP_AH
 RET
 
 ########

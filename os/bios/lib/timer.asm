@@ -3,20 +3,26 @@
 # Timer utility functions
 
 ######
-# Configure the timer to repetitively trigger an interrupt on
-# IRQ3 in the time interval specified on the heap.
+# Configure the timer to trigger an interrupt on IRQ3 after the
+# specified interval. The DS1511Y watchdog is a one-shot timer:
+# it fires once and stops. To implement a periodic interrupt (e.g.
+# for frame rendering), the ISR itself must call this function again
+# after clearing the interrupt via LD_TD %tmr_ctrl_a%.
+#
+# This function intentionally uses registers rather than the heap
+# so that it is safe to call from within an ISR. Heap functions
+# internally call UMASKINT, which would re-enable interrupts mid-ISR
+# and risk re-entrant handler execution or heap pointer corruption.
+# Direct register writes have no such side effects.
 #
 # Usage:
-#  * push the BCD-encoded seconds to the heap (00-99)
-#  * push the BCD-encoded subseconds to the heap (00-99)
+#  * AH = BCD-encoded seconds (00-99)
+#  * AL = BCD-encoded subseconds (00-99)
 #  * call the function
+#  * AH and AL are consumed (not preserved)
 :timer_set_watchdog
-ALUOP_PUSH %A%+%AL%
-# set watchdog timer to interval specified by AH and AL
-CALL :heap_pop_AL                       # subseconds
 ALUOP_ADDR %A%+%AL% %tmr_wdog_subsec%
-CALL :heap_pop_AL                       # seconds
-ALUOP_ADDR %A%+%AL% %tmr_wdog_sec%
+ALUOP_ADDR %A%+%AH% %tmr_wdog_sec%
 # set control_b (control) bits
 # TE=1 (enable transfers)
 # CS=0 (don't care)
@@ -27,7 +33,6 @@ ALUOP_ADDR %A%+%AL% %tmr_wdog_sec%
 # WDE=1 (watchdog enabled)
 # WDS=0 (watchdog steers to IRQ)
 ST      %tmr_ctrl_b%        %tmr_TE_mask%+%tmr_WDE_mask%
-POP_AL
 RET
 
 ######
@@ -49,10 +54,11 @@ RET
 ######
 # Timer-controlled sleep
 #  * push BCD seconds to heap (00-99)
-#  * push BCD subsec to heap (0-99)
+#  * push BCD subsec to heap (00-99)
 :sleep
 PUSH_DH
 PUSH_DL
+ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
 
 MASKINT
@@ -66,12 +72,17 @@ PUSH_DL
 # Set up timer interrupt to use our function
 ST16    %IRQ3addr%  .sleep_timer
 
-LDI_AL  0  # set up spinlock
+# Load sleep duration from heap into AH=seconds, AL=subseconds.
+# Heap was pushed seconds-first, subseconds-second, so subseconds
+# is on top and must be popped first, then seconds.
+CALL :heap_pop_AL               # subseconds -> AL
+CALL :heap_pop_AH               # seconds -> AH
 
-# read control_a register, this
-# clears any pending interrupts
+# read control_a register, this clears any pending interrupts
 LD_TD   %tmr_ctrl_a%
-CALL :timer_set_watchdog        # This will pop the two values from the heap
+CALL :timer_set_watchdog        # AH=seconds, AL=subseconds (both consumed)
+
+LDI_AL  0  # set up spinlock
 
 # Now that timer is setup, enable interrupts
 UMASKINT
@@ -93,6 +104,7 @@ ST_DL   %IRQ3addr%+1
 
 # Restore registers
 POP_AL
+POP_AH
 POP_DL
 POP_DH
 
