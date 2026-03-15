@@ -340,13 +340,16 @@ ST16    %IRQ3addr%  :timer_clear_irq
 RETI
 
 .start_1sec_timer
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
 MASKINT
 ST16    %IRQ3addr%  .timeout
 ST $timer_flag 0x00
-LDI_AL 0x01     # seconds
-CALL :heap_push_AL
-LDI_AL 0x00     # subseconds
-CALL :heap_push_AL
+LD_TD %tmr_ctrl_a%          # clear any pending timer interrupt before arming
+LDI_AH 0x01     # BCD seconds
+LDI_AL 0x00     # BCD subseconds
 CALL :timer_set_watchdog
 UMASKINT
+POP_AL
+POP_AH
 RET
