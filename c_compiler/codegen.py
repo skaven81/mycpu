@@ -1459,7 +1459,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     value = self.visit(node.expr, mode='get_value', **kwargs)
                 except NotImplementedError:
                     pass
-                if value and node.op == '-':
+                if value and node.op == '-' and dest_var is not None:
                     if dest_var.sizeof() == 1:
                         self.emit(f"LDI_{dest_reg}L -{value[0]}", f"Load constant value, inverted {value[1]}")
                     elif dest_var.sizeof() == 2:
@@ -1467,7 +1467,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     else:
                         raise ValueError("Cannot invert non-simple types")
                     var = dest_var
-                # traditional option, or operations other than '-'
+                # traditional option, or operations other than '-', or dest_var is None
                 else:
                     with self._debug_block(f"UnaryOp {node.op}: load value into {dest_reg}"):
                         var = self.visit(node.expr, mode='generate_rvalue', dest_reg=dest_reg, dest_var=dest_var)
@@ -1635,13 +1635,46 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             if left_var_val and right_var_size == 1:
                 left_var_size = 1
 
-            # Compute the resulting op size and whether it will be signed
-            signed_op = left_var.typespec.is_signed() or right_var.typespec.is_signed()
+            # Compute the resulting op size and whether it will be signed.
+            #
+            # C standard "usual arithmetic conversions":
+            # When one operand is a constant literal (right_var_val/left_var_val set),
+            # its default 'int' type must NOT override the explicit signedness of the
+            # typed variable.  The typed operand's signedness dominates.  This matches
+            # C's integer promotion rules:
+            #   uint8_t  vs int literal -> unsigned (all uint8_t values non-negative)
+            #   int8_t   vs int literal -> signed
+            #   uint16_t vs int literal -> unsigned (int converts to uint16_t per C)
+            #   int16_t  vs int literal -> signed   (both are int)
+            if right_var_val is not None and left_var_val is None:
+                # Right operand is a constant; signedness follows the typed left operand.
+                signed_op = left_var.typespec.is_signed()
+            elif left_var_val is not None and right_var_val is None:
+                # Left operand is a constant; signedness follows the typed right operand.
+                signed_op = right_var.typespec.is_signed()
+            else:
+                # Both are typed variables (or both are constants): standard OR rule.
+                signed_op = left_var.typespec.is_signed() or right_var.typespec.is_signed()
             if left_var.is_pointer or right_var.is_pointer:
                 op_size = 2
                 signed_op = False
             elif left_var_size == right_var_size == 1:
-                op_size = 1
+                # Mixed-signedness byte pair: C says both promote to int before comparison.
+                # Widen both operands to 16-bit so the comparison is correct.
+                # e.g. uint8_t 200 vs int8_t -1: (int)200 > (int)-1 -> TRUE,
+                # but signed 8-bit 0xC8 > 0xFF (-56 > -1) -> FALSE (wrong).
+                # Only promote when BOTH sides are typed variables (not constants). A
+                # constant literal forced to 1 byte cannot be safely sign-extended:
+                # e.g., literal 200 = 0xC8 would sign-extend to -56 instead of +200.
+                if (left_var.typespec.is_signed() != right_var.typespec.is_signed()
+                        and not left_var.is_pointer and not right_var.is_pointer
+                        and right_var_val is None and left_var_val is None):
+                    self.emit_sign_extend(dest_reg, left_var.typespec)
+                    self.emit_sign_extend(other_reg, right_var.typespec)
+                    op_size = 2
+                    signed_op = True  # both promoted to signed int (16-bit)
+                else:
+                    op_size = 1
             elif left_var_size == right_var_size == 2:
                 op_size = 2
             elif left_var_size != right_var_size:
@@ -1794,17 +1827,20 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         self.emit(f"ALUOP16E_FLAGS %A&B%+%AL%+%BL% %A&B%+%AH%+%BH% %A&B%+%AL%+%BL%", f"Signed BinaryOp {node.op}: check 16-bit equality")
                     self.emit(f"JEQ {label_equal}", f"Signed BinaryOp {node.op}: If equal, we know if true/false now")
 
-                    # Operands were unequal, same sign, and no overflow on subtraction, so we need
-                    # to check if the result sign differs from the operands' signs.
+                    # Operands were unequal, same sign, and no overflow on subtraction.
+                    # Compute B-A; if the result is negative (B < A), then A > B.
+                    # Check the sign bit of B-A directly: negative (MSB=1) means B<A,
+                    # non-negative (MSB=0) means B>=A. This works for both positive and
+                    # negative operands (unlike comparing result sign against B's sign).
                     if op_size == 1:
-                        self.emit(f"ALUOP_{dest_reg}L %{other_reg}-{dest_reg}_signed%+%{other_reg}L%+%{dest_reg}L%", f"Signed BinaryOp {node.op}: Subtract to check for sign change")
-                        self.emit(f"ALUOP_FLAGS %Amsb^Bmsb%+%AL%+%BL%", f"Signed BinaryOp {node.op}: Compare signs")
-                        self.emit(f"LDI_{dest_reg}L {default_val}", f"Signed BinaryOp {node.op}: Assume no sign change -> {'true' if default_val else 'false'}")
+                        self.emit(f"ALUOP_{dest_reg}L %{other_reg}-{dest_reg}_signed%+%{other_reg}L%+%{dest_reg}L%", f"Signed BinaryOp {node.op}: Compute B-A to determine ordering")
+                        self.emit(f"ALUOP_FLAGS %Amsb%+%AL%", f"Signed BinaryOp {node.op}: Check sign of result (negative means B<A)")
+                        self.emit(f"LDI_{dest_reg}L {default_val}", f"Signed BinaryOp {node.op}: result non-negative: B>=A -> {'true' if default_val else 'false'}")
                     else:
-                        self.emit(f"ALUOP16O_{dest_reg} %ALU16_s{other_reg}-{dest_reg}%", f"Signed BinaryOp {node.op}: Subtract to check for sign change")
-                        self.emit(f"ALUOP_FLAGS %Amsb^Bmsb%+%AH%+%BH%", f"Signed BinaryOp {node.op}: Compare signs")
-                        self.emit(f"LDI_{dest_reg} {default_val}", f"Signed BinaryOp {node.op}: Assume no sign change -> {'true' if default_val else 'false'}")
-                    self.emit(f"JZ {label_done}", f"Signed BinaryOp {node.op}: Assume signs were the same")
+                        self.emit(f"ALUOP16O_{dest_reg} %ALU16_s{other_reg}-{dest_reg}%", f"Signed BinaryOp {node.op}: Compute B-A to determine ordering")
+                        self.emit(f"ALUOP_FLAGS %Amsb%+%AH%", f"Signed BinaryOp {node.op}: Check sign of result (negative means B<A)")
+                        self.emit(f"LDI_{dest_reg} {default_val}", f"Signed BinaryOp {node.op}: result non-negative: B>=A -> {'true' if default_val else 'false'}")
+                    self.emit(f"JZ {label_done}", f"Signed BinaryOp {node.op}: result non-negative, return default")
                     if op_size == 1:
                         self.emit(f"LDI_{dest_reg}L {other_val}", f"Signed BinaryOp {node.op}: Signs were different -> {'true' if other_val else 'false'}")
                     else:
