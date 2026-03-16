@@ -1,5 +1,6 @@
 #include "types.h"
 #include "terminal_output.h"
+#include "strtoi.h"
 
 // Tests for comparison operators between signed/unsigned variables and literals.
 // Expected behavior matches GCC's C standard integer promotion rules.
@@ -322,6 +323,48 @@ void test_u8_vs_s8(void) {
     if (!(a > b)) { fail("u8 vs s8: 128>s8(-1) should be true"); }
 }
 
+// ============================================================================
+// TEST: strtoi return value used in comparison with a large literal.
+// Reproduces the asciivid bug: frame 0x0000 rejected as "larger than 2048"
+// because the strtoi special-function handler had the C-register save/restore
+// in the wrong order, causing A to hold the *old* C value instead of the
+// strtoi result.  On hardware C is typically a RAM address (>0x6000), which
+// is unsigned-greater-than 2048, triggering the false rejection.
+// ============================================================================
+void test_strtoi_result(void) {
+    uint16_t frame_no;
+    int8_t flags8;
+    uint8_t flags;
+
+    // Parsing "0x0000" must yield exactly 0.
+    frame_no = (uint16_t)strtoi("0x0000", &flags);
+    total_tests++;
+    if (flags) { fail("strtoi 0x0000: flags should be 0 (success)"); }
+    total_tests++;
+    if (frame_no != 0) { fail("strtoi 0x0000: result should be 0"); }
+    // The asciivid comparison: 0 > 2048 must be false.
+    total_tests++;
+    if (frame_no > 2048) { fail("strtoi 0x0000: 0 > 2048 should be false"); }
+
+    // Parsing "0x0800" must yield exactly 2048.
+    frame_no = (uint16_t)strtoi("0x0800", &flags);
+    total_tests++;
+    if (flags) { fail("strtoi 0x0800: flags should be 0 (success)"); }
+    total_tests++;
+    if (frame_no != 2048) { fail("strtoi 0x0800: result should be 2048"); }
+    total_tests++;
+    if (frame_no > 2048) { fail("strtoi 0x0800: 2048 > 2048 should be false"); }
+
+    // Parsing "0x0801" must yield 2049, which IS > 2048.
+    frame_no = (uint16_t)strtoi("0x0801", &flags);
+    total_tests++;
+    if (flags) { fail("strtoi 0x0801: flags should be 0 (success)"); }
+    total_tests++;
+    if (frame_no != 2049) { fail("strtoi 0x0801: result should be 2049"); }
+    total_tests++;
+    if (!(frame_no > 2048)) { fail("strtoi 0x0801: 2049 > 2048 should be true"); }
+}
+
 void main(void) {
     printf("=== cmptest: Comparison Operator Tests ===\n");
 
@@ -331,6 +374,7 @@ void main(void) {
     test_s16_vs_literal();
     test_u8_vs_u8();
     test_u8_vs_s8();
+    test_strtoi_result();
 
     printf("Total: %U  Failed: %U\n", total_tests, failed_tests);
     if (failed_tests == 0) {

@@ -324,12 +324,15 @@ class SpecialFunctions():
         self.emit("CALL :heap_pop_C", "Load str ptr into C")
         # Step 4: Call :strtoi -> A=result, BL=flags
         self.emit(f"CALL {func.asm_name()}")
-        # Step 5: Save 16-bit result on CPU stack (AH pushed first, AL on top)
-        self.emit("ALUOP_PUSH %A%+%AH%", "Save strtoi result hi")
-        self.emit("ALUOP_PUSH %A%+%AL%", "Save strtoi result lo")
-        # Step 6: Restore caller's C
+        # Step 5: Restore caller's C first (from CPU stack, step 3).
+        # Must happen BEFORE pushing the result so that POP_CL/POP_CH hit the
+        # saved C values (not the result bytes).  A is not affected by POP_CL/CH.
         self.emit("POP_CL", "Restore C after strtoi")
         self.emit("POP_CH", "Restore C after strtoi")
+        # Step 6: Save 16-bit result on CPU stack (AH pushed first, AL on top).
+        # heap_pop_D (step 8) clobbers A, so we must protect the result here.
+        self.emit("ALUOP_PUSH %A%+%AH%", "Save strtoi result hi")
+        self.emit("ALUOP_PUSH %A%+%AL%", "Save strtoi result lo")
         # Step 7: Save frame pointer D
         self.emit("PUSH_DH", "Save frame pointer")
         self.emit("PUSH_DL", "Save frame pointer")
@@ -365,11 +368,14 @@ class SpecialFunctions():
         self.emit("CALL :heap_pop_C", "Load str ptr into C")
         # Step 4: Call :strtoi8 -> AL=result, BL=flags (AH callee-saved)
         self.emit(f"CALL {func.asm_name()}")
-        # Step 5: Save 8-bit result on CPU stack (AL only)
-        self.emit("ALUOP_PUSH %A%+%AL%", "Save strtoi8 result")
-        # Step 6: Restore caller's C
+        # Step 5: Restore caller's C first (from CPU stack, step 3).
+        # Must happen BEFORE pushing the result so POP_CL/POP_CH hit saved C.
+        # AL is not affected by POP_CL/POP_CH.
         self.emit("POP_CL", "Restore C after strtoi8")
         self.emit("POP_CH", "Restore C after strtoi8")
+        # Step 6: Save 8-bit result on CPU stack (AL only).
+        # heap_pop_D (step 8) clobbers A, so we must protect the result here.
+        self.emit("ALUOP_PUSH %A%+%AL%", "Save strtoi8 result")
         # Step 7: Save frame pointer D
         self.emit("PUSH_DH", "Save frame pointer")
         self.emit("PUSH_DL", "Save frame pointer")

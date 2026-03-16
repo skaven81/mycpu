@@ -4649,6 +4649,587 @@ POP_AH
 POP_AL
 RET
 
+:test_strtoi_result              # void test_strtoi_result()
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %B%+%BH%
+PUSH_CL
+PUSH_CH
+PUSH_DL
+PUSH_DH
+LD_DH $heap_ptr                  # Set frame pointer
+LD_DL $heap_ptr+1                # Set frame pointer
+LDI_BL 4                         # Bytes to allocate for local vars
+CALL :heap_advance_BL
+INCR_D                           # Load base address of frame_no at offset 1 into B
+MOV_DH_BH                        # Load base address of frame_no at offset 1 into B
+MOV_DL_BL                        # Load base address of frame_no at offset 1 into B
+DECR_D                           # Load base address of frame_no at offset 1 into B
+ALUOP_PUSH %B%+%BH%              # Save lvalue address in case rvalue generation clobbers B
+ALUOP_PUSH %B%+%BL%              # Save lvalue address in case rvalue generation clobbers B
+INCR4_D                          # Load base address of flags at offset 4 into A
+MOV_DH_AH                        # Load base address of flags at offset 4 into A
+MOV_DL_AL                        # Load base address of flags at offset 4 into A
+DECR4_D                          # Load base address of flags at offset 4 into A
+CALL :heap_push_A                # Stage flags ptr on heap
+LDI_A .data_string_58            # "0x0000"
+CALL :heap_push_A                # Stage str ptr on heap
+PUSH_CH                          # Save C before strtoi
+PUSH_CL                          # Save C before strtoi
+CALL :heap_pop_C                 # Load str ptr into C
+CALL :strtoi
+POP_CL                           # Restore C after strtoi
+POP_CH                           # Restore C after strtoi
+ALUOP_PUSH %A%+%AH%              # Save strtoi result hi
+ALUOP_PUSH %A%+%AL%              # Save strtoi result lo
+PUSH_DH                          # Save frame pointer
+PUSH_DL                          # Save frame pointer
+CALL :heap_pop_D                 # Pop flags ptr into D
+ALUOP_ADDR_D %B%+%BL%            # Write flags byte to *flags
+POP_DL                           # Restore frame pointer
+POP_DH                           # Restore frame pointer
+POP_AL                           # Pop strtoi result lo
+POP_AH                           # Pop strtoi result hi
+# Cast  signed short strtoi (virtual) to  unsigned short 
+POP_BL                           # Restore lvalue address
+POP_BH                           # Restore lvalue address
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short frame_no
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short frame_no
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short frame_no
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short frame_no
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+LDI_B .var_total_tests           # Load base address of total_tests into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16O_A %A+1%+%AL% %A+1%+%AH% %A%+%AH% # UnaryOp p++: increment 1-byte value
+ALUOP_PUSH %B%+%BH%              # UnaryOp p++: Save B before generating lvalue
+ALUOP_PUSH %B%+%BL%              # UnaryOp p++: Save B before generating lvalue
+LDI_B .var_total_tests           # Load base address of total_tests into B
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short total_tests
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short total_tests
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+POP_BL                           # UnaryOp p++: Restore B, return rvalue in A
+POP_BH                           # UnaryOp p++: Restore B, return rvalue in A
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+INCR4_D                          # Load base address of flags at offset 4 into B
+MOV_DH_BH                        # Load base address of flags at offset 4 into B
+MOV_DL_BL                        # Load base address of flags at offset 4 into B
+DECR4_D                          # Load base address of flags at offset 4 into B
+LDA_B_AL                         # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP_FLAGS %A%+%AL%             # Check if condition
+JNZ .condition_true_431          # Condition was true
+JMP .end_if_432                  # Done with false condition
+.condition_true_431              # Condition was true
+LDI_A .data_string_59            # "strtoi 0x0000: flags should be 0 (success)"
+CALL :heap_push_A                # Push parameter  char *name (pointer)
+CALL :fail
+# function returns nothing, not popping a return value
+.end_if_432                      # End If
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+LDI_B .var_total_tests           # Load base address of total_tests into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16O_A %A+1%+%AL% %A+1%+%AH% %A%+%AH% # UnaryOp p++: increment 1-byte value
+ALUOP_PUSH %B%+%BH%              # UnaryOp p++: Save B before generating lvalue
+ALUOP_PUSH %B%+%BL%              # UnaryOp p++: Save B before generating lvalue
+LDI_B .var_total_tests           # Load base address of total_tests into B
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short total_tests
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short total_tests
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+POP_BL                           # UnaryOp p++: Restore B, return rvalue in A
+POP_BH                           # UnaryOp p++: Restore B, return rvalue in A
+ALUOP_PUSH %B%+%BH%              # BinaryOp !=: Save B for generating rhs
+ALUOP_PUSH %B%+%BL%              # BinaryOp !=: Save B for generating rhs
+LDI_B 0                          # Constant assignment 0 as int
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+INCR_D                           # Load base address of frame_no at offset 1 into B
+MOV_DH_BH                        # Load base address of frame_no at offset 1 into B
+MOV_DL_BL                        # Load base address of frame_no at offset 1 into B
+DECR_D                           # Load base address of frame_no at offset 1 into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP_FLAGS %A&B%+%AL%+%BL%      # BinaryOp != 2 byte check equality
+JNE .binarybool_istrue_435       # BinaryOp != is true
+ALUOP_FLAGS %A&B%+%AH%+%BH%      # BinaryOp != 2 byte check equality
+JNE .binarybool_istrue_435       # BinaryOp != is true
+LDI_A 0                          # BinaryOp != was false
+JMP .binarybool_done_436
+.binarybool_istrue_435
+LDI_A 1                          # BinaryOp != was true
+.binarybool_done_436
+POP_BL                           # BinaryOp !=: Restore B after use for rhs
+POP_BH                           # BinaryOp !=: Restore B after use for rhs
+ALUOP16Z_FLAGS %A%+%AL% %A%+%AH% %A%+%AL% # Check if condition
+JNZ .condition_true_433          # Condition was true
+JMP .end_if_434                  # Done with false condition
+.condition_true_433              # Condition was true
+LDI_A .data_string_60            # "strtoi 0x0000: result should be 0"
+CALL :heap_push_A                # Push parameter  char *name (pointer)
+CALL :fail
+# function returns nothing, not popping a return value
+.end_if_434                      # End If
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+LDI_B .var_total_tests           # Load base address of total_tests into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16O_A %A+1%+%AL% %A+1%+%AH% %A%+%AH% # UnaryOp p++: increment 1-byte value
+ALUOP_PUSH %B%+%BH%              # UnaryOp p++: Save B before generating lvalue
+ALUOP_PUSH %B%+%BL%              # UnaryOp p++: Save B before generating lvalue
+LDI_B .var_total_tests           # Load base address of total_tests into B
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short total_tests
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short total_tests
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+POP_BL                           # UnaryOp p++: Restore B, return rvalue in A
+POP_BH                           # UnaryOp p++: Restore B, return rvalue in A
+ALUOP_PUSH %B%+%BH%              # BinaryOp >: Save B for generating rhs
+ALUOP_PUSH %B%+%BL%              # BinaryOp >: Save B for generating rhs
+LDI_B 2048                       # Constant assignment 2048 as int
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+INCR_D                           # Load base address of frame_no at offset 1 into B
+MOV_DH_BH                        # Load base address of frame_no at offset 1 into B
+MOV_DL_BL                        # Load base address of frame_no at offset 1 into B
+DECR_D                           # Load base address of frame_no at offset 1 into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16E_FLAGS %A&B%+%AL%+%BL% %A&B%+%AH%+%BH% %A&B%+%AL%+%BL% # Unsigned BinaryOp >: Check for equality
+JEQ .binaryop_equal_439          # BinaryOp >: check if equal
+ALUOP16O_FLAGS %ALU16_B-A%       # Unsigned BinaryOp >: Subtract to check O flag
+LDI_A 0                          # BinaryOp >: assume true
+JNO .binaryop_done_440           # BinaryOp > unsigned: no overflow, so baseline assumption is correct
+LDI_A 1                          # BinaryOp >: overflow, so true
+JMP .binaryop_done_440
+.binaryop_equal_439
+LDI_A 0                          # BinaryOp >: operands equal: false
+.binaryop_done_440
+POP_BL                           # BinaryOp >: Restore B after use for rhs
+POP_BH                           # BinaryOp >: Restore B after use for rhs
+ALUOP16Z_FLAGS %A%+%AL% %A%+%AH% %A%+%AL% # Check if condition
+JNZ .condition_true_437          # Condition was true
+JMP .end_if_438                  # Done with false condition
+.condition_true_437              # Condition was true
+LDI_A .data_string_61            # "strtoi 0x0000: 0 > 2048 should be false"
+CALL :heap_push_A                # Push parameter  char *name (pointer)
+CALL :fail
+# function returns nothing, not popping a return value
+.end_if_438                      # End If
+INCR_D                           # Load base address of frame_no at offset 1 into B
+MOV_DH_BH                        # Load base address of frame_no at offset 1 into B
+MOV_DL_BL                        # Load base address of frame_no at offset 1 into B
+DECR_D                           # Load base address of frame_no at offset 1 into B
+ALUOP_PUSH %B%+%BH%              # Save lvalue address in case rvalue generation clobbers B
+ALUOP_PUSH %B%+%BL%              # Save lvalue address in case rvalue generation clobbers B
+INCR4_D                          # Load base address of flags at offset 4 into A
+MOV_DH_AH                        # Load base address of flags at offset 4 into A
+MOV_DL_AL                        # Load base address of flags at offset 4 into A
+DECR4_D                          # Load base address of flags at offset 4 into A
+CALL :heap_push_A                # Stage flags ptr on heap
+LDI_A .data_string_62            # "0x0800"
+CALL :heap_push_A                # Stage str ptr on heap
+PUSH_CH                          # Save C before strtoi
+PUSH_CL                          # Save C before strtoi
+CALL :heap_pop_C                 # Load str ptr into C
+CALL :strtoi
+POP_CL                           # Restore C after strtoi
+POP_CH                           # Restore C after strtoi
+ALUOP_PUSH %A%+%AH%              # Save strtoi result hi
+ALUOP_PUSH %A%+%AL%              # Save strtoi result lo
+PUSH_DH                          # Save frame pointer
+PUSH_DL                          # Save frame pointer
+CALL :heap_pop_D                 # Pop flags ptr into D
+ALUOP_ADDR_D %B%+%BL%            # Write flags byte to *flags
+POP_DL                           # Restore frame pointer
+POP_DH                           # Restore frame pointer
+POP_AL                           # Pop strtoi result lo
+POP_AH                           # Pop strtoi result hi
+# Cast  signed short strtoi (virtual) to  unsigned short 
+POP_BL                           # Restore lvalue address
+POP_BH                           # Restore lvalue address
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short frame_no
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short frame_no
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short frame_no
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short frame_no
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+LDI_B .var_total_tests           # Load base address of total_tests into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16O_A %A+1%+%AL% %A+1%+%AH% %A%+%AH% # UnaryOp p++: increment 1-byte value
+ALUOP_PUSH %B%+%BH%              # UnaryOp p++: Save B before generating lvalue
+ALUOP_PUSH %B%+%BL%              # UnaryOp p++: Save B before generating lvalue
+LDI_B .var_total_tests           # Load base address of total_tests into B
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short total_tests
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short total_tests
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+POP_BL                           # UnaryOp p++: Restore B, return rvalue in A
+POP_BH                           # UnaryOp p++: Restore B, return rvalue in A
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+INCR4_D                          # Load base address of flags at offset 4 into B
+MOV_DH_BH                        # Load base address of flags at offset 4 into B
+MOV_DL_BL                        # Load base address of flags at offset 4 into B
+DECR4_D                          # Load base address of flags at offset 4 into B
+LDA_B_AL                         # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP_FLAGS %A%+%AL%             # Check if condition
+JNZ .condition_true_443          # Condition was true
+JMP .end_if_444                  # Done with false condition
+.condition_true_443              # Condition was true
+LDI_A .data_string_63            # "strtoi 0x0800: flags should be 0 (success)"
+CALL :heap_push_A                # Push parameter  char *name (pointer)
+CALL :fail
+# function returns nothing, not popping a return value
+.end_if_444                      # End If
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+LDI_B .var_total_tests           # Load base address of total_tests into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16O_A %A+1%+%AL% %A+1%+%AH% %A%+%AH% # UnaryOp p++: increment 1-byte value
+ALUOP_PUSH %B%+%BH%              # UnaryOp p++: Save B before generating lvalue
+ALUOP_PUSH %B%+%BL%              # UnaryOp p++: Save B before generating lvalue
+LDI_B .var_total_tests           # Load base address of total_tests into B
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short total_tests
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short total_tests
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+POP_BL                           # UnaryOp p++: Restore B, return rvalue in A
+POP_BH                           # UnaryOp p++: Restore B, return rvalue in A
+ALUOP_PUSH %B%+%BH%              # BinaryOp !=: Save B for generating rhs
+ALUOP_PUSH %B%+%BL%              # BinaryOp !=: Save B for generating rhs
+LDI_B 2048                       # Constant assignment 2048 as int
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+INCR_D                           # Load base address of frame_no at offset 1 into B
+MOV_DH_BH                        # Load base address of frame_no at offset 1 into B
+MOV_DL_BL                        # Load base address of frame_no at offset 1 into B
+DECR_D                           # Load base address of frame_no at offset 1 into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP_FLAGS %A&B%+%AL%+%BL%      # BinaryOp != 2 byte check equality
+JNE .binarybool_istrue_447       # BinaryOp != is true
+ALUOP_FLAGS %A&B%+%AH%+%BH%      # BinaryOp != 2 byte check equality
+JNE .binarybool_istrue_447       # BinaryOp != is true
+LDI_A 0                          # BinaryOp != was false
+JMP .binarybool_done_448
+.binarybool_istrue_447
+LDI_A 1                          # BinaryOp != was true
+.binarybool_done_448
+POP_BL                           # BinaryOp !=: Restore B after use for rhs
+POP_BH                           # BinaryOp !=: Restore B after use for rhs
+ALUOP16Z_FLAGS %A%+%AL% %A%+%AH% %A%+%AL% # Check if condition
+JNZ .condition_true_445          # Condition was true
+JMP .end_if_446                  # Done with false condition
+.condition_true_445              # Condition was true
+LDI_A .data_string_64            # "strtoi 0x0800: result should be 2048"
+CALL :heap_push_A                # Push parameter  char *name (pointer)
+CALL :fail
+# function returns nothing, not popping a return value
+.end_if_446                      # End If
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+LDI_B .var_total_tests           # Load base address of total_tests into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16O_A %A+1%+%AL% %A+1%+%AH% %A%+%AH% # UnaryOp p++: increment 1-byte value
+ALUOP_PUSH %B%+%BH%              # UnaryOp p++: Save B before generating lvalue
+ALUOP_PUSH %B%+%BL%              # UnaryOp p++: Save B before generating lvalue
+LDI_B .var_total_tests           # Load base address of total_tests into B
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short total_tests
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short total_tests
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+POP_BL                           # UnaryOp p++: Restore B, return rvalue in A
+POP_BH                           # UnaryOp p++: Restore B, return rvalue in A
+ALUOP_PUSH %B%+%BH%              # BinaryOp >: Save B for generating rhs
+ALUOP_PUSH %B%+%BL%              # BinaryOp >: Save B for generating rhs
+LDI_B 2048                       # Constant assignment 2048 as int
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+INCR_D                           # Load base address of frame_no at offset 1 into B
+MOV_DH_BH                        # Load base address of frame_no at offset 1 into B
+MOV_DL_BL                        # Load base address of frame_no at offset 1 into B
+DECR_D                           # Load base address of frame_no at offset 1 into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16E_FLAGS %A&B%+%AL%+%BL% %A&B%+%AH%+%BH% %A&B%+%AL%+%BL% # Unsigned BinaryOp >: Check for equality
+JEQ .binaryop_equal_451          # BinaryOp >: check if equal
+ALUOP16O_FLAGS %ALU16_B-A%       # Unsigned BinaryOp >: Subtract to check O flag
+LDI_A 0                          # BinaryOp >: assume true
+JNO .binaryop_done_452           # BinaryOp > unsigned: no overflow, so baseline assumption is correct
+LDI_A 1                          # BinaryOp >: overflow, so true
+JMP .binaryop_done_452
+.binaryop_equal_451
+LDI_A 0                          # BinaryOp >: operands equal: false
+.binaryop_done_452
+POP_BL                           # BinaryOp >: Restore B after use for rhs
+POP_BH                           # BinaryOp >: Restore B after use for rhs
+ALUOP16Z_FLAGS %A%+%AL% %A%+%AH% %A%+%AL% # Check if condition
+JNZ .condition_true_449          # Condition was true
+JMP .end_if_450                  # Done with false condition
+.condition_true_449              # Condition was true
+LDI_A .data_string_65            # "strtoi 0x0800: 2048 > 2048 should be false"
+CALL :heap_push_A                # Push parameter  char *name (pointer)
+CALL :fail
+# function returns nothing, not popping a return value
+.end_if_450                      # End If
+INCR_D                           # Load base address of frame_no at offset 1 into B
+MOV_DH_BH                        # Load base address of frame_no at offset 1 into B
+MOV_DL_BL                        # Load base address of frame_no at offset 1 into B
+DECR_D                           # Load base address of frame_no at offset 1 into B
+ALUOP_PUSH %B%+%BH%              # Save lvalue address in case rvalue generation clobbers B
+ALUOP_PUSH %B%+%BL%              # Save lvalue address in case rvalue generation clobbers B
+INCR4_D                          # Load base address of flags at offset 4 into A
+MOV_DH_AH                        # Load base address of flags at offset 4 into A
+MOV_DL_AL                        # Load base address of flags at offset 4 into A
+DECR4_D                          # Load base address of flags at offset 4 into A
+CALL :heap_push_A                # Stage flags ptr on heap
+LDI_A .data_string_66            # "0x0801"
+CALL :heap_push_A                # Stage str ptr on heap
+PUSH_CH                          # Save C before strtoi
+PUSH_CL                          # Save C before strtoi
+CALL :heap_pop_C                 # Load str ptr into C
+CALL :strtoi
+POP_CL                           # Restore C after strtoi
+POP_CH                           # Restore C after strtoi
+ALUOP_PUSH %A%+%AH%              # Save strtoi result hi
+ALUOP_PUSH %A%+%AL%              # Save strtoi result lo
+PUSH_DH                          # Save frame pointer
+PUSH_DL                          # Save frame pointer
+CALL :heap_pop_D                 # Pop flags ptr into D
+ALUOP_ADDR_D %B%+%BL%            # Write flags byte to *flags
+POP_DL                           # Restore frame pointer
+POP_DH                           # Restore frame pointer
+POP_AL                           # Pop strtoi result lo
+POP_AH                           # Pop strtoi result hi
+# Cast  signed short strtoi (virtual) to  unsigned short 
+POP_BL                           # Restore lvalue address
+POP_BH                           # Restore lvalue address
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short frame_no
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short frame_no
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short frame_no
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short frame_no
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+LDI_B .var_total_tests           # Load base address of total_tests into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16O_A %A+1%+%AL% %A+1%+%AH% %A%+%AH% # UnaryOp p++: increment 1-byte value
+ALUOP_PUSH %B%+%BH%              # UnaryOp p++: Save B before generating lvalue
+ALUOP_PUSH %B%+%BL%              # UnaryOp p++: Save B before generating lvalue
+LDI_B .var_total_tests           # Load base address of total_tests into B
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short total_tests
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short total_tests
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+POP_BL                           # UnaryOp p++: Restore B, return rvalue in A
+POP_BH                           # UnaryOp p++: Restore B, return rvalue in A
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+INCR4_D                          # Load base address of flags at offset 4 into B
+MOV_DH_BH                        # Load base address of flags at offset 4 into B
+MOV_DL_BL                        # Load base address of flags at offset 4 into B
+DECR4_D                          # Load base address of flags at offset 4 into B
+LDA_B_AL                         # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP_FLAGS %A%+%AL%             # Check if condition
+JNZ .condition_true_455          # Condition was true
+JMP .end_if_456                  # Done with false condition
+.condition_true_455              # Condition was true
+LDI_A .data_string_67            # "strtoi 0x0801: flags should be 0 (success)"
+CALL :heap_push_A                # Push parameter  char *name (pointer)
+CALL :fail
+# function returns nothing, not popping a return value
+.end_if_456                      # End If
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+LDI_B .var_total_tests           # Load base address of total_tests into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16O_A %A+1%+%AL% %A+1%+%AH% %A%+%AH% # UnaryOp p++: increment 1-byte value
+ALUOP_PUSH %B%+%BH%              # UnaryOp p++: Save B before generating lvalue
+ALUOP_PUSH %B%+%BL%              # UnaryOp p++: Save B before generating lvalue
+LDI_B .var_total_tests           # Load base address of total_tests into B
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short total_tests
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short total_tests
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+POP_BL                           # UnaryOp p++: Restore B, return rvalue in A
+POP_BH                           # UnaryOp p++: Restore B, return rvalue in A
+ALUOP_PUSH %B%+%BH%              # BinaryOp !=: Save B for generating rhs
+ALUOP_PUSH %B%+%BL%              # BinaryOp !=: Save B for generating rhs
+LDI_B 2049                       # Constant assignment 2049 as int
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+INCR_D                           # Load base address of frame_no at offset 1 into B
+MOV_DH_BH                        # Load base address of frame_no at offset 1 into B
+MOV_DL_BL                        # Load base address of frame_no at offset 1 into B
+DECR_D                           # Load base address of frame_no at offset 1 into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP_FLAGS %A&B%+%AL%+%BL%      # BinaryOp != 2 byte check equality
+JNE .binarybool_istrue_459       # BinaryOp != is true
+ALUOP_FLAGS %A&B%+%AH%+%BH%      # BinaryOp != 2 byte check equality
+JNE .binarybool_istrue_459       # BinaryOp != is true
+LDI_A 0                          # BinaryOp != was false
+JMP .binarybool_done_460
+.binarybool_istrue_459
+LDI_A 1                          # BinaryOp != was true
+.binarybool_done_460
+POP_BL                           # BinaryOp !=: Restore B after use for rhs
+POP_BH                           # BinaryOp !=: Restore B after use for rhs
+ALUOP16Z_FLAGS %A%+%AL% %A%+%AH% %A%+%AL% # Check if condition
+JNZ .condition_true_457          # Condition was true
+JMP .end_if_458                  # Done with false condition
+.condition_true_457              # Condition was true
+LDI_A .data_string_68            # "strtoi 0x0801: result should be 2049"
+CALL :heap_push_A                # Push parameter  char *name (pointer)
+CALL :fail
+# function returns nothing, not popping a return value
+.end_if_458                      # End If
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+LDI_B .var_total_tests           # Load base address of total_tests into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16O_A %A+1%+%AL% %A+1%+%AH% %A%+%AH% # UnaryOp p++: increment 1-byte value
+ALUOP_PUSH %B%+%BH%              # UnaryOp p++: Save B before generating lvalue
+ALUOP_PUSH %B%+%BL%              # UnaryOp p++: Save B before generating lvalue
+LDI_B .var_total_tests           # Load base address of total_tests into B
+ALUOP_ADDR_B %A%+%AH%            # Store to  unsigned short total_tests
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+ALUOP_ADDR_B %A%+%AL%            # Store to  unsigned short total_tests
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Store to  unsigned short total_tests
+POP_BL                           # UnaryOp p++: Restore B, return rvalue in A
+POP_BH                           # UnaryOp p++: Restore B, return rvalue in A
+ALUOP_PUSH %B%+%BH%              # BinaryOp >: Save B for generating rhs
+ALUOP_PUSH %B%+%BL%              # BinaryOp >: Save B for generating rhs
+LDI_B 2048                       # Constant assignment 2048 as int
+ALUOP_PUSH %B%+%BL%              # Save B while we load value
+ALUOP_PUSH %B%+%BH%              # Save B while we load value
+INCR_D                           # Load base address of frame_no at offset 1 into B
+MOV_DH_BH                        # Load base address of frame_no at offset 1 into B
+MOV_DL_BL                        # Load base address of frame_no at offset 1 into B
+DECR_D                           # Load base address of frame_no at offset 1 into B
+LDA_B_AH                         # Dereferenced load
+ALUOP16O_B %B+1%+%BL% %B+1%+%BH% %B%+%BH% # Dereferenced load
+LDA_B_AL                         # Dereferenced load
+ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
+POP_BH                           # Restore B, value in A
+POP_BL                           # Restore B, value in A
+ALUOP16E_FLAGS %A&B%+%AL%+%BL% %A&B%+%AH%+%BH% %A&B%+%AL%+%BL% # Unsigned BinaryOp >: Check for equality
+JEQ .binaryop_equal_463          # BinaryOp >: check if equal
+ALUOP16O_FLAGS %ALU16_B-A%       # Unsigned BinaryOp >: Subtract to check O flag
+LDI_A 0                          # BinaryOp >: assume true
+JNO .binaryop_done_464           # BinaryOp > unsigned: no overflow, so baseline assumption is correct
+LDI_A 1                          # BinaryOp >: overflow, so true
+JMP .binaryop_done_464
+.binaryop_equal_463
+LDI_A 0                          # BinaryOp >: operands equal: false
+.binaryop_done_464
+POP_BL                           # BinaryOp >: Restore B after use for rhs
+POP_BH                           # BinaryOp >: Restore B after use for rhs
+ALUOP_FLAGS %A%+%AL%             # Unary boolean NOT
+JNZ .unarynot_wastrue_467        # Unary boolean NOT, jump if true
+ALUOP_FLAGS %A%+%AH%             # Unary boolean NOT
+JNZ .unarynot_wastrue_467        # Unary boolean NOT, jump if true
+LDI_A 1                          # Unary boolan NOT, is false: return true
+JMP .unarynot_done_468           # Unary boolean NOT: done
+.unarynot_wastrue_467
+LDI_A 0                          # Unary boolan NOT, is true: return false
+.unarynot_done_468
+ALUOP16Z_FLAGS %A%+%AL% %A%+%AH% %A%+%AL% # Check if condition
+JNZ .condition_true_461          # Condition was true
+JMP .end_if_462                  # Done with false condition
+.condition_true_461              # Condition was true
+LDI_A .data_string_69            # "strtoi 0x0801: 2049 > 2048 should be true"
+CALL :heap_push_A                # Push parameter  char *name (pointer)
+CALL :fail
+# function returns nothing, not popping a return value
+.end_if_462                      # End If
+.test_strtoi_result_return_430
+LDI_BL 4                         # Bytes to free from local vars and parameters
+CALL :heap_retreat_BL
+POP_DH
+POP_DL
+POP_CH
+POP_CL
+POP_BH
+POP_BL
+POP_AH
+POP_AL
+RET
+
 :main                            # void main()
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
@@ -4662,7 +5243,7 @@ LD_DH $heap_ptr                  # Set frame pointer
 LD_DL $heap_ptr+1                # Set frame pointer
 PUSH_CH                          # Save C before printf
 PUSH_CL                          # Save C before printf
-LDI_C .data_string_58            # "=== cmptest: Comparison Operator Tests ===\n"
+LDI_C .data_string_70            # "=== cmptest: Comparison Operator Tests ===\n"
 CALL :printf
 POP_CL                           # Restore C after printf
 POP_CH                           # Restore C after printf
@@ -4677,6 +5258,8 @@ CALL :test_s16_vs_literal
 CALL :test_u8_vs_u8
 # function returns nothing, not popping a return value
 CALL :test_u8_vs_s8
+# function returns nothing, not popping a return value
+CALL :test_strtoi_result
 # function returns nothing, not popping a return value
 ALUOP_PUSH %B%+%BL%              # Save B while we load value
 ALUOP_PUSH %B%+%BH%              # Save B while we load value
@@ -4700,7 +5283,7 @@ POP_BL                           # Restore B, value in A
 CALL :heap_push_A                # Push parameter  unsigned short total_tests
 PUSH_CH                          # Save C before printf
 PUSH_CL                          # Save C before printf
-LDI_C .data_string_59            # "Total: %U  Failed: %U\n"
+LDI_C .data_string_71            # "Total: %U  Failed: %U\n"
 CALL :printf
 POP_CL                           # Restore C after printf
 POP_CH                           # Restore C after printf
@@ -4717,34 +5300,34 @@ ALUOP16O_B %B-1%+%BL% %B-1%+%BH% %B%+%BH% # Dereferenced load
 POP_BH                           # Restore B, value in A
 POP_BL                           # Restore B, value in A
 ALUOP_FLAGS %A&B%+%AL%+%BL%      # BinaryOp == 2 byte check equality
-JNE .binarybool_isfalse_433      # BinaryOp == is false
+JNE .binarybool_isfalse_472      # BinaryOp == is false
 ALUOP_FLAGS %A&B%+%AH%+%BH%      # BinaryOp == 2 byte check equality
-JNE .binarybool_isfalse_433      # BinaryOp == is false
+JNE .binarybool_isfalse_472      # BinaryOp == is false
 LDI_A 1                          # BinaryOp == was true
-JMP .binarybool_done_434
-.binarybool_isfalse_433
+JMP .binarybool_done_473
+.binarybool_isfalse_472
 LDI_A 0                          # BinaryOp == was false
-.binarybool_done_434
+.binarybool_done_473
 POP_BL                           # BinaryOp ==: Restore B after use for rhs
 POP_BH                           # BinaryOp ==: Restore B after use for rhs
 ALUOP16Z_FLAGS %A%+%AL% %A%+%AH% %A%+%AL% # Check if condition
-JNZ .condition_true_431          # Condition was true
+JNZ .condition_true_470          # Condition was true
 PUSH_CH                          # Save C before printf
 PUSH_CL                          # Save C before printf
-LDI_C .data_string_60            # "SOME TESTS FAILED\n"
+LDI_C .data_string_72            # "SOME TESTS FAILED\n"
 CALL :printf
 POP_CL                           # Restore C after printf
 POP_CH                           # Restore C after printf
-JMP .end_if_432                  # Done with false condition
-.condition_true_431              # Condition was true
+JMP .end_if_471                  # Done with false condition
+.condition_true_470              # Condition was true
 PUSH_CH                          # Save C before printf
 PUSH_CL                          # Save C before printf
-LDI_C .data_string_61            # "ALL TESTS PASSED\n"
+LDI_C .data_string_73            # "ALL TESTS PASSED\n"
 CALL :printf
 POP_CL                           # Restore C after printf
 POP_CH                           # Restore C after printf
-.end_if_432                      # End If
-.main_return_430
+.end_if_471                      # End If
+.main_return_469
 POP_DH
 POP_DL
 POP_CH
@@ -4835,9 +5418,21 @@ RET
 .data_string_55 "u8 vs s8: 200>s8(-1) should be true\0"
 .data_string_56 "u8 vs s8: 0>s8(-1) should be true\0"
 .data_string_57 "u8 vs s8: 128>s8(-1) should be true\0"
-.data_string_58 "=== cmptest: Comparison Operator Tests ===\n\0"
-.data_string_59 "Total: %U  Failed: %U\n\0"
-.data_string_60 "SOME TESTS FAILED\n\0"
-.data_string_61 "ALL TESTS PASSED\n\0"
+.data_string_58 "0x0000\0"
+.data_string_59 "strtoi 0x0000: flags should be 0 (success)\0"
+.data_string_60 "strtoi 0x0000: result should be 0\0"
+.data_string_61 "strtoi 0x0000: 0 > 2048 should be false\0"
+.data_string_62 "0x0800\0"
+.data_string_63 "strtoi 0x0800: flags should be 0 (success)\0"
+.data_string_64 "strtoi 0x0800: result should be 2048\0"
+.data_string_65 "strtoi 0x0800: 2048 > 2048 should be false\0"
+.data_string_66 "0x0801\0"
+.data_string_67 "strtoi 0x0801: flags should be 0 (success)\0"
+.data_string_68 "strtoi 0x0801: result should be 2049\0"
+.data_string_69 "strtoi 0x0801: 2049 > 2048 should be true\0"
+.data_string_70 "=== cmptest: Comparison Operator Tests ===\n\0"
+.data_string_71 "Total: %U  Failed: %U\n\0"
+.data_string_72 "SOME TESTS FAILED\n\0"
+.data_string_73 "ALL TESTS PASSED\n\0"
 .var_total_tests "\0\0"
 .var_failed_tests "\0\0"
