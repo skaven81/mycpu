@@ -2281,9 +2281,16 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"ALUOP_CL %{dest_addr_reg}%+%{dest_addr_reg}L%", f"Set C to {dest_addr_reg} base")
             for _ in range(offset):
                 self.emit("INCR_C", "Skip past initialized bytes")
+            # MEMFILL4_C_I is unusable: its step-0 microcode reads the opcode byte
+            # (not the immediate) into TD due to pre-increment PC timing, so it fills
+            # with 0xF6 (the opcode) instead of 0x00.  Use MEMFILL4_C_PEEK instead,
+            # which reads the fill byte from the top of the stack.
             four, one = divmod(count, 4)
-            for _ in range(four):
-                self.emit("MEMFILL4_C_I 0x00", "Zero-fill 4 bytes")
+            if four > 0:
+                self.emit("ALUOP_PUSH %zero%", "Push 0x00 fill byte for MEMFILL4_C_PEEK")
+                for _ in range(four):
+                    self.emit("MEMFILL4_C_PEEK", "Zero-fill 4 bytes")
+                self.emit("POP_AL", "Discard fill byte")
             for _ in range(one):
                 self.emit("ALUOP_ADDR_C %zero%", "Zero-fill 1 byte")
                 self.emit("INCR_C", "Advance C")

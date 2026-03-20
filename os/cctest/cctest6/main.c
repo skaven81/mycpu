@@ -1,6 +1,8 @@
 #include "types.h"
 #include "terminal_output.h"
 #include "strtoi.h"
+extern void exec_chain(char *path);
+
 
 // Tests for comparison operators between signed/unsigned variables and literals.
 // Expected behavior matches GCC's C standard integer promotion rules.
@@ -366,8 +368,6 @@ void test_strtoi_result(void) {
 }
 
 void main(void) {
-    printf("=== cmptest: Comparison Operator Tests ===\n");
-
     test_u8_vs_literal();
     test_s8_vs_literal();
     test_u16_vs_literal();
@@ -376,10 +376,11 @@ void main(void) {
     test_u8_vs_s8();
     test_strtoi_result();
 
-    printf("Total: %U  Failed: %U\n", total_tests, failed_tests);
+    uint16_t passed = total_tests - failed_tests;
     if (failed_tests == 0) {
-        printf("ALL TESTS PASSED\n");
+        printf("cctest6: %U/%U PASS\n", total_tests, total_tests);
     } else {
-        printf("SOME TESTS FAILED\n");
+        printf("cctest6: %U/%U FAIL\n", passed, total_tests);
     }
+    exec_chain("/CCTEST/CCTEST7.ODY");
 }

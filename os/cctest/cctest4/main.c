@@ -6,6 +6,8 @@
 #include "fat16_dir.h"
 #include "fat16_calc.h"
 #include "fat16_pathfind.h"
+extern void exec_chain(char *path);
+
 
 uint16_t total = 0;
 uint16_t fail = 0;
@@ -288,14 +290,8 @@ void test_pathfind() {
 // ---- Main ----
 
 void main() {
-    printf("=== cctest4: FAT16 C API ===\n\n");
-
-    struct fs_handle *h0 = &drive_0_fs_handle;
-    if (h0->current_dir_cluster != 0) {
-        printf("WARNING: not in root dir (cluster=%U)\n", h0->current_dir_cluster);
-        printf("Relative pathfind tests may fail.\n\n");
-    }
-
+    // Reset to root directory: tests use relative paths and expect CWD == root
+    drive_0_fs_handle.current_dir_cluster = 0;
     test_types();
     test_memory();
     test_putchar();
@@ -306,8 +302,13 @@ void main() {
     test_cluster_chain();
     test_cluster_to_lba();
 
-    printf("\n");
     test_pathfind();
 
-    printf("\nRan %U, Failed %U\n", total, fail);
+    uint16_t passed = total - fail;
+    if (fail == 0) {
+        printf("cctest4: %U/%U PASS\n", total, total);
+    } else {
+        printf("cctest4: %U/%U FAIL\n", passed, total);
+    }
+    exec_chain("/CCTEST/CCTEST5.ODY");
 }

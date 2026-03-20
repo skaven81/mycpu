@@ -398,8 +398,6 @@ void test_dbl_ptr_index(void) {
 // main
 // ============================================================================
 void main(void) {
-    printf("=== cctest9: Coverage Gap Tests ===\n");
-
     ;   // empty statement: exercises visit_EmptyStatement (line 1994)
 
     test_static_local_array();
@@ -422,10 +420,10 @@ void main(void) {
     test_nested_dowhile();
     test_dbl_ptr_index();
 
-    printf("Total: %U  Failed: %U\n", total_tests, failed_tests);
+    uint16_t passed = total_tests - failed_tests;
     if (failed_tests == 0) {
-        printf("ALL TESTS PASSED\n");
+        printf("cctest9: %U/%U PASS\n", total_tests, total_tests);
     } else {
-        printf("SOME TESTS FAILED\n");
+        printf("cctest9: %U/%U FAIL\n", passed, total_tests);
     }
 }

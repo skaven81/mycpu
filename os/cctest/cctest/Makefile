@@ -1,5 +1,3 @@
 include ../../config.mk
-
-INSTALL_SUBDIR := SYS
-
+INSTALL_SUBDIR := CCTEST
 include ../../rules.mk

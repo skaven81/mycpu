@@ -11,6 +11,7 @@ C_COMPILER_DIR := $(ROOT_DIR)../c_compiler
 BIOS_DIR := $(ROOT_DIR)bios
 SYSTEM_DIR := $(ROOT_DIR)system
 UTIL_DIR := $(ROOT_DIR)util
+CCTEST_DIR := $(ROOT_DIR)cctest
 
 # Build artifacts from BIOS
 BIOS_SYM := $(BIOS_DIR)/bios.sym

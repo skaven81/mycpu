@@ -7,6 +7,8 @@
 #include "fat16_calc.h"
 #include "fat16_pathfind.h"
 #include "fat16_readfile.h"
+extern void exec_chain(char *path);
+
 
 uint16_t total = 0;
 uint16_t fail = 0;
@@ -117,17 +119,12 @@ void test_readfile() {
     }
     pass();
 
-    printf("  entry=%X cluster=%X h=%X buf=%X\n",
-           (uint16_t)entry, entry->start_cluster,
-           (uint16_t)found_h, (uint16_t)buf);
-
     struct fat16_readfile_ctx *no_state = (struct fat16_readfile_ctx *)0;
     uint8_t status = fat16_readfile(no_state, entry, 1, buf, found_h);
     assert_u8(status, 0x00, "readfile status");
 
     // Check ODY magic bytes
     uint8_t *p = (uint8_t *)buf;
-    printf("  buf[0..2]=%x %x %x\n", p[0], p[1], p[2]);
     assert_u8(p[0], 'O', "ODY magic O");
     assert_u8(p[1], 'D', "ODY magic D");
     assert_u8(p[2], 'Y', "ODY magic Y");
@@ -195,16 +192,18 @@ void test_pathfind() {
 // ---- Main ----
 
 void main() {
-    printf("=== cctest5: FAT16 refactor ===\n\n");
-
-    printf("[1] dirwalk\n");
+    // Reset to root directory: pathfind tests use relative paths from root
+    drive_0_fs_handle.current_dir_cluster = 0;
     test_dirwalk();
-    printf("[2] dir_find\n");
     test_dir_find();
-    printf("[3] readfile\n");
     test_readfile();
-    printf("[4] pathfind\n");
     test_pathfind();
 
-    printf("\nRan %U, Failed %U\n", total, fail);
+    uint16_t passed = total - fail;
+    if (fail == 0) {
+        printf("cctest5: %U/%U PASS\n", total, total);
+    } else {
+        printf("cctest5: %U/%U FAIL\n", passed, total);
+    }
+    exec_chain("/CCTEST/CCTEST6.ODY");
 }

@@ -3,6 +3,8 @@
 #include "strtoi.h"
 #include "string.h"
 #include "malloc.h"
+extern void exec_chain(char *path);
+
 
 // Tests for special function dest_reg='A' vs dest_reg='B' paths.
 //
@@ -441,8 +443,6 @@ void test_register_pressure(void) {
 }
 
 void main(void) {
-    printf("=== cctest7: Special Function dest_reg Tests ===\n");
-
     test_strcmp_dest_a();
     test_strcmp_dest_b();
     test_strtoi_dest_a();
@@ -455,10 +455,11 @@ void main(void) {
     test_complex_nested();
     test_register_pressure();
 
-    printf("Total: %U  Failed: %U\n", total_tests, failed_tests);
+    uint16_t passed = total_tests - failed_tests;
     if (failed_tests == 0) {
-        printf("ALL TESTS PASSED\n");
+        printf("cctest7: %U/%U PASS\n", total_tests, total_tests);
     } else {
-        printf("SOME TESTS FAILED\n");
+        printf("cctest7: %U/%U FAIL\n", passed, total_tests);
     }
+    exec_chain("/CCTEST/CCTEST8.ODY");
 }

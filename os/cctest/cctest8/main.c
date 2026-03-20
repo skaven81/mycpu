@@ -1,5 +1,7 @@
 #include "types.h"
 #include "terminal_output.h"
+extern void exec_chain(char *path);
+
 
 // Tests for previously-untested code paths in c_compiler/codegen.py:
 //   - Pointer arithmetic with non-power-of-two struct sizes (addition loop)
@@ -227,8 +229,6 @@ void test_compound_via_arrow(void) {
 }
 
 void main(void) {
-    printf("=== cctest8: Coverage Gap Tests ===\n");
-
     test_ptr_arith_nonpot();
     test_ptr_subtraction();
     test_partial_init();
@@ -237,10 +237,11 @@ void main(void) {
     test_chained_assign();
     test_compound_via_arrow();
 
-    printf("Total: %U  Failed: %U\n", total_tests, failed_tests);
+    uint16_t passed = total_tests - failed_tests;
     if (failed_tests == 0) {
-        printf("ALL TESTS PASSED\n");
+        printf("cctest8: %U/%U PASS\n", total_tests, total_tests);
     } else {
-        printf("SOME TESTS FAILED\n");
+        printf("cctest8: %U/%U FAIL\n", passed, total_tests);
     }
+    exec_chain("/CCTEST/CCTEST9.ODY");
 }

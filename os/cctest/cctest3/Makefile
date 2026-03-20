@@ -13,6 +13,7 @@ include ../../config.mk
 # C_INCLUDES += -I../../somelib     # Add additional include directories
 # MEM_TARGET := ext-d,ext-e,ext-de  # Override default memory target
 
-INSTALL_SUBDIR := SYS
+INSTALL_SUBDIR := CCTEST
+ASM_SOURCES := ../chain.asm
 
 include ../../rules.mk

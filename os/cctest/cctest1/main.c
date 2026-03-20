@@ -1,5 +1,6 @@
 #include "types.h"
 #include "terminal_output.h"
+extern void exec_chain(char *path);
 
 // ============================================================================
 // STRUCT DEFINITIONS (must be at top level per compiler requirements)
@@ -574,9 +575,6 @@ void test_structs() {
 // ============================================================================
 
 void main() {
-    printf("=== Compiler Test Suite ===\n");
-    printf("\n");
-    
     test_arithmetic();
     test_bitwise();
     test_shifts();
@@ -590,14 +588,11 @@ void main() {
     test_pointer_arithmetic();
     test_structs();
     
-    printf("\n");
-    printf("=== Test Results ===\n");
-    printf("Total tests: %U\n", total_tests);
-    printf("Failed tests: %U\n", failed_tests);
-    
+    uint16_t passed = total_tests - failed_tests;
     if (failed_tests == 0) {
-        printf("\n*** ALL TESTS PASSED ***\n");
+        printf("cctest1: %U/%U PASS\n", total_tests, total_tests);
     } else {
-        printf("\n*** SOME TESTS FAILED ***\n");
+        printf("cctest1: %U/%U FAIL\n", passed, total_tests);
     }
+    exec_chain("/CCTEST/CCTEST2.ODY");
 }

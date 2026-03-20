@@ -1,3 +1,67 @@
+2026-03-20: Reorganize cctest suite into os/cctest/ with automatic chaining (claude)
+=====================================================================================
+
+The nine C compiler test programs (cctest1-9) lived in os/util/ and had to be
+run one at a time by hand from the shell.  They are now reorganized into a
+dedicated os/cctest/ directory and install to /CCTEST/ on the SD card instead
+of /SYS/.  Running the full suite is now a single command: cd to /CCTEST/ and
+run `cctest`.
+
+New files and changes:
+
+- os/cctest/chain.asm: shared C-callable assembly function :exec_chain(char *path).
+  Called at the end of main() in cctest1-8, it calls fat16_pathfind on the given
+  path and, if found, sets the BIOS IPC exec block ($exec_dirent_ptr/$exec_fsh_ptr)
+  so the BIOS exec loop automatically launches the next test program when the
+  current one returns.  Handles both pathfind success (2 heap items: fsh below,
+  dirent on top) and error (1 heap item, AH==0x00 or 0x01) without crashing.
+
+- os/cctest/cctest/main.asm: pure-assembly launcher program.  Discards the
+  BIOS-provided argc/argv, pathfinds /CCTEST/CCTEST1.ODY, and sets the IPC block
+  to kick off the chain.  Installed alongside the numbered tests as CCTEST.ODY.
+
+- os/cctest/Makefile: sub-make coordinator that auto-discovers subdirectories
+  with Makefiles (mirrors the pattern in os/util/Makefile).
+
+- os/config.mk and os/Makefile: wired up the cctest subtree with its own
+  CCTEST_DIR variable, cctest build target (depends on bios), sdcard install,
+  and clean-cctest target.
+
+- cctest1-8 main.c: added `extern void exec_chain(char *path);` and a call to
+  exec_chain at the end of main() pointing to the next test in the sequence.
+  cctest9 has no chain call -- it returns to SYSTEM.ODY naturally.
+
+- All cctest Makefiles: changed INSTALL_SUBDIR from SYS to CCTEST; cctest1-8
+  also add ASM_SOURCES := ../chain.asm to link the shared chain helper.
+
+Output format overhaul: each test program now prints nothing on success except
+a single summary line (e.g. `cctest3: 22/22 PASS`).  Failing tests still print
+their existing FAIL detail lines before the summary.  This keeps the full chain
+output on one screen without scrolling.
+
+Three bugs fixed in the process:
+
+1. cctest4 and cctest5 tested relative paths (e.g. "SYS") that assumed CWD was
+   the root directory.  When launched from /CCTEST/ the current_dir_cluster
+   field in drive_0_fs_handle is non-zero, so the lookup fails.  Fixed by
+   resetting drive_0_fs_handle.current_dir_cluster = 0 at the top of main() in
+   both programs.
+
+2. cctest5 test_readfile() had leftover debug printf calls printing the entry
+   address, cluster, fs_handle pointer, and buffer contents.  Removed -- the
+   pass/fail is fully determined by the assert_u8() calls on the ODY magic bytes.
+
+3. codegen.py _emit_zero_fill used MEMFILL4_C_I 0x00 to bulk-zero the tail of
+   partially-initialized arrays, but this instruction has a microcode defect:
+   step 0 executes `IncrementPC AddrBusPC WriteTD`, which samples the
+   pre-increment PC (the opcode address) so TD receives the opcode byte (0xF6)
+   instead of the 0x00 immediate.  All four bytes filled by each MEMFILL4_C_I
+   become 0xF6, corrupting zero-initialized array tails.  Fixed by switching to
+   MEMFILL4_C_PEEK with the fill byte (0x00) pushed to the hardware stack
+   beforehand; MEMFILL4_C_PEEK reads from AddrBusSP which is unaffected by the
+   PC timing issue.
+
+
 2026-03-19: Fix strcmp/strcasecmp result corruption in C compiler
 ==================================================================
 
