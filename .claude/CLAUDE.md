@@ -251,6 +251,15 @@ Pipeline: `.c` -> `cpp` -> `c_compiler.py` -> `.asm` -> `assembler.py` -> `.ody`
 
 BIOS must build first (generates `bios.sym` symbol table). All other components depend on `bios.sym` for ROM library addresses. C headers for BIOS functions in `os/bios/lib/*.h`.
 
+
+## Git conventions
+
+When creating new utilities (e.g. under `os/util/<name>/`), always include a `.gitignore` in the new directory to exclude generated build artifacts from version control.
+There is a top-level `.gitignore` that prevents things like .ODY files and .log files from being included, but since some programs contain a mix of .c and .asm files,
+a blanket `*.asm` does not work.  Each utility's `.gitignore` should explicitly list the build artifacts (e.g. .asm files created from .c files) that aren't covered
+by the top-level .gitignore.
+
+
 ## Assembly Language
 
 **CRITICAL**: Instructions are NOT indented. All instructions, labels, directives are **left-justified** (no leading whitespace).
