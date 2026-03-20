@@ -1,0 +1,4 @@
+# Generated from main.c by c_compiler
+main.asm
+# Compiled binary
+*.ODY

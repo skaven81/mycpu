@@ -178,6 +178,18 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         self.visit(c, mode=mode, generate_init=True, **kwargs)
                 self.emit_verbose("")
 
+            # In BIOS mode (VAR-style allocations), zero-fill globals that have no initializer.
+            # In ODY mode, globals are already zero-initialized via the '.name "\0..."' data block.
+            if self._get_static_prefix() == '$':
+                with self._debug_block("Zero-fill uninitialized globals (BIOS target)"):
+                    for c in node:
+                        if type(c) is c_ast.Decl and c.init is None and type(c.type) not in (c_ast.Struct, c_ast.FuncDecl):
+                            var = self.visit(c, mode='return_var')
+                            if var and var.kind == 'global' and var.storage_class != 'extern':
+                                with self._debug_block(f"Zero-fill global {var.name}"):
+                                    self.visit(c_ast.ID(name=var.name), mode='generate_lvalue', dest_reg='B')
+                                    self._emit_zero_fill('B', 0, var.sizeof())
+
             with self._debug_block("Static local var initialization"):
                 for var in self.context.vartable.get_all_local_statics():
                     if not var.init_node:
@@ -189,7 +201,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                             if not init_var:
                                 raise ValueError(f"Cannot safely init var {var.name} without init list size")
                             self.emit_debug(f"init_var sizeof: {init_var.sizeof()}, var sizeof: {var.sizeof()}")
-                            self._emit_bulk_store(var, lvalue_reg='B', rvalue_reg='A', bytes=min(init_var.sizeof(), var.sizeof()))
+                            init_bytes = min(init_var.sizeof(), var.sizeof())
+                            self._emit_bulk_store(var, lvalue_reg='B', rvalue_reg='A', bytes=init_bytes)
+                            tail_bytes = var.sizeof() - init_bytes
+                            if tail_bytes > 0:
+                                self._emit_zero_fill('B', init_bytes, tail_bytes)
                         else:
                             self.visit(c_ast.Assignment(op='=', lvalue=c_ast.ID(name=var.name), rvalue=var.init_node), mode='codegen')
             self.emit("RET")
@@ -668,7 +684,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         if not init_var:
                             raise ValueError(f"Cannot safely init var {var.name} without init list size")
                         self.emit_debug(f"init_var sizeof: {init_var.sizeof()}, var sizeof: {var.sizeof()}")
-                        self._emit_bulk_store(var, lvalue_reg='B', rvalue_reg='A', bytes=min(init_var.sizeof(), var.sizeof()))
+                        init_bytes = min(init_var.sizeof(), var.sizeof())
+                        self._emit_bulk_store(var, lvalue_reg='B', rvalue_reg='A', bytes=init_bytes)
+                        tail_bytes = var.sizeof() - init_bytes
+                        if tail_bytes > 0:
+                            self._emit_zero_fill('B', init_bytes, tail_bytes)
                     else:
                         self.visit(c_ast.Assignment(op='=', lvalue=c_ast.ID(name=var.name), rvalue=node.init), mode='codegen')
         else:
@@ -958,6 +978,8 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             new_var.qualifiers.extend(node.dim_quals)
             if node.dim:
                 new_var.array_dims.append(self.visit(node.dim, mode='get_value', **kwargs)[0])
+            if len(new_var.array_dims) > 2:
+                raise NotImplementedError(f"Arrays with more than 2 dimensions are not supported (got {len(new_var.array_dims)} dimensions)")
             return new_var
         else:
             raise NotImplementedError(f"visit_ArrayDecl mode {mode} not yet supported")
@@ -1429,6 +1451,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         elif node.op == 'sizeof':
             if mode == 'generate_rvalue':
                 sizeof_var = Variable(typespec=TypeSpec('uint', 'unsigned int'), name='sizeof', is_virtual=True)
+                var = None
                 try:
                     var = self.visit(node.expr, mode='return_var')
                 except NotImplementedError:
@@ -1439,6 +1462,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     else:
                         self.emit(f"LDI_{dest_reg} {var.sizeof()}", f"sizeof var {var.friendly_name()}")
                     return sizeof_var
+                ts = None
                 try:
                     ts = self.visit(node.expr, mode='return_typespec')
                 except NotImplementedError:
@@ -1722,7 +1746,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"ALUOP_{ptr_reg}H %{scale_reg}%+%{scale_reg}H%", f"BinaryOp {node.op}: Copy operand before scaling by unit size {unit_size}")
                     self.emit(f"ALUOP_{ptr_reg}L %{scale_reg}%+%{scale_reg}L%", f"BinaryOp {node.op}: Copy operand before scaling by unit size {unit_size}")
                     for _ in range(unit_size-1):
-                        self.emit(f"ALUOP16O_{scale_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH+%BH%", f"Scale operand in {scale_reg} by unit size {unit_size}")
+                        self.emit(f"ALUOP16O_{scale_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%", f"Scale operand in {scale_reg} by unit size {unit_size}")
                     self.emit(f"POP_{ptr_reg}L", f"BinaryOp {node.op}: Restore {ptr_reg} after scaling computation")
                     self.emit(f"POP_{ptr_reg}H", f"BinaryOp {node.op}: Restore {ptr_reg} after scaling computation")
                 else:
@@ -2243,6 +2267,28 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"POP_CH", "Restore C register")
             self.emit(f"POP_DL", "Restore frame pointer")
             self.emit(f"POP_DH", "Restore frame pointer")
+
+    def _emit_zero_fill(self, dest_addr_reg, offset, count):
+        """
+        Zero-fills `count` bytes starting at address dest_addr_reg + offset.
+        Saves and restores the C register.
+        Used for partial initialization zero-fill and global var zero-init in BIOS mode.
+        """
+        with self._debug_block(f"Zero-fill {count} bytes at {dest_addr_reg}+{offset}"):
+            self.emit(f"PUSH_CH", "Save C for zero-fill")
+            self.emit(f"PUSH_CL", "Save C for zero-fill")
+            self.emit(f"ALUOP_CH %{dest_addr_reg}%+%{dest_addr_reg}H%", f"Set C to {dest_addr_reg} base")
+            self.emit(f"ALUOP_CL %{dest_addr_reg}%+%{dest_addr_reg}L%", f"Set C to {dest_addr_reg} base")
+            for _ in range(offset):
+                self.emit("INCR_C", "Skip past initialized bytes")
+            four, one = divmod(count, 4)
+            for _ in range(four):
+                self.emit("MEMFILL4_C_I 0x00", "Zero-fill 4 bytes")
+            for _ in range(one):
+                self.emit("ALUOP_ADDR_C %zero%", "Zero-fill 1 byte")
+                self.emit("INCR_C", "Advance C")
+            self.emit(f"POP_CL", "Restore C")
+            self.emit(f"POP_CH", "Restore C")
 
     def _emit_store(self, var, lvalue_reg, rvalue_reg):
         """

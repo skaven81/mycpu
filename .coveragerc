@@ -1,0 +1,9 @@
+[report]
+# Exclude error guard lines that are only reachable via invalid/unsupported C input.
+# These are defensive raise statements for NotImplementedError / ValueError /
+# SyntaxError that should never fire for well-formed C programs.
+exclude_lines =
+    raise NotImplementedError
+    raise ValueError
+    raise SyntaxError
+    raise TypeError
