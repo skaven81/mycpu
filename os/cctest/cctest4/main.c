@@ -7,6 +7,8 @@
 #include "fat16_calc.h"
 #include "fat16_pathfind.h"
 extern void exec_chain(char *path);
+extern void cctest_enter_root();
+extern void cctest_leave_root();
 
 
 uint16_t total = 0;
@@ -290,8 +292,8 @@ void test_pathfind() {
 // ---- Main ----
 
 void main() {
-    // Reset to root directory: tests use relative paths and expect CWD == root
-    drive_0_fs_handle.current_dir_cluster = 0;
+    // Save CWD state and reset to root; tests use relative paths and expect CWD == root
+    cctest_enter_root();
     test_types();
     test_memory();
     test_putchar();
@@ -310,5 +312,6 @@ void main() {
     } else {
         printf("cctest4: %U/%U FAIL\n", passed, total);
     }
+    cctest_leave_root();
     exec_chain("/CCTEST/CCTEST5.ODY");
 }
