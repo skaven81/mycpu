@@ -120,10 +120,10 @@ DECR_C
 INCR{,4,8}_D
 DECR{,4,8}_D
 
-# Load the IRQ base address into a register
-IRQBASE_{AH,AL,BH,BL,CH,CL,DH,DL}
-# Load the IRQ ID (shifted left one) into a register
-IRQID_{AH,AL,BH,BL,CH,CL,DH,DL}
+# Load the IRQ base address onto the stack
+IRQBASE_PUSH
+# Load the IRQ ID (shifted left one) onto the stack
+IRQID_PUSH
 # Load the contents of the status register into a register
 STATUS_{AL,BL}
 

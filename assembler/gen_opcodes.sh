@@ -860,30 +860,21 @@ let "opcode = opcode + 1"
 done
 done
 
-# Load the IRQ base into a register
+# Load the IRQ base onto the stack
 opcode=$(hex_to_dec d0)
-for to_reg in ${WRITABLE_REGS[@]}; do
-offset=$((${#to_reg}-1))
 cat <<EOF
 
-[0x$(printf "%02x" $opcode)] IRQBASE_${to_reg}
-x 0 IncrementPC DataBusIrqBase Write${to_reg}
-x 1 NextInstruction
-EOF
-let "opcode = opcode + 1"
-done
+[0xd0] IRQBASE_PUSH
+x 0 IncrementPC IncrementSP
+x 1 AddrBusSP DataBusIrqBase WriteRAM
+x 2 NextInstruction
 
-# Load the IRQ ID into a register
-for to_reg in ${WRITABLE_REGS[@]}; do
-offset=$((${#to_reg}-1))
-cat <<EOF
-
-[0x$(printf "%02x" $opcode)] IRQID_${to_reg}
-x 0 IncrementPC DataBusIrqId Write${to_reg}
-x 1 NextInstruction
+[0xd1] IRQID_PUSH
+x 0 IncrementPC IncrementSP
+x 1 AddrBusSP DataBusIrqId WriteRAM
+x 2 NextInstruction
 EOF
-let "opcode = opcode + 1"
-done
+opcode=$(hex_to_dec d2)
 
 # Multi-value incr/decr for D register to support frame pointer manipulation
 cat <<EOF
