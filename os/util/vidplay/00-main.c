@@ -23,6 +23,10 @@ extern uint16_t frame_count;
 extern uint16_t playback_frame;
 extern uint8_t frame_segments;
 extern uint8_t color_mode;
+extern uint8_t loop_mode;
+extern uint8_t frames_per_loop;
+extern uint8_t frames_until_wrap;
+extern uint8_t loops_remaining;
 
 struct fat16_dirent frame_load_dirent;
 static uint8_t reserved_pages[250];
@@ -31,6 +35,7 @@ static void usage();
 static void reserve_extmem_pages();
 static void free_extmem_pages();
 static void load_frame_from_dirent(struct fat16_dirent *dirent, struct fs_handle *fsh);
+static uint8_t parse_decimal(char *s);
 
 extern void start_frame_isr();
 extern void stop_frame_isr();
@@ -45,17 +50,36 @@ int main(int argc, char **argv) {
     char strtoi_buf[7];
     uint16_t frame_no;
     uint8_t strtoi_flags;
+    uint8_t loop_count_arg;
+    char *arg2;
 
     frame_count = 0;
     total_frames_remaining = 0;
     frames_in_buffer = 0;
     playback_frame = 0;
     color_mode = 0;
+    loop_mode = 0;
+    loop_count_arg = 0;
 
     // first argument should be a path to a directory, else exit with usage/error
     if(argc < 2) {
         usage();
         return 1;
+    }
+    // optional second argument: --loop=N
+    if(argc >= 3) {
+        arg2 = argv[2];
+        if(arg2[0] == '-' && arg2[1] == '-' &&
+           arg2[2] == 'l' && arg2[3] == 'o' && arg2[4] == 'o' && arg2[5] == 'p') {
+            if(arg2[6] == '=') {
+                loop_mode = 1;
+                loop_count_arg = parse_decimal(&arg2[7]);
+                printf("Loop mode: %u passes\n", loop_count_arg);
+            } else {
+                printf("Error: expected --loop=N, got: %s\n", arg2);
+                return 1;
+            }
+        }
     }
     // use pathfind to get back a dirent for the directory, if it exists
     frames_dirent = fat16_pathfind(argv[1], &frames_fsh);
@@ -170,24 +194,43 @@ int main(int argc, char **argv) {
         clear_screen(0xdb, 0x00);
         // Replace last line on the screen with spaces for status line
         sprintf((void *)0x4ec0, "                                                            ");
+        // Set color of last line on the screen with white
+        for(uint8_t *c = 0x5ec0; c <= 0x5eff; c++) {
+            *c = 0x3f;
+        }
     }
 
-    // Start playback
-    start_frame_isr();
-
-    // Keep playing while loading more frames
-    while(total_frames_remaining > 0) {
-        while(frames_in_buffer >= (uint8_t)BUFFER_SIZE); // wait for buffer to not be full
-        sprintf((void *)0x4ec0, "Frame(%U/%U) Buf(%u/%u) R/W page(0x%x/0x%x)", playback_frame, frame_count, frames_in_buffer, BUFFER_SIZE, ring_read_page, ring_write_page);
-        frame_load_dirent.start_cluster = starting_clusters[frame_no];
-        load_frame_from_dirent(&frame_load_dirent, frames_fsh);
-        frame_no++;
-        total_frames_remaining--;
-    }
-
-    // Wait for playback to finish
-    while(frames_in_buffer > (uint8_t)0) {
-        sprintf((void *)0x4ec0, "Frame(%U/%U) Buf(%u/%u) R/W page(0x%x/0x%x)", playback_frame, frame_count, frames_in_buffer, BUFFER_SIZE, ring_read_page, ring_write_page);
+    if(loop_mode) {
+        // Loop mode: all frames already preloaded (up to 250). Set up ISR loop globals
+        // and wait; the ISR manages ring_read_page and signals done via frames_in_buffer=0.
+        frames_per_loop = frames_in_buffer;   // actual number of frames loaded
+        frames_until_wrap = frames_per_loop;
+        loops_remaining = loop_count_arg;
+        frames_in_buffer = 1;                 // keep nonzero; ISR clears when done
+        start_frame_isr();
+        while(frames_in_buffer > (uint8_t)0) {
+            sprintf((void *)0x4ec0, "Loop(%u left) Frame(%U/%u) Rd(0x%x)",
+                    loops_remaining, playback_frame, frames_per_loop, ring_read_page);
+        }
+    } else {
+        // Streaming mode: start ISR, then continue loading frames into ring buffer
+        // until all frames have been loaded and played back.
+        start_frame_isr();
+        while(total_frames_remaining > 0) {
+            while(frames_in_buffer >= (uint8_t)BUFFER_SIZE); // wait for buffer space
+            sprintf((void *)0x4ec0, "Frame(%U/%U) Buf(%u/%u) R/W page(0x%x/0x%x)",
+                    playback_frame, frame_count, frames_in_buffer, BUFFER_SIZE,
+                    ring_read_page, ring_write_page);
+            frame_load_dirent.start_cluster = starting_clusters[frame_no];
+            load_frame_from_dirent(&frame_load_dirent, frames_fsh);
+            frame_no++;
+            total_frames_remaining--;
+        }
+        while(frames_in_buffer > (uint8_t)0) {
+            sprintf((void *)0x4ec0, "Frame(%U/%U) Buf(%u/%u) R/W page(0x%x/0x%x)",
+                    playback_frame, frame_count, frames_in_buffer, BUFFER_SIZE,
+                    ring_read_page, ring_write_page);
+        }
     }
 
     // End playback
@@ -240,7 +283,23 @@ static void load_frame_from_dirent(struct fat16_dirent *dirent, struct fs_handle
 }
 
 static void usage() {
-    print("Usage: vidplay <directory>\n");
+    print("Usage: vidplay <directory> [--loop=N]\n");
     print("  Plays ASCII videos (.TXT frames) or color videos (.COL frames)\n");
     print("  Mode is auto-detected from the extension of frame 0000.*\n");
+    print("  --loop=N: loop N times (max 250 frames loaded; excess frames skipped)\n");
+}
+
+// Parse a decimal ASCII string into a uint8_t.
+// Stops at the first non-digit character or null terminator.
+static uint8_t parse_decimal(char *s) {
+    uint8_t result = 0;
+    uint8_t digit;
+    while(*s != 0) {
+        if(*s < '0') break;
+        if(*s > '9') break;
+        digit = (uint8_t)(*s - '0');
+        result = (result << 3) + (result << 1) + digit;  // result*10 via shifts
+        s++;
+    }
+    return result;
 }

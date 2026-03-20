@@ -7,3 +7,7 @@ VAR global word $playback_frame
 VAR global byte $isr_saved_e_page
 VAR global byte $frame_segments
 VAR global byte $color_mode
+VAR global byte $loop_mode
+VAR global byte $frames_per_loop
+VAR global byte $frames_until_wrap
+VAR global byte $loops_remaining
