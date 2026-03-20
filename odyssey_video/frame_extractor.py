@@ -6,6 +6,7 @@ input sources: video files, GIFs, directories of images, or image lists.
 """
 
 import os
+import re
 import glob as _glob
 from pathlib import Path
 
@@ -134,11 +135,15 @@ def extract_frames(inputs, input_fps=30.0, output_fps=14.0):
     inputs = [Path(p) for p in inputs]
 
     if len(inputs) == 1 and inputs[0].is_dir():
-        # Directory: glob sorted image files
+        # Directory: glob sorted image files (natural sort handles numeric names)
+        def _natural_key(path):
+            parts = re.split(r'(\d+)', path.name)
+            return [int(p) if p.isdigit() else p.lower() for p in parts]
+
         directory = inputs[0]
         found = sorted(
             [p for p in directory.iterdir() if _is_image(p)],
-            key=lambda p: p.name,
+            key=_natural_key,
         )
         yield from _frames_from_image_list(found, input_fps, output_fps)
         return
