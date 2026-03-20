@@ -1,3 +1,5 @@
+from variable import Variable
+from typespec import TypeSpec
 
 class SpecialFunctions():
     # Special function call functions are responsible for setting up the
@@ -763,11 +765,11 @@ class SpecialFunctions():
         arg_nodes = self.visit(node.args, mode='return_nodes')
         self.emit(f"ALUOP_PUSH %A%+%AH%", "Save A before clear_screen")
         self.emit(f"ALUOP_PUSH %A%+%AL%", "Save A before clear_screen")
-        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A', dest_var=Variable(typespec=TypeSpec('char', 'char'), name='const', qualifiers=['const'], is_virtual=True))
         # character is in AL
         self.emit(f"ALUOP_AH %A%+%AL%", "Copy character to AH")
         # character now in AH
-        rvalue_var = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        rvalue_var = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A', dest_var=Variable(typespec=TypeSpec('unsigned char', 'unsigned char'), name='const', qualifiers=['const'], is_virtual=True))
         # color is in AL
         self.emit(f"CALL {func.asm_name()}")
         # no return value for clear_screen, nothing to pop
