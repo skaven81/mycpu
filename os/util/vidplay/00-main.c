@@ -192,11 +192,13 @@ int main(int argc, char **argv) {
     // replaces the default white-on-black text display
     if(color_mode) {
         clear_screen(0xdb, 0x00);
-        // Replace last line on the screen with spaces for status line
-        sprintf((void *)0x4ec0, "                                                            ");
         // Set color of last line on the screen with white
         for(uint8_t *c = 0x5ec0; c <= 0x5eff; c++) {
             *c = 0x3f;
+        }
+        // Set char of last line on the screen with spaces
+        for(uint8_t *c = 0x4ec0; c <= 0x4eff; c++) {
+            *c = ' ';
         }
     }
 
