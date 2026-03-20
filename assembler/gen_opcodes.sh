@@ -1164,15 +1164,16 @@ let "opcode = opcode + 1"
 cat <<EOF
 
 [0x$(printf "%02x" $opcode)] MEMFILL4_C_I \$byte
-x 0 IncrementPC AddrBusPC WriteTD
-x 1 IncrementPC AddrBusC DataBusTD WriteRAM
-x 2 IncrementC
-x 3 AddrBusC DataBusTD WriteRAM
-x 4 IncrementC
-x 5 AddrBusC DataBusTD WriteRAM
-x 6 IncrementC
-x 7 AddrBusC DataBusTD WriteRAM
-x 8 IncrementC NextInstruction
+x 0 IncrementPC
+x 1 AddrBusPC WriteTD IncrementPC
+x 2 AddrBusC DataBusTD WriteRAM
+x 3 IncrementC
+x 4 AddrBusC DataBusTD WriteRAM
+x 5 IncrementC
+x 6 AddrBusC DataBusTD WriteRAM
+x 7 IncrementC
+x 8 AddrBusC DataBusTD WriteRAM
+x 9 IncrementC NextInstruction
 EOF
 let "opcode = opcode + 1"
 
