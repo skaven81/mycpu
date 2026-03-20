@@ -1,3 +1,18 @@
+2026-03-19: Fix strcmp/strcasecmp result corruption in C compiler
+==================================================================
+
+Traced a bug in the C compiler's special_functions.py where the strcmp (and
+strcasecmp) handlers incorrectly saved the return value to the hardware stack
+before popping the saved C and D registers -- placing the result on top of the
+saved values so every subsequent pop was off by one.  This corrupted both the
+strcmp return value (AL received the old CH instead of the result) and the D
+register (the C frame pointer), causing cascading failures in all local variable
+accesses within the same function call.  The fix is to simply not push the result
+at all: POP_DL/DH/CL/CH do not touch AL, so the strcmp result stays live
+throughout the restore sequence; for dest_reg='B', ALUOP_BL copies AL to BL
+before restoring A.  Also fixed a known arithmetic bug in cctest7's register
+pressure test (b=200 should have been b=100).
+
 2026-03-15: Bad apple! Finally!
 ===============================
 

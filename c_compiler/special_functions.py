@@ -10,8 +10,15 @@ class SpecialFunctions():
     # mode - either 'codegen' or 'generate_rvalue', generally can be ignored
     # func - the Function object describing the function to call
     # dest_reg - the register the return value should be loaded into
+    #
+    # CONTRACT: after the handler completes, ONLY dest_reg has changed.
+    # other_reg must be preserved IF and ONLY IF the handler actually
+    # touches other_reg during parameter setup, function execution, or
+    # return-value delivery.  Do not save/restore registers unnecessarily.
 
     def custom_FuncCall_printf(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=fmt, format args on heap -> CALL :printf -> no return
+        # C: void printf(char *fmt, ...)
         arg_nodes = self.visit(node.args, mode='return_nodes')
         for idx, an in reversed([*enumerate(arg_nodes)]):
             with self._debug_block(f"Push param idx {idx}"):
@@ -72,6 +79,8 @@ class SpecialFunctions():
         self.emit(f"POP_CH", "Restore C after sprintf")
 
     def custom_FuncCall_print(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=str -> CALL :print -> no return
+        # C: void print(char *str)
         arg_nodes = self.visit(node.args, mode='return_nodes')
         self.emit(f"PUSH_CH", "Save C before printf")
         self.emit(f"PUSH_CL", "Save C before printf")
@@ -82,62 +91,93 @@ class SpecialFunctions():
         self.emit(f"POP_CH", "Restore C after print")
 
     def custom_FuncCall_halt(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: HLT (no inputs, no return)
+        # C: void halt(void)
         self.emit("HLT", "Halt the system")
 
     # ---- Memory management (register-based) ----
 
     def custom_FuncCall_free(self, node, mode, func, dest_reg='A', **kwargs):
-        # free() takes address in register A
+        # ASM: A=ptr -> CALL :free -> no return
+        # C: void free(void *ptr)
         arg_nodes = self.visit(node.args, mode='return_nodes')
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Free memory at address in A")
 
     def custom_FuncCall_malloc_blocks(self, node, mode, func, dest_reg='A', **kwargs):
-        # malloc_blocks() takes size in AL, returns address in A
+        # ASM: AL=size -> CALL :malloc_blocks -> A=address
+        # C: void *malloc_blocks(uint8_t size)
+        # Arg eval and function return both use A; B is never touched.
+        # When dest_reg='B': A is clobbered, so save/restore A around the call.
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and return value)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and return value)")
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Allocate blocks, size in AL, result in A")
         if dest_reg != 'A':
-            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
-            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop return value into dest_reg")
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Move result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Move result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     def custom_FuncCall_calloc_blocks(self, node, mode, func, dest_reg='A', **kwargs):
-        # calloc_blocks() takes size in AL, returns address in A
+        # ASM: AL=size -> CALL :calloc_blocks -> A=address
+        # C: void *calloc_blocks(uint8_t size)
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and return value)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and return value)")
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Allocate+zero blocks, size in AL, result in A")
         if dest_reg != 'A':
-            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
-            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop return value into dest_reg")
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Move result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Move result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     def custom_FuncCall_malloc_segments(self, node, mode, func, dest_reg='A', **kwargs):
-        # malloc_segments() takes size in AL, returns address in A
+        # ASM: AL=size -> CALL :malloc_segments -> A=address
+        # C: void *malloc_segments(uint8_t size)
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and return value)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and return value)")
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Allocate segments, size in AL, result in A")
         if dest_reg != 'A':
-            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
-            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop return value into dest_reg")
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Move result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Move result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     def custom_FuncCall_calloc_segments(self, node, mode, func, dest_reg='A', **kwargs):
-        # calloc_segments() takes size in AL, returns address in A
+        # ASM: AL=size -> CALL :calloc_segments -> A=address
+        # C: void *calloc_segments(uint8_t size)
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and return value)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and return value)")
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Allocate segments, size in AL, result in A")
         if dest_reg != 'A':
-            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
-            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop return value into dest_reg")
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Move result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Move result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     # ---- Terminal output (register-based) ----
 
     def custom_FuncCall_putchar(self, node, mode, func, dest_reg='A', **kwargs):
-        # putchar() takes character in AL register
+        # ASM: AL=char -> CALL :putchar -> no return
+        # C: void putchar(char c)
         arg_nodes = self.visit(node.args, mode='return_nodes')
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Print character in AL")
 
     def custom_FuncCall_putchar_direct(self, node, mode, func, dest_reg='A', **kwargs):
-        # putchar_direct() takes character in AL register
+        # ASM: AL=char -> CALL :putchar_direct -> no return
+        # C: void putchar_direct(char c)
         arg_nodes = self.visit(node.args, mode='return_nodes')
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Print character directly in AL")
@@ -145,9 +185,15 @@ class SpecialFunctions():
     # ---- String functions (register-based) ----
 
     def custom_FuncCall_strcmp(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: C=s1, D=s2 → CALL :strcmp → result in AL
+        # ASM: C=s1, D=s2 -> CALL :strcmp -> result in AL
         # C: int8_t strcmp(char *s1, char *s2)
+        # Arg eval uses A; :strcmp is callee-save for B; :heap_pop_D clobbers A.
+        # When dest_reg='B': A is clobbered during setup/teardown -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and heap ops)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and heap ops)")
         # Evaluate args and stage on heap
         rvalue_s1 = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_A", "Stage s1 on heap")
@@ -162,21 +208,33 @@ class SpecialFunctions():
         self.emit("CALL :heap_pop_D", "Load s2 into D")
         self.emit("CALL :heap_pop_C", "Load s1 into C")
         self.emit(f"CALL {func.asm_name()}")
-        # Result is in AL; save on CPU stack
-        self.emit("ALUOP_PUSH %A%+%AL%", "Save strcmp result")
+        # Result is in AL. POP_DL/DH/CL/CH do not touch AL, so the result
+        # stays live throughout the restore sequence -- no push needed.
         # Restore D, C (reverse order of save)
         self.emit("POP_DL", "Restore D after strcmp")
         self.emit("POP_DH", "Restore D after strcmp")
         self.emit("POP_CL", "Restore C after strcmp")
         self.emit("POP_CH", "Restore C after strcmp")
-        # Pop result into dest_reg low byte, clear high byte
-        self.emit(f"POP_{dest_reg}L", "strcmp result into dest_reg")
-        self.emit(f"LDI_{dest_reg}H 0x00", "Clear high byte for int8_t return")
+        if dest_reg == 'A':
+            # Result already in AL; just clear AH
+            self.emit("LDI_AH 0x00", "Clear high byte for int8_t return")
+        else:
+            # Copy result from AL to BL BEFORE restoring A (which clobbers AL)
+            self.emit("ALUOP_BL %A%+%AL%", "strcmp result into dest_reg")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
+            self.emit("LDI_BH 0x00", "Clear high byte for int8_t return")
 
     def custom_FuncCall_strcasecmp(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: C=s1, D=s2 -> CALL :strcasecmp -> result in AL
         # C: int8_t strcasecmp(char *s1, char *s2)
+        # Arg eval uses A; :strcasecmp is callee-save for B; :heap_pop_D clobbers A.
+        # When dest_reg='B': A is clobbered -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and heap ops)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and heap ops)")
         # Evaluate args and stage on heap
         rvalue_s1 = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_A", "Stage s1 on heap")
@@ -191,19 +249,25 @@ class SpecialFunctions():
         self.emit("CALL :heap_pop_D", "Load s2 into D")
         self.emit("CALL :heap_pop_C", "Load s1 into C")
         self.emit(f"CALL {func.asm_name()}")
-        # Result is in AL; save on CPU stack
-        self.emit("ALUOP_PUSH %A%+%AL%", "Save strcasecmp result")
+        # Result is in AL. POP_DL/DH/CL/CH do not touch AL, so the result
+        # stays live throughout the restore sequence -- no push needed.
         # Restore D, C (reverse order of save)
         self.emit("POP_DL", "Restore D after strcasecmp")
         self.emit("POP_DH", "Restore D after strcasecmp")
         self.emit("POP_CL", "Restore C after strcasecmp")
         self.emit("POP_CH", "Restore C after strcasecmp")
-        # Pop result into dest_reg low byte, clear high byte
-        self.emit(f"POP_{dest_reg}L", "strcasecmp result into dest_reg")
-        self.emit(f"LDI_{dest_reg}H 0x00", "Clear high byte for int8_t return")
+        if dest_reg == 'A':
+            # Result already in AL; just clear AH
+            self.emit("LDI_AH 0x00", "Clear high byte for int8_t return")
+        else:
+            # Copy result from AL to BL BEFORE restoring A (which clobbers AL)
+            self.emit("ALUOP_BL %A%+%AL%", "strcasecmp result into dest_reg")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
+            self.emit("LDI_BH 0x00", "Clear high byte for int8_t return")
 
     def custom_FuncCall_strcpy(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: C=src, D=dest → CALL :strcpy → no return
+        # ASM: C=src, D=dest -> CALL :strcpy -> no return
         # C: void strcpy(char *src, char *dest)
         arg_nodes = self.visit(node.args, mode='return_nodes')
         # Evaluate args and stage on heap
@@ -227,7 +291,7 @@ class SpecialFunctions():
         self.emit("POP_CH", "Restore C after strcpy")
 
     def custom_FuncCall_strupper(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: C=src, D=dest → CALL :strupper → no return
+        # ASM: C=src, D=dest -> CALL :strupper -> no return
         # C: void strupper(char *src, char *dest)
         arg_nodes = self.visit(node.args, mode='return_nodes')
         # Evaluate args and stage on heap
@@ -251,7 +315,7 @@ class SpecialFunctions():
         self.emit("POP_CH", "Restore C after strupper")
 
     def custom_FuncCall_strprepend(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: AL=ch, D=str → CALL :strprepend → no return
+        # ASM: AL=ch, D=str -> CALL :strprepend -> no return
         # C: void strprepend(char ch, char *str)
         arg_nodes = self.visit(node.args, mode='return_nodes')
         # Evaluate args and stage on heap
@@ -271,9 +335,15 @@ class SpecialFunctions():
         self.emit("POP_DH", "Restore D after strprepend")
 
     def custom_FuncCall_strsplit(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: AH=split_char, AL=alloc_size, C=str, D=array → CALL :strsplit → result in AH
+        # ASM: AH=split_char, AL=alloc_size, C=str, D=array -> CALL :strsplit -> result in AH
         # C: uint8_t strsplit(char split_char, uint8_t alloc_size, char *str, uint16_t *array)
+        # Arg eval uses A; :strsplit is callee-save for B; :heap_pop_D clobbers A.
+        # When dest_reg='B': A is clobbered -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and heap ops)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and heap ops)")
         # Evaluate args and stage on heap
         rvalue_split = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_AL", "Stage split_char on heap (byte)")
@@ -306,11 +376,23 @@ class SpecialFunctions():
         # Pop result into dest_reg low byte, clear high byte
         self.emit(f"POP_{dest_reg}L", "strsplit result into dest_reg")
         self.emit(f"LDI_{dest_reg}H 0x00", "Clear high byte for uint8_t return")
+        if dest_reg != 'A':
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     def custom_FuncCall_strtoi(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: C=str -> CALL :strtoi -> A=result (16-bit), BL=flags
         # C: uint16_t strtoi(char *str, uint8_t *flags)
+        #
+        # :strtoi ALWAYS writes BL (flags output), regardless of dest_reg.
+        # Therefore other_reg is ALWAYS clobbered:
+        #   dest_reg='A' (other_reg='B'): :strtoi writes BL -> B is clobbered
+        #   dest_reg='B' (other_reg='A'): arg eval + :heap_pop_D clobber A
+        # Unconditionally save/restore other_reg in both cases.
+        other_reg = 'B' if dest_reg == 'A' else 'A'
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} (:strtoi always clobbers BL)")
+        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} (:strtoi always clobbers BL)")
         # Step 1: Evaluate flags ptr (arg 1) into A, push to heap (deepest)
         rvalue_flags = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_A", "Stage flags ptr on heap")
@@ -343,18 +425,26 @@ class SpecialFunctions():
         # Step 10: Restore frame pointer
         self.emit("POP_DL", "Restore frame pointer")
         self.emit("POP_DH", "Restore frame pointer")
-        # Step 11: Pop result into A, then move to dest_reg if needed.
+        # Step 11: Pop result into A, copy to dest_reg if needed, restore other_reg.
         # Only A and B are supported as dest_reg; C/D lack symmetric move instructions.
         self.emit("POP_AL", "Pop strtoi result lo")
         self.emit("POP_AH", "Pop strtoi result hi")
-        if dest_reg == 'B':
-            self.emit("ALUOP_BH %A%+%AH%", "Copy result hi to BH")
-            self.emit("ALUOP_BL %A%+%AL%", "Copy result lo to BL")
+        if dest_reg != 'A':
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
+        self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
+        self.emit(f"POP_{other_reg}H", f"Restore {other_reg}")
 
     def custom_FuncCall_strtoi8(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: C=str -> CALL :strtoi8 -> AL=result (8-bit, AH callee-saved), BL=flags
         # C: uint8_t strtoi8(char *str, uint8_t *flags)
+        #
+        # :strtoi8 ALWAYS writes BL (flags output), regardless of dest_reg.
+        # Unconditionally save/restore other_reg (same reasoning as strtoi).
+        other_reg = 'B' if dest_reg == 'A' else 'A'
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Save {other_reg} (:strtoi8 always clobbers BL)")
+        self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} (:strtoi8 always clobbers BL)")
         # Step 1: Evaluate flags ptr (arg 1) into A, push to heap (deepest)
         rvalue_flags = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_A", "Stage flags ptr on heap")
@@ -386,21 +476,29 @@ class SpecialFunctions():
         # Step 10: Restore frame pointer
         self.emit("POP_DL", "Restore frame pointer")
         self.emit("POP_DH", "Restore frame pointer")
-        # Step 11: Pop result into A, then move to dest_reg if needed.
+        # Step 11: Pop result into A, copy to dest_reg if needed, restore other_reg.
         # Only A and B are supported as dest_reg; C/D lack symmetric move instructions.
         self.emit("POP_AL", "Pop strtoi8 result")
         self.emit("LDI_AH 0x00", "Clear high byte for uint8_t return")
-        if dest_reg == 'B':
-            self.emit("ALUOP_BH %A%+%AH%", "Copy zero to BH")
-            self.emit("ALUOP_BL %A%+%AL%", "Copy result to BL")
+        if dest_reg != 'A':
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy zero to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result to {dest_reg}L")
+        self.emit(f"POP_{other_reg}L", f"Restore {other_reg}")
+        self.emit(f"POP_{other_reg}H", f"Restore {other_reg}")
 
     # ---- Multi-return FAT16 functions ----
 
     def custom_FuncCall_fat16_dirent_filesize(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: push dirent addr → call → pop lo word, pop hi word
+        # ASM: push dirent addr -> call -> pop lo word, pop hi word
         # C: uint16_t fat16_dirent_filesize(struct fat16_dirent *d, uint16_t *size_hi)
-        # Returns lo word; writes hi word to *size_hi
+        # Returns lo word; writes hi word to *size_hi.
+        # Arg eval uses A; :heap_pop_D clobbers A; :heap_pop_A for hi word clobbers A.
+        # When dest_reg='B': A is clobbered throughout -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and heap ops)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and heap ops)")
         # Save output pointer on heap first (will be below ASM params)
         rvalue_hi = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_A", "Save size_hi output pointer on heap")
@@ -409,10 +507,10 @@ class SpecialFunctions():
         self.emit("CALL :heap_push_A", "Push dirent address param")
         self.emit(f"CALL {func.asm_name()}")
         # Heap now: lo_word(top), hi_word, size_hi_ptr(bottom)
-        # Pop lo word (return value), save on CPU stack
+        # Pop lo word directly into dest_reg
         self.emit(f"CALL :heap_pop_{dest_reg}", "Pop lo word of file size (return value)")
-        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}H%", "Save return value")
-        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}L%", "Save return value")
+        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}H%", "Save return value hi")
+        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}L%", "Save return value lo")
         # Pop hi word into A
         self.emit("CALL :heap_pop_A", "Pop hi word of file size")
         # Pop output pointer into D (save/restore frame pointer)
@@ -425,28 +523,46 @@ class SpecialFunctions():
         self.emit("ALUOP_ADDR_D %A%+%AL%", "Store lo byte at *(size_hi+1)")
         self.emit("POP_DL", "Restore frame pointer")
         self.emit("POP_DH", "Restore frame pointer")
-        # Restore return value
-        self.emit(f"POP_{dest_reg}L", "Restore return value")
-        self.emit(f"POP_{dest_reg}H", "Restore return value")
+        # Restore return value into dest_reg
+        self.emit(f"POP_{dest_reg}L", "Restore return value lo")
+        self.emit(f"POP_{dest_reg}H", "Restore return value hi")
+        if dest_reg != 'A':
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     def custom_FuncCall_fat16_next_cluster(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM convention: push h (bottom), push cluster (top) -> call -> pop next cluster
         # C: uint16_t fat16_next_cluster(struct fs_handle *h, uint16_t cluster)
         # Default C compiler would push cluster first (bottom), h second (top) -- wrong order.
         # This handler pushes h first (bottom), cluster second (top) to match ASM convention.
+        # Arg eval uses A; result popped directly into dest_reg via :heap_pop_{dest_reg}.
+        # When dest_reg='B': A is clobbered by arg eval -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval)")
         rvalue_h = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_A", "Push fs_handle address param (bottom)")
         rvalue_c = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_A", "Push cluster param (top)")
         self.emit(f"CALL {func.asm_name()}")
-        self.emit(f"CALL :heap_pop_{dest_reg}", "Pop next cluster number")
+        self.emit(f"CALL :heap_pop_{dest_reg}", "Pop next cluster number into dest_reg")
+        if dest_reg != 'A':
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     def custom_FuncCall_fat16_cluster_to_lba(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: push handle addr, push cluster → call → pop lo LBA, pop hi LBA
+        # ASM: push handle addr, push cluster -> call -> pop lo LBA, pop hi LBA
         # C: uint16_t fat16_cluster_to_lba(struct fs_handle *h, uint16_t cluster, uint16_t *lba_hi)
-        # Returns lo word of LBA; writes hi word to *lba_hi
+        # Returns lo word of LBA; writes hi word to *lba_hi.
+        # Arg eval uses A; :heap_pop_D clobbers A; :heap_pop_A for hi word clobbers A.
+        # When dest_reg='B': A is clobbered throughout -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and heap ops)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and heap ops)")
         # Save output pointer on heap first (below ASM params)
         rvalue_hi = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_A", "Save lba_hi output pointer on heap")
@@ -457,10 +573,10 @@ class SpecialFunctions():
         self.emit("CALL :heap_push_A", "Push cluster param")
         self.emit(f"CALL {func.asm_name()}")
         # Heap now: lo_lba(top), hi_lba, lba_hi_ptr(bottom)
-        # Pop lo word (return value), save on CPU stack
+        # Pop lo word directly into dest_reg
         self.emit(f"CALL :heap_pop_{dest_reg}", "Pop lo word of LBA (return value)")
-        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}H%", "Save return value")
-        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}L%", "Save return value")
+        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}H%", "Save return value hi")
+        self.emit(f"ALUOP_PUSH %{dest_reg}%+%{dest_reg}L%", "Save return value lo")
         # Pop hi word into A
         self.emit("CALL :heap_pop_A", "Pop hi word of LBA")
         # Pop output pointer into D (save/restore frame pointer)
@@ -473,22 +589,31 @@ class SpecialFunctions():
         self.emit("ALUOP_ADDR_D %A%+%AL%", "Store lo byte at *(lba_hi+1)")
         self.emit("POP_DL", "Restore frame pointer")
         self.emit("POP_DH", "Restore frame pointer")
-        # Restore return value
-        self.emit(f"POP_{dest_reg}L", "Restore return value")
-        self.emit(f"POP_{dest_reg}H", "Restore return value")
+        # Restore return value into dest_reg
+        self.emit(f"POP_{dest_reg}L", "Restore return value lo")
+        self.emit(f"POP_{dest_reg}H", "Restore return value hi")
+        if dest_reg != 'A':
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     # ---- Conditional-return FAT16 functions ----
 
     def custom_FuncCall_fat16_pathfind(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: push path → call → conditional return:
+        # ASM: push path -> call -> conditional return:
         #   Error: pop error_code (hi byte 0x00 or 0x01)
         #   Success: pop dirent_addr (hi byte >= 0x02), then pop fs_handle_addr
         # C: struct fat16_dirent *fat16_pathfind(char *path, struct fs_handle **fs_handle_out)
-        # Returns dirent pointer (NULL or error code on failure)
-        # Writes fs_handle pointer to *fs_handle_out on success
+        # Returns dirent pointer (NULL or error code on failure).
+        # Writes fs_handle pointer to *fs_handle_out on success.
+        # Arg eval uses A; :heap_pop_A/:heap_pop_D clobber A throughout.
+        # When dest_reg='B': A is clobbered -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
         arg_nodes = self.visit(node.args, mode='return_nodes')
         error_label = self._get_label("pathfind_err")
         done_label = self._get_label("pathfind_done")
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and heap ops)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and heap ops)")
         # Save fs_handle_out pointer on heap (below ASM params)
         rvalue_out = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
         self.emit("CALL :heap_push_A", "Save fs_handle_out pointer on heap")
@@ -501,8 +626,8 @@ class SpecialFunctions():
         # Pop first value (dirent or error code)
         self.emit("CALL :heap_pop_A", "Pop pathfind result")
         # Save result on CPU stack
-        self.emit("ALUOP_PUSH %A%+%AH%", "Save result")
-        self.emit("ALUOP_PUSH %A%+%AL%", "Save result")
+        self.emit("ALUOP_PUSH %A%+%AH%", "Save result hi")
+        self.emit("ALUOP_PUSH %A%+%AL%", "Save result lo")
         # Check if error: AH < 0x02 means error
         # Right-shift AH: 0>>1=0, 1>>1=0, 2>>1=1, etc. So JZ = error
         self.emit("ALUOP_FLAGS %A>>1%+%AH%", "Shift AH right: 0 if AH < 2 (error)")
@@ -521,22 +646,33 @@ class SpecialFunctions():
         # Error: discard saved out_ptr from heap
         self.emit(f"{error_label}")
         self.emit("CALL :heap_pop_word", "Discard saved fs_handle_out pointer")
-        # Done: restore result into dest_reg
+        # Done: restore result into dest_reg, then restore A if needed
         self.emit(f"{done_label}")
-        self.emit(f"POP_{dest_reg}L", "Restore return value")
-        self.emit(f"POP_{dest_reg}H", "Restore return value")
+        self.emit(f"POP_{dest_reg}L", "Restore return value lo")
+        self.emit(f"POP_{dest_reg}H", "Restore return value hi")
+        if dest_reg != 'A':
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     # ---- Extended memory management (heap-based) ----
 
     def custom_FuncCall_extmalloc(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: no inputs -> pushes page number (byte) to heap
         # C: uint8_t extmalloc(void)
+        # :heap_pop_AL writes AL; LDI_AH 0x00 writes AH.
+        # When dest_reg='B': A is clobbered (heap_pop_AL + LDI_AH) -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by heap_pop_AL and LDI_AH)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by heap_pop_AL and LDI_AH)")
         self.emit(f"CALL {func.asm_name()}", "Allocate extended memory page")
         self.emit("CALL :heap_pop_AL", "Pop page number into AL")
         self.emit("LDI_AH 0x00", "Clear AH (byte return)")
         if dest_reg != 'A':
-            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
-            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop into dest_reg")
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     def custom_FuncCall_extfree(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: push page number (byte) to heap -> no return
@@ -557,12 +693,20 @@ class SpecialFunctions():
     def custom_FuncCall_extpage_d_pop(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: no inputs -> pushes restored page ID to heap
         # C: uint8_t extpage_d_pop(void)
+        # :heap_pop_AL writes AL; LDI_AH 0x00 writes AH.
+        # When dest_reg='B': A is clobbered -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by heap_pop_AL and LDI_AH)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by heap_pop_AL and LDI_AH)")
         self.emit(f"CALL {func.asm_name()}", "Restore previous D-window mapping")
         self.emit("CALL :heap_pop_AL", "Pop restored page number into AL")
         self.emit("LDI_AH 0x00", "Clear AH (byte return)")
         if dest_reg != 'A':
-            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
-            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop into dest_reg")
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     def custom_FuncCall_extpage_e_push(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: push page number (byte) to heap -> no return
@@ -575,27 +719,47 @@ class SpecialFunctions():
     def custom_FuncCall_extpage_e_pop(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: no inputs -> pushes restored page ID to heap
         # C: uint8_t extpage_e_pop(void)
+        # :heap_pop_AL writes AL; LDI_AH 0x00 writes AH.
+        # When dest_reg='B': A is clobbered -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by heap_pop_AL and LDI_AH)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by heap_pop_AL and LDI_AH)")
         self.emit(f"CALL {func.asm_name()}", "Restore previous E-window mapping")
         self.emit("CALL :heap_pop_AL", "Pop restored page number into AL")
         self.emit("LDI_AH 0x00", "Clear AH (byte return)")
         if dest_reg != 'A':
-            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
-            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop into dest_reg")
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     # ---- Shell argument access (SYSTEM.ODY built-ins only) ----
 
     def custom_FuncCall_shell_get_argv_n(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: AL = index n -> A = argv[n] string address (0x0000 if beyond argc)
+        # ASM: AL=n -> A=argv[n] string address (0x0000 if beyond argc)
         # C: char *shell_get_argv_n(uint8_t n)
+        # Arg eval and function return both use A; B is never touched.
+        # When dest_reg='B': A is clobbered -> save/restore A.
+        # When dest_reg='A': B is never touched -> no save/restore needed.
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by arg eval and return value)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by arg eval and return value)")
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Get argv[n] string address into A")
         if dest_reg != 'A':
-            self.emit(f"CALL :heap_push_A", "Move return value to dest_reg")
-            self.emit(f"CALL :heap_pop_{dest_reg}", "Pop into dest_reg")
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
 
     # ---- Clear screen ----
     def custom_FuncCall_clear_screen(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: AH=char, AL=color -> CALL :clear_screen -> no return
+        # C: void clear_screen(char ch, uint8_t color)
+        # Note: both args are packed into A before the call (char->AH, color->AL),
+        # so A is fully clobbered during setup. A is saved/restored around the call.
         arg_nodes = self.visit(node.args, mode='return_nodes')
         self.emit(f"ALUOP_PUSH %A%+%AH%", "Save A before clear_screen")
         self.emit(f"ALUOP_PUSH %A%+%AL%", "Save A before clear_screen")
@@ -609,5 +773,4 @@ class SpecialFunctions():
         # no return value for clear_screen, nothing to pop
         self.emit(f"POP_AL", "Restore A after clear_screen")
         self.emit(f"POP_AH", "Restore A after clear_screen")
-
 
