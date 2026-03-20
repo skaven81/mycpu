@@ -108,4 +108,4 @@ RET
 :shell_argc         "\0"                           # byte: argc from last read_command
 :shell_argv_ptr     "\0\0"                         # word: malloc'd argv array address
 :shell_input_ptr    "\0\0"                         # word: malloc'd raw input string address
-:shell_ody_lookup   "\0\0\0\0\0\0\0\0\0\0\0\0\0"  # 13 bytes: uppercase "CMD.ODY" scratch
+:shell_ody_lookup   "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"  # 40 bytes: "COMMAND.ODY" scratch (max 31-char argv[0] + ".ODY\0")
