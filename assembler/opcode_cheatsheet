@@ -168,12 +168,15 @@ STATUS_{AL,BL}
 0xbd00 - 0xbdff 256b UART buffer (lib/uart.asm)
 0xbe00 - 0xbeff 256b keyboard buffer (lib/keyboard.asm)
 0xbf00 - 0xbfff 256b CPU stack
-0xc000 - 0xcfff peripherals
+0xc000 - 0xc7ff peripherals
+0xc800 - 0xcfff exp RAM (2k)
 0xd000 - 0xdfff ext RAM D-page window (4k)
 0xe000 - 0xefff ext RAM E-page window (4k)
-0xf000 - 0xfffe unallocated
+0xf000 - 0xffef exp RAM (~4k)
+0xfff0 - 0xfffe unallocated
          0xffff reserved (idle bus) 
 
+# Peripheral addresses
 0xc000 - 0xc07f keyboard
     0xc000 keyboard key
     0xc001 keyboard flags
@@ -206,7 +209,7 @@ STATUS_{AL,BL}
     0xc2x1 (any odd 0xc2)  - Page address for 0xexxx
 
 # Extended memory zero-page allocation
-0x000 - 0x7ff malloc ledger
+0x[de]000 - 0x[de]7ff malloc ledger
 
 
 # Interrupt handling
