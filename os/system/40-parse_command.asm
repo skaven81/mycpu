@@ -191,6 +191,7 @@ RET
 .cmd_110 "hexdump\0"       :cmd_hexdump
 .cmd_120 "setserial\0"     :cmd_setserial
 .cmd_130 "type\0"          :cmd_type
+.cmd_140 "memstat\0"       :cmd_memstat
 .cmd_end 0x00
 
 #####
