@@ -409,3 +409,218 @@ Read-only FAT16 over ATA (PIO mode). Drives `0:` and `1:` (master/slave). 512-by
 ## Keyboard Flags (0xC001)
 
 `0x01` BREAK, `0x02` CTRL, `0x04` ALT, `0x08` FUNCTION, `0x10` SHIFT, `0x20` NUMLOCK, `0x40` CAPSLOCK, `0x80` SCROLLLOCK.
+
+## C Compiler Code Size Optimization
+
+The C compiler generates unoptimized, verbose assembly. Key techniques to reduce output size (validated in `900-cmd_memstat.c`, achieved 16.6% reduction -- 3147 to 2626 lines):
+
+### 1. File-scope statics instead of local variables
+
+Local variables in C functions are stored on the heap frame at offsets from the
+frame pointer (D register). Accessing a variable at offset N requires computing
+D+N, which costs multiple instructions (especially for N>8 where 16-bit
+addition is needed). **Use file-scope `static` variables instead of local
+variables** for any non-trivial function:
+
+```c
+// Expensive: accessed as D+45 via 16-bit arithmetic per access
+uint16_t range_start, total_bytes, ...;  // 15+ locals = offset 45!
+
+// Cheap: accessed via fixed global address (LDI_B $var; LDA_B_AL)
+static uint16_t s_range_start, s_total_bytes, ...;
+```
+
+Also eliminates `heap_advance_BL`/`heap_retreat_BL` calls (function prolog/epilog).
+
+**Note:** The C compiler supports `static` on local variables, but requires an
+explicit initializer (e.g. `static uint16_t x = 0;`). File-scope statics are
+simpler when initializers would be awkward (e.g. pointers, or vars that must be
+re-initialized on each call anyway).
+
+**Note on large arrays:** File-scope and local `static` arrays are allocated as
+storage in the ODY binary itself. For large arrays (hundreds of bytes), declare
+a pointer instead and call `malloc_segments()`/`malloc_blocks()` at runtime.
+The ODY binary only stores the 2-byte pointer rather than the full array:
+```c
+static char *buf;   // 2 bytes in ODY binary
+// at runtime:
+buf = (char *)malloc_segments(8);  // allocate 1 KiB from heap
+```
+
+### 2. Move hot simple functions to assembly
+Functions called in tight loops (like `emit_ch`) generate enormous assembly from C due to calling-convention overhead. Write them as assembly functions (global labels `:func_name`) and declare `extern` in C. A 5-line C function generating 162 assembly lines becomes ~22 assembly instructions. See `os/system/900a-cmd_memstat_helpers.asm` for the pattern.
+
+### 3. Pre-computed constant data instead of output loops
+Loops that emit fixed repeated bytes (e.g., 64x separator char) can be replaced with a pre-built data string in assembly using mixed string+byte syntax, then a single `CALL :print`:
+```asm
+:my_separator_func
+PUSH_CH
+PUSH_CL
+LDI_C .sep_data
+CALL :print
+POP_CL
+POP_CH
+RET
+.sep_data "@23" 0xCD 0xCD 0xCD ... (64 bytes) "@r\0"
+```
+The assembler supports mixed data items: `"string" 0xNN 0xNN "more\0"`.
+
+### 4. The BinaryBool pattern -- the primary waste target
+
+Every `==`, `!=`, `<`, `>=` comparison in C materializes a 0/1 boolean result
+in AL before branching (~14-20 lines). Direct truthiness tests (is-zero /
+is-nonzero) need only ~8 lines. **Identify every comparison in hot loops and
+restructure to use truthiness where possible.** The techniques below are all
+applications of this principle.
+
+To find BinaryBool patterns in generated assembly, search for `binarybool_isfalse`
+or `binarybool_istrue` labels. Reducing their count is the primary metric.
+
+### 5. XOR trick for inequality tests
+
+`a ^ b` produces zero when equal, non-zero when different. Use `if (a ^ b)` in
+place of `if (a != b)` to get a direct truthiness test instead of a BinaryBool:
+```c
+if (s_cur_color ^ s_last_color) { ... }    // ~8 lines, no BinaryBool
+if (s_cur_color != s_last_color) { ... }   // ~14 lines, BinaryBool
+```
+Also works for comparing against a constant: `if (s_b ^ 0xFF)` instead of
+`if (s_b != 0xFF)`. Both operands must be the same size.
+
+### 6. Truthiness tests instead of equality comparisons
+
+`if (!x)` and `if (x)` test zero/non-zero directly without materializing a
+boolean. Prefer them over `if (x == 0)` and `if (x != 0)`:
+```c
+if (!s_b) { ... }        // ~8 lines -- direct ALUOP_FLAGS + branch
+if (s_b == 0) { ... }    // ~14 lines -- BinaryBool
+if (s_is_blk) { ... }    // ~8 lines -- direct truthiness test
+if (s_is_blk != 0) { ... }  // ~14 lines -- BinaryBool
+```
+This also applies to uint16_t variables, which use ALUOP16Z_FLAGS (~10 lines
+vs ~20 for a BinaryBool equality test).
+
+### 7. Nested ifs instead of && operators
+
+Each `&&` in a compound condition causes both sub-expressions to be separately
+materialized as BinaryBool values before being ANDed, costing ~8 extra lines
+per `&&`. Replace with nested ifs:
+```c
+// Expensive: ~8 extra lines per &&
+if (s_sysody_addr != 0 && s_sysody_addr >= s_range_start) { ... }
+
+// Cheap: short-circuit via control flow, no extra materialization
+if (s_sysody_addr >= s_range_start) {
+    if (...) { ... }
+}
+```
+
+### 8. Sentinel values to eliminate loop guard conditions
+
+When a condition must be checked every iteration but only to guard against a
+"not applicable" state, use an out-of-range sentinel value so the condition is
+automatically false without an extra variable:
+```c
+// Without sentinel: need both a flag AND range check each iteration
+if (sysody_active && s_i >= sysody_ls && s_i <= sysody_le) ...
+
+// With sentinel: s_sysody_ls = 0xFFFF makes s_i >= 0xFFFF always false
+// for valid ledger indices (0-2040), no flag needed
+s_sysody_ls = 0xFFFF;   // sentinel: range check always false
+if (s_i >= s_sysody_ls) {   // one truthiness check, no extra flag
+    if (s_i <= s_sysody_le) { s_is_sysody = 1; }
+}
+```
+
+### 9. Decrement-first pattern to avoid == 1 BinaryBool
+
+When tracking "how many bytes remain", decrement before testing rather than
+comparing to 1 before decrement. Testing for zero is a free truthiness check;
+comparing to 1 is a BinaryBool:
+```c
+// Expensive: if (remaining == 1) costs ~14 lines (BinaryBool)
+if (s_alloc_remaining == 1) { /* last byte */ }
+s_alloc_remaining--;
+
+// Cheap: decrement first, then test zero (~8 lines)
+s_alloc_remaining--;
+if (s_alloc_remaining) { /* not last */ } else { /* last */ }
+```
+
+### 10. Remove dead variables
+
+Variables that are written but never read waste code. After restructuring logic
+(e.g., applying the decrement-first pattern), scan for variables that are
+assigned but whose value is never consumed. Removing them saves both the
+assignment code and the VAR storage. Examples removed from `900-cmd_memstat.c`:
+`alloc_pos` (set in 4 places, never read) and `is_last` (replaced by the
+zero-test after decrement).
+
+### 11. Static local arrays with aggregate initializers
+
+For a constant data array used within a single function, declare it as a
+`static` local **inside the function** (not at file scope). File-scope statics
+always emit zeros regardless of any initializer; static locals trigger proper
+initialization code using efficient MEMCPY4_C_D bulk copies:
+```c
+// Wrong: file-scope static ignores the initializer, emits all zeros
+static char s_col_strs[28] = {'@','3','1',0, ...};  // file scope
+
+// Right: static local triggers MEMCPY4_C_D initialization at function entry
+static void my_func(void) {
+    static char s_col_strs[28] = {'@','3','1',0, ...};  // local static
+    // compiler emits 7x MEMCPY4_C_D to copy 28 bytes -- very efficient
+    ...
+}
+```
+Note: the initialization runs every call (not once), so prefer this pattern
+for infrequently-called functions.
+
+### 12. Table lookup to replace dispatch chains
+
+A chain of `if (x == 0) ...; else if (x == 1) ...; ... else if (x == N) ...`
+generates N BinaryBool patterns. If the values are compact integers, replace
+with a table indexed by a shift of x:
+```c
+// Expensive: 6 BinaryBool patterns
+if      (s_cur_color == 0) print("@31");
+else if (s_cur_color == 1) print("@37");
+...
+
+// Cheap: one shift, one array access, zero BinaryBool patterns
+s_col_off = s_cur_color & 0x00FF;
+s_col_off = s_col_off << 2;          // multiply by 4 (entry size)
+printf("%s", &s_col_strs[s_col_off]);
+```
+Declare the table as a static local array with an aggregate initializer
+(see technique 11) so the data is properly initialized.
+
+### 13. Exploit natural integer wrap for loop termination
+
+When iterating over all values of a `uint8_t` counter (0-255 or 1-255), use a
+`do { ... counter++; } while (counter)` loop. After `counter++` from 255, the
+value wraps to 0 and `while (counter)` exits -- no explicit count or comparison
+needed. This saves one BinaryBool per iteration:
+```c
+// se_page is uint8_t: wraps 255 -> 0, exits while(se_page) naturally
+se_page = 1;
+do {
+    ...
+    se_page++;
+} while (se_page);   // 255 iterations, no comparison instruction
+```
+
+### 14. Hoist special cases outside loops to eliminate per-iteration branches
+
+If the first (or last) iteration of a loop requires special-case handling,
+emit it explicitly before (or after) the loop and start the loop at iteration
+1 (or end at N-1). This removes a per-iteration branch:
+```c
+// Hoist page-0 (always special) outside the 1-255 loop
+print("@34");
+emit_ch(0xB2);              // page 0: always scratch, emitted once
+se_bit_mask = 0x40;         // start at page 1's bit
+se_page = 1;
+do { ... se_page++; } while (se_page);   // pages 1-255 only, no branch
+```
+
