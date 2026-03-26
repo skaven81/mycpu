@@ -25,191 +25,45 @@ Source: https://github.com/skaven81/mycpu
 - **Practical over perfect** -- working code first, optimize later. Debug methodically, don't paper over bugs.
 - **Future directions**: video playback (Bad Apple), sound chip (OPL-3/YMF262), programmable timer interrupts, games.
 
-## CPU Architecture
+## CPU Architecture (brief)
 
 - **8-bit data bus, 16-bit address bus**, ~2.2 MHz clock
 - **LUT-based ALU**: two AT28C256 EEPROMs (4-bit slices), 32 distinct operations
-- **Microcoded**: 4 EEPROMs, 32 control signals/cycle, 15-bit instruction register (8-bit opcode + 3-bit ALU flags + 4-bit sequence counter), up to 16 micro-ops/instruction
+- **Microcoded**: 4 EEPROMs, 32 control signals/cycle, up to 16 micro-ops/instruction
 - **Big-endian** (ATA/FAT16 data is little-endian, requires byte-order translation)
+- Registers: A (AH/AL), B (BH/BL), C (16-bit address), D (16-bit address), SP (8-bit), Status (Z/E/O flags)
+- A/B registers can ONLY write to bus through ALU (use identity op `%A%` or `%B%`)
 
-## Registers
-
-| Register | Width | Notes |
-|----------|-------|-------|
-| A (AH, AL) | 8-bit each | ALU input. Can ONLY write to bus through ALU (use identity op). MOV from C/D to A exists (e.g. `MOV_CH_AH`). |
-| B (BH, BL) | 8-bit each | ALU input. Same ALU-only write constraint as A. MOV from C/D to B exists (e.g. `MOV_DL_BL`). |
-| C (CH, CL) | 16-bit | Hardware INCR/DECR without ALU. Used as address pointer. Can write to bus directly. |
-| D (DH, DL) | 16-bit | Hardware INCR/DECR. Saved/restored during interrupts. Can write to bus directly. |
-| SP | 8-bit | Stack at 0xBF00-0xBFFF (256 bytes). |
-| TAH, TAL, TD | 8-bit | Microcode scratchpad only. Interrupts clobber these -- must MASKINT before direct use. |
-| Status | 3 flags | Z (zero), E (equal), O (overflow/carry-out). Backup in bits [7:6:5] for interrupts. |
-
-**CRITICAL - Status Flag Behavior:**
-- **Z (zero)** and **O (overflow/carry-out)** flags are computed by the ALU itself based on the result
-- **E (equal)** flag is computed OUTSIDE the ALU by XOR gates comparing the two input operands (A-side vs B-side)
-- The E flag is set when the two operands are equal, regardless of the ALU operation or result
-- Example: `ALUOP_FLAGS %A&B%+%AL%+%BH%` sets E flag if AL==BH (operand comparison), Z flag if (AL&BH)==0 (result comparison)
-
-C/D increment/decrement: `INCR_C`, `DECR_C`, `INCR_D`, `DECR_D`, `INCR4_D`, `INCR8_D`, `DECR4_D`, `DECR8_D`.
-
-## Dual Stack/Heap Architecture
-
-Two separate LIFO structures:
-
-**Hardware Stack (0xBF00-0xBFFF, 256 bytes)** -- register preservation and control flow only:
-- `CALL`/`RET` push/pop return addresses
-- `ALUOP_PUSH %A%+%AL%` / `POP_AL` save/restore A/B registers
-- `PUSH_CH` / `POP_CH` save/restore C/D half-registers
-
-**Software Heap (0xB000-0xB9FF, 2.5 KiB)** -- parameter passing between functions:
-- `:heap_push_AL`, `:heap_push_A`, `:heap_push_D` -- push args before calling
-- `:heap_pop_AL`, `:heap_pop_A` -- pop results after calling
-- `:heap_push_all` / `:heap_pop_all` -- bulk save/restore all register pairs
-- `:heap_advance_AL` / `:heap_retreat_AL` -- allocate/deallocate frames (C compiler)
-- Grows upward from 0xB000. Pointer in `$heap_ptr`.
-
-### Calling Convention
-
-- **Simple functions**: inputs/outputs in specific registers (AL for byte, A for word, C/D for addresses)
-- **Complex functions**: caller pushes args to heap, function pops internally. Args pushed in documented order (popped LIFO inside function).
-- **Callee-save**: virtually every function saves/restores ALL registers it modifies using PUSH/POP pairs. Caller can assume registers are preserved.
-- **IRQ handler patching**: functions save current IRQ vector on stack, install temporary handler, restore after. Handlers communicate with main loop by modifying registers directly (e.g., spinlocks).
+For full register details, ALU operations, ALUOP16, stack/heap architecture, and calling convention, consult skill **ody-cpu**.
 
 ## Opcode and Macro References
 
 **When unsure about an instruction or macro, always consult these files before writing code.**
 
 - **`assembler/opcode_cheatsheet`** -- quick high-level overview of all available opcodes. Read this first to find what instructions exist.
-- **`assembler/opcodes.out`** -- canonical, authoritative reference of all opcodes with full microcode. This is a build artifact (may not exist after `make clean`), and is very large -- do NOT read the whole file. Instead, extract a single instruction's microcode with:
+- **`assembler/opcodes.out`** -- canonical, authoritative reference of all opcodes with full microcode. Extract a single instruction with:
   ```bash
   awk '/<OPCODE>/,/^[[:space:]]*$/ {print; if (/^[[:space:]]*$/) exit}' assembler/opcodes.out
   ```
-  Replace `<OPCODE>` with the instruction name (e.g. `MOV_DL_AL`, `ALUOP_BL`, `LDI_C`). Use this to gain confidence that an instruction does what you think it does. The opcodes.out file's header for each opcode looks like this: `[0xNN] OPCODE <args>` so your awk regular expression should not be pinned to the beginning of the line.
+- **`assembler/asm_macros`** -- `%name%` text substitution macros. Cross-reference whenever working with ALU operations or any `%macro%` syntax.
 
-- **`assembler/asm_macros`** -- `%name%` text substitution macros (single-pass replacement). Used for ALU ops, register selectors, peripheral addresses, colors, etc. **Cross-reference this file whenever working with ALU operations or any `%macro%` syntax** to understand what the macros expand to and what they mean.
+## Assembly Language
 
-## ALU Operations
-
-Register selectors: `%AH%` (0x40), `%AL%` (0x00), `%BH%` (0x80), `%BL%` (0x00), `%Cin%` (0x20). **All ALU instructions must include register selection macros**, even for low registers, for readability.
-
-**Critical:** ALU operations have an "A" side and a "B" side.  The "A" side can only select from the two A registers (AH and AL), while the B side can only select from the two B registers (BH and BL). It is not possible to use the %A-B% ALU operation to subtract AH-AL for example. That is why there are complementary operations for %A-B% and %B-A% as well as separate %A% and %B% identity operations.  The %AH%, %AL%, %BH%, and %BL% macros are mostly to make the operations more readable for humans. The %AL% and %BL% macros are both zero, as selecting the AL and BL registers for input is the default state of the ALU. %AH% and %BH% set the appropriate bits in the ALU operation register to cause the A (or B) input muxes to select the high register for that side.
-
-| Opcode | Macro | Description |
-|--------|-------|-------------|
-| 0x00 | `%zero%` | Constant 0 |
-| 0x01 | `%one%` | Constant 1 |
-| 0x02 | `%negone%` | Constant 0xFF (-1) |
-| 0x03 | `%A%` | Identity A (add `%AH%` for high reg) |
-| 0x04 | `%B%` | Identity B (add `%BH%` for high reg) |
-| 0x05 | `%A+B%` | Add A+B |
-| 0x06 | `%A-B%` | Subtract A-B |
-| 0x07 | `%B-A%` | Subtract B-A |
-| 0x08 | `%A-1%` | Decrement A |
-| 0x09 | `%B-1%` | Decrement B |
-| 0x0a | `%A_clrmsb%` | Clear MSB of A |
-| 0x0b-0x0d | `%A+B_signed%`, `%A-B_signed%`, `%B-A_signed%` | Signed arithmetic |
-| 0x0e-0x0f | `%-A_signed%`, `%-B_signed%` | Signed negation |
-| 0x10-0x16 | `%~A%`, `%~B%`, `%A&B%`, `%A\|B%`, `%AxB%`, `%A&~B%`, `%B&~A%` | Logic |
-| 0x17-0x18 | `%Amsb%`, `%Bmsb%` | Extract MSB |
-| 0x19-0x1c | `%A<<1%`, `%A>>1%`, `%B<<1%`, `%B>>1%` | Logical shifts |
-| 0x1d-0x1e | `%A*2%`, `%A/2%` | Arithmetic shift left/right |
-| 0x1f | `%Amsb^Bmsb%` | XOR of MSBs |
-
-Add `%Cin%` (0x20) for +1 variants (e.g., `%A+1%` = 0x23, `%A+B+1%` = 0x25).
-
-## ALUOP16 Instructions (16-bit ALU)
-
-Perform 16-bit operations using the 8-bit ALU in two steps: operate on low byte, then conditionally operate on high byte based on the resulting flags.
-
-**Unconditional (2 operands)**: `ALUOP16_{A,B} lo_op hi_op` -- lo_op stores to low reg, hi_op stores to high reg.
-
-**Conditional (3 operands)** -- lo_op executes first, sets flags, then flag selects which hi_op runs:
-- `ALUOP16O_{A,B,FLAGS}` -- checks **O** (overflow) flag
-- `ALUOP16E_{A,B,FLAGS}` -- checks **E** (equal) flag
-- `ALUOP16Z_{A,B,FLAGS}` -- checks **Z** (zero) flag
-
-Format: `ALUOP16O_A lo_op hi_op_if_set hi_op_if_clear`. The `_FLAGS` variants only set flags without writing registers.
-
-**Key insight**: the low byte operation's flags inform high byte handling. E.g., 16-bit add: if low byte overflows, high byte add includes carry (+1); if not, normal high byte add.
-
-### Predefined ALUOP16 macros (from `asm_macros`)
-
-Each macro expands to 3 values (the operand tuple). Use with `ALUOP16O_` for arithmetic/shifts:
-
-| Macro | Operation |
-|-------|-----------|
-| `%ALU16_A+1%` / `%ALU16_B+1%` | 16-bit increment |
-| `%ALU16_A-1%` / `%ALU16_B-1%` | 16-bit decrement |
-| `%ALU16_A+B%` | 16-bit A = A + B |
-| `%ALU16_A-B%` / `%ALU16_B-A%` | 16-bit subtraction |
-| `%ALU16_sA+B%` / `%ALU16_sA-B%` / `%ALU16_sB-A%` | Signed 16-bit arithmetic |
-| `%ALU16_A<<1%` / `%ALU16_B<<1%` | 16-bit left shift |
-
-Use with `ALUOP16E_FLAGS` or `ALUOP16Z_FLAGS` for comparisons:
-
-| Macro | Operation |
-|-------|-----------|
-| `%ALU16_Azero%` / `%ALU16_Bzero%` | Test == 0 (Z flag) |
-| `%ALU16_A\|Beq%` | Test A == B (E flag) |
-
-### ALUOP16 examples
+**CRITICAL**: Instructions are NOT indented. All instructions, labels, directives are **left-justified** (no leading whitespace).
 
 ```asm
-ALUOP16O_A %ALU16_A+B%              # A = A + B (16-bit)
-ALUOP16O_A %ALU16_A+1%              # A++ (16-bit)
-ALUOP16E_FLAGS %ALU16_A|Beq%        # test A == B (flags only)
-ALUOP16Z_FLAGS %ALU16_Azero%        # test A == 0 (flags only)
-ALUOP16_A %A|B% %A|B%+%AH%+%BH%    # unconditional OR (manual operands)
+# vim: syntax=asm-mycpu
+:function_name       # Global label (colon prefix)
+.local_label         # Local label (dot prefix, scoped to nearest global)
+.my_string "Hello\n\0"
+VAR global byte $my_byte
+VAR global word $my_word    # access: $var (high byte), $var+1 (low byte)
+VAR global 32 $my_buffer
 ```
 
-## Memory Map
+Notation: `@addr` = 16-bit arg, `$data` = 8-bit arg. BIOS files numbered `00-`, `10-`, etc. for concatenation order.
 
-```
-0x0000-0x3EFF  Program ROM (16 KiB)
-0x4000-0x4EFF  Framebuffer characters (64x60 grid)
-0x4F00-0x4FFF  Hidden framebuffer (global variables)
-0x5000-0x5EFF  Framebuffer color (1 byte/char)
-0x5F00-0x5F0F  Interrupt vector table (8 x 16-bit)
-0x5F10-0x5FFF  Hidden framebuffer (global variables)
-0x6000-0xAFFF  ~20 KiB dynamic RAM (malloc region)
-0xB000-0xB9FF  2.5 KiB heap/software stack
-0xBA00-0xBCFF  768 bytes global assembly arrays
-0xBD00-0xBDFF  256 bytes UART circular buffer
-0xBE00-0xBEFF  256 bytes keyboard circular buffer
-0xBF00-0xBFFF  256 bytes CPU hardware stack
-0xC000-0xCFFF  Peripheral registers (memory-mapped I/O)
-0xD000-0xDFFF  Extended RAM D-page window (4 KiB)
-0xE000-0xEFFF  Extended RAM E-page window (4 KiB)
-0xF000-0xFFFF  Unallocated (0xFFFF reserved/idle bus)
-```
-
-## Peripherals
-
-| Address | Peripheral |
-|---------|------------|
-| 0xC000-0xC001 | PS/2 Keyboard (0xC000=key, 0xC001=flags) |
-| 0xC080-0xC0FF | RTC/Timer DS1511Y (BCD-encoded values) |
-| 0xC100-0xC1FF | UART 82C52 (data, ctrl/status, modem ctrl, baud/modem status) |
-| 0xC200-0xC2FF | Extended RAM page registers (even=D-page, odd=E-page) |
-| 0xC300-0xC30F | ATA CS0/CS1 registers |
-| 0xC310-0xC31F | ATA high byte latch (write hi first, lo write triggers 16-bit ATA write) |
-
-## Interrupts
-
-8-line priority encoder. IRQ saves PC and D register to stack. RETI restores status flag backup.
-
-| IRQ | Vector | Source |
-|-----|--------|--------|
-| 1 | 0x5F02 | Keyboard |
-| 3 | 0x5F06 | Timer |
-| 4 | 0x5F08 | UART modem status |
-| 5 | 0x5F0A | UART data ready |
-
-IRQ 0/2/6/7 reserved.
-
-## Video
-
-640x480 VGA, 64x60 character grid (8x8 chars, CP437 font). Dual-port SRAM: chars at 0x4000-0x4EFF, color at 0x5000-0x5EFF. Color byte: `[BLINK][CURSOR][Rfg][Gfg][Bfg][Rbg][Gbg][Bbg]` (64 colors + blink + cursor).
+For assembly patterns, callee-save prolog/epilog, heap parameter passing, comparison/branch patterns, bulk memory ops, and trace-based debugging, consult skill **ody-asm**.
 
 ## Repository Structure
 
@@ -251,7 +105,6 @@ Pipeline: `.c` -> `cpp` -> `c_compiler.py` -> `.asm` -> `assembler.py` -> `.ody`
 
 BIOS must build first (generates `bios.sym` symbol table). All other components depend on `bios.sym` for ROM library addresses. C headers for BIOS functions in `os/bios/lib/*.h`.
 
-
 ## Git conventions
 
 When creating new utilities (e.g. under `os/util/<name>/`), always include a `.gitignore` in the new directory to exclude generated build artifacts from version control.
@@ -259,135 +112,16 @@ There is a top-level `.gitignore` that prevents things like .ODY files and .log 
 a blanket `*.asm` does not work.  Each utility's `.gitignore` should explicitly list the build artifacts (e.g. .asm files created from .c files) that aren't covered
 by the top-level .gitignore.
 
-
-## Assembly Language
-
-**CRITICAL**: Instructions are NOT indented. All instructions, labels, directives are **left-justified** (no leading whitespace).
-
-```asm
-# vim: syntax=asm-mycpu
-# Global labels (colon prefix) - visible across files
-:function_name
-# Local labels (dot prefix) - scoped to nearest preceding global label
-.local_label
-# String literals
-.my_string "Hello\n\0"
-# Variables (can appear anywhere in code, storage allocated separately)
-VAR global byte $my_byte
-VAR global word $my_word       # access: $var (high byte), $var+1 (low byte)
-VAR global 32 $my_buffer       # 32-byte buffer
-```
-
-Notation: `@addr` = 16-bit arg, `$data` = 8-bit arg. BIOS files numbered `00-`, `10-`, etc. for concatenation order.
-
-### Key assembly patterns
-
-```asm
-# ALU ops (register selectors always required)
-ALUOP_AL %A+B%+%AL%+%BL%       # AL + BL -> AL
-ALUOP_AL %A+B%+%AH%+%BH%       # AH + BH -> AL
-ALUOP_DL %A%+%AL%               # copy AL to DL (A/B write through ALU only)
-ALUOP_ADDR_D %A%+%AH%           # copy AH to memory at address in D
-ALUOP_FLAGS %A-B%+%AL%+%BL%     # compare AL vs BL (flags only, no CMP instruction)
-
-# Callee-save prolog/epilog (reverse order restore)
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-PUSH_CH
-PUSH_CL
-# ... body ...
-POP_CL
-POP_CH
-POP_AL
-POP_AH
-RET
-
-# Heap parameter passing
-CALL :heap_push_AL              # push arg
-CALL :some_function             # function pops args internally
-CALL :heap_pop_AL               # pop return value
-
-# Memory/variables
-LDI_C 0x4000                    # 16-bit address into C
-LDA_C_AL                        # load byte at [C] into AL
-ST $my_var 0x42                 # store immediate to variable
-LD_AL $my_var                   # load variable
-LD16_A $my_word_var             # load 16-bit variable into AH:AL
-```
-
-Note: all instructions above are left-justified in actual code. Indentation here is for document readability only.
-
-### Troubleshooting assembly code
-
-Some static analysis of assembly is reasonable.  But once the problem gets complex, it's better to take a step back
-and collect additional information through tracing.  Any .asm file may have :trace_N (:trace_0, :trace_1, etc.) calls
-inserted at strategic locations.  See also os/bios/lib/trace.asm.  For example:
-
-```
-CALL :trace_0  # comment about what we expect to see here
-```
-
-The trace functions are entirely idempotent -- they do not cause any changes to any registers or memory (aside from
-printing the trace data to the console).  Every trace call prints to the console:
- - an identifier, `DEBUG0`, `DEBUG1` ... `DEBUG7`
- - the memory address where the CALL to trace was initiated
- - The current values stored in all four primary registers (A, B, C, D)
- - The current extended memory pages used by 0xe... and 0xd...
-
-When you are trying to solve a tricky problem in assembly, insert strategic CALLs to :trace functions into the assembly
-directly.  When debugging code generated from C, you can first `make <c-file-basename>.asm` to generate the assembly file,
-then directly edit the generated .asm file to insert trace calls.  Then `make` to assemble the output binary.  As long
-as you don't make any edits to the .c file, you can keep editing the .asm file to move or add traces, and `make` will
-keep regenerating the binary without clobbering your traces.
-
-Have me run the command and tell me what you are looking for in the trace output.  I will feed that information back
-to you, to assist you with the troubleshooting process.
-
 ## C Compiler
 
 `c_compiler/c_compiler.py` -- C99 with caveats, generates unoptimized Odyssey assembly.
+Types: `char` (8-bit), `int`/`short` (16-bit), pointers (16-bit). No `long`/`float`.
 
-- Types: `char` (8-bit), `int`/`short` (16-bit), pointers (16-bit). No `long`/`float`.
-- Convention: params on heap, D register as frame pointer, caller-cleanup.
-- Special codegen: `printf()`, `print()`, `halt()`. Assembly-callable functions needing non-standard call sequences are handled in `c_compiler/special_functions.py`.
-- Uses GCC `cpp` for preprocessing. Headers in `os/bios/lib/*.h`.
+For C compiler details, known quirks/workarounds, and code size optimization techniques (14 validated patterns), consult skill **ody-c**.
 
-### C Compiler Known Quirks (TODOs)
+## Memory and I/O
 
-- **TODO: Inline cast-to-pointer as function argument fails.** `func((void *)0xD000)` produces "Incompatible types" because `visit_Typename` in cast expressions does not propagate `is_pointer` in `return_typespec` mode. Workaround: declare a typed local variable (`char *buf = (char *)0xD000;`) and pass that instead. Fix: propagate `is_pointer` through `visit_Typename` in `return_typespec` mode in `codegen.py`.
-- **TODO: String literals cannot begin with `:` or `.`.** The assembler treats leading `:` as a global label and leading `.` as a local label or directive, so string data starting with those characters will be misassembled. Workaround: restructure strings to avoid leading `:` or `.`, or emit the first byte separately.
-
-## ODY Executable Format
-
-| Offset | Content |
-|--------|---------|
-| 0-2 | Magic: `ODY` |
-| 3 | Flags (2 bits: memory target) |
-| 4-5 | Count of relocation entries (16-bit) |
-| 6+ | N x 16-bit relocation offsets, then raw machine code |
-
-Loader adds base address to each relocation offset. CALL targets to ROM functions are absolute (not relocated).
-
-## Extended Memory
-
-1 MiB (two 512 KiB AS6C4008), accessed via two 4 KiB windows. D-window: 0xD000, page register at 0xC200 (even). E-window: 0xE000, page register at 0xC201 (odd). Physical = (page << 12) | (addr & 0x0FFF). Pages 0x000-0x7FF reserved for malloc ledger.
-
-## FAT16
-
-Read-only FAT16 over ATA (PIO mode). Drives `0:` and `1:` (master/slave). 512-byte sectors, 28-bit LBA. 8.3 filenames (max 8-char command names).
-
-## Important Code Patterns
-
-- **No CMP instruction**: compare via subtraction (`ALUOP_FLAGS %A-B%`) and check flags. **O flag for subtraction: O=1 means underflow (A < B), O=0 means no underflow (A >= B).** Use `JO` to branch when A < B, `JNO` to branch when A >= B. E flag compares operands directly (use any ALU op, even AND/OR).
-- **No hardware multiply/divide**: software in `math.asm` (`:mul16`, `:div8`). Multiply-by-10 = `8a + 2a` via shifts.
-- **MEMCPY/MEMFILL count is N-1**: AL=0 copies 1 unit, AL=255 copies 256.
-- **Hardware bulk ops**: `MEMCPY_C_D`, `MEMCPY4_C_D`, `MEMFILL4_C_PEEK`, `MEMFILL4_C_I` auto-increment C (and D for copies).
-- **JMP for tail calls**: preserves caller's return address on stack.
-- **MASKINT/UMASKINT**: required around transfer register (TAH/TAL/TD) use, since interrupts clobber them. Heap functions do this internally.
-- **256-byte circular buffers**: keyboard (0xBE00) and UART (0xBD00) -- only low byte of pointers changes for natural wraparound.
-- **Display memory is directly manipulated**: terminal input works on display memory, not a separate buffer. `:cursor_mark_getstring` copies from display to buffer.
-- **Timer values are BCD**: DS1511Y RTC uses BCD (0x75 = 75, not 117).
-- **Shared error labels**: related functions share error-exit labels when stack frames match.
+For the full memory map, peripheral addresses, interrupt vectors, video system details, extended memory paging, FAT16, ODY executable format, printf format specifiers, color codes, and keyboard flags, consult skill **ody-io**.
 
 ## Constraints Summary
 
@@ -396,231 +130,7 @@ Read-only FAT16 over ATA (PIO mode). Drives `0:` and `1:` (master/slave). 512-by
 - **Heap**: 2.5 KiB -- C frames + asm parameter passing
 - **RAM**: ~20 KiB (0x6000-0xAFFF) for malloc/ODY executables
 - **No linker**: assembler concatenates all source files as one unit
-- **A/B write to bus through ALU only**: use identity op to copy out. MOV instructions exist for C/D -> A/B direction only (e.g. `MOV_CH_AH`, `MOV_DL_BL`).
-
-## printf Format Specifiers
-
-`%%` literal, `%c` char, `%2` binary, `%b`/`%B` BCD (1/2 digits), `%x`/`%X` hex (byte/word), `%u`/`%U` unsigned decimal (byte/word), `%d`/`%D` signed decimal (byte/word), `%s` string pointer.
-
-## Color Codes (`:print` strings)
-
-`@[shade:0-3][color:0-7]` (0=blk 1=blu 2=grn 3=cyn 4=red 5=mag 6=yel 7=wht), `@x[hex]` raw, `@b/@B` blink off/on, `@c/@C` cursor off/on, `@r` reset.
-
-## Keyboard Flags (0xC001)
-
-`0x01` BREAK, `0x02` CTRL, `0x04` ALT, `0x08` FUNCTION, `0x10` SHIFT, `0x20` NUMLOCK, `0x40` CAPSLOCK, `0x80` SCROLLLOCK.
-
-## C Compiler Code Size Optimization
-
-The C compiler generates unoptimized, verbose assembly. Key techniques to reduce output size (validated in `900-cmd_memstat.c`, achieved 16.6% reduction -- 3147 to 2626 lines):
-
-### 1. File-scope statics instead of local variables
-
-Local variables in C functions are stored on the heap frame at offsets from the
-frame pointer (D register). Accessing a variable at offset N requires computing
-D+N, which costs multiple instructions (especially for N>8 where 16-bit
-addition is needed). **Use file-scope `static` variables instead of local
-variables** for any non-trivial function:
-
-```c
-// Expensive: accessed as D+45 via 16-bit arithmetic per access
-uint16_t range_start, total_bytes, ...;  // 15+ locals = offset 45!
-
-// Cheap: accessed via fixed global address (LDI_B $var; LDA_B_AL)
-static uint16_t s_range_start, s_total_bytes, ...;
-```
-
-Also eliminates `heap_advance_BL`/`heap_retreat_BL` calls (function prolog/epilog).
-
-**Note:** The C compiler supports `static` on local variables, but requires an
-explicit initializer (e.g. `static uint16_t x = 0;`). File-scope statics are
-simpler when initializers would be awkward (e.g. pointers, or vars that must be
-re-initialized on each call anyway).
-
-**Note on large arrays:** File-scope and local `static` arrays are allocated as
-storage in the ODY binary itself. For large arrays (hundreds of bytes), declare
-a pointer instead and call `malloc_segments()`/`malloc_blocks()` at runtime.
-The ODY binary only stores the 2-byte pointer rather than the full array:
-```c
-static char *buf;   // 2 bytes in ODY binary
-// at runtime:
-buf = (char *)malloc_segments(8);  // allocate 1 KiB from heap
-```
-
-### 2. Move hot simple functions to assembly
-Functions called in tight loops (like `emit_ch`) generate enormous assembly from C due to calling-convention overhead. Write them as assembly functions (global labels `:func_name`) and declare `extern` in C. A 5-line C function generating 162 assembly lines becomes ~22 assembly instructions. See `os/system/900a-cmd_memstat_helpers.asm` for the pattern.
-
-### 3. Pre-computed constant data instead of output loops
-Loops that emit fixed repeated bytes (e.g., 64x separator char) can be replaced with a pre-built data string in assembly using mixed string+byte syntax, then a single `CALL :print`:
-```asm
-:my_separator_func
-PUSH_CH
-PUSH_CL
-LDI_C .sep_data
-CALL :print
-POP_CL
-POP_CH
-RET
-.sep_data "@23" 0xCD 0xCD 0xCD ... (64 bytes) "@r\0"
-```
-The assembler supports mixed data items: `"string" 0xNN 0xNN "more\0"`.
-
-### 4. The BinaryBool pattern -- the primary waste target
-
-Every `==`, `!=`, `<`, `>=` comparison in C materializes a 0/1 boolean result
-in AL before branching (~14-20 lines). Direct truthiness tests (is-zero /
-is-nonzero) need only ~8 lines. **Identify every comparison in hot loops and
-restructure to use truthiness where possible.** The techniques below are all
-applications of this principle.
-
-To find BinaryBool patterns in generated assembly, search for `binarybool_isfalse`
-or `binarybool_istrue` labels. Reducing their count is the primary metric.
-
-### 5. XOR trick for inequality tests
-
-`a ^ b` produces zero when equal, non-zero when different. Use `if (a ^ b)` in
-place of `if (a != b)` to get a direct truthiness test instead of a BinaryBool:
-```c
-if (s_cur_color ^ s_last_color) { ... }    // ~8 lines, no BinaryBool
-if (s_cur_color != s_last_color) { ... }   // ~14 lines, BinaryBool
-```
-Also works for comparing against a constant: `if (s_b ^ 0xFF)` instead of
-`if (s_b != 0xFF)`. Both operands must be the same size.
-
-### 6. Truthiness tests instead of equality comparisons
-
-`if (!x)` and `if (x)` test zero/non-zero directly without materializing a
-boolean. Prefer them over `if (x == 0)` and `if (x != 0)`:
-```c
-if (!s_b) { ... }        // ~8 lines -- direct ALUOP_FLAGS + branch
-if (s_b == 0) { ... }    // ~14 lines -- BinaryBool
-if (s_is_blk) { ... }    // ~8 lines -- direct truthiness test
-if (s_is_blk != 0) { ... }  // ~14 lines -- BinaryBool
-```
-This also applies to uint16_t variables, which use ALUOP16Z_FLAGS (~10 lines
-vs ~20 for a BinaryBool equality test).
-
-### 7. Nested ifs instead of && operators
-
-Each `&&` in a compound condition causes both sub-expressions to be separately
-materialized as BinaryBool values before being ANDed, costing ~8 extra lines
-per `&&`. Replace with nested ifs:
-```c
-// Expensive: ~8 extra lines per &&
-if (s_sysody_addr != 0 && s_sysody_addr >= s_range_start) { ... }
-
-// Cheap: short-circuit via control flow, no extra materialization
-if (s_sysody_addr >= s_range_start) {
-    if (...) { ... }
-}
-```
-
-### 8. Sentinel values to eliminate loop guard conditions
-
-When a condition must be checked every iteration but only to guard against a
-"not applicable" state, use an out-of-range sentinel value so the condition is
-automatically false without an extra variable:
-```c
-// Without sentinel: need both a flag AND range check each iteration
-if (sysody_active && s_i >= sysody_ls && s_i <= sysody_le) ...
-
-// With sentinel: s_sysody_ls = 0xFFFF makes s_i >= 0xFFFF always false
-// for valid ledger indices (0-2040), no flag needed
-s_sysody_ls = 0xFFFF;   // sentinel: range check always false
-if (s_i >= s_sysody_ls) {   // one truthiness check, no extra flag
-    if (s_i <= s_sysody_le) { s_is_sysody = 1; }
-}
-```
-
-### 9. Decrement-first pattern to avoid == 1 BinaryBool
-
-When tracking "how many bytes remain", decrement before testing rather than
-comparing to 1 before decrement. Testing for zero is a free truthiness check;
-comparing to 1 is a BinaryBool:
-```c
-// Expensive: if (remaining == 1) costs ~14 lines (BinaryBool)
-if (s_alloc_remaining == 1) { /* last byte */ }
-s_alloc_remaining--;
-
-// Cheap: decrement first, then test zero (~8 lines)
-s_alloc_remaining--;
-if (s_alloc_remaining) { /* not last */ } else { /* last */ }
-```
-
-### 10. Remove dead variables
-
-Variables that are written but never read waste code. After restructuring logic
-(e.g., applying the decrement-first pattern), scan for variables that are
-assigned but whose value is never consumed. Removing them saves both the
-assignment code and the VAR storage. Examples removed from `900-cmd_memstat.c`:
-`alloc_pos` (set in 4 places, never read) and `is_last` (replaced by the
-zero-test after decrement).
-
-### 11. Static local arrays with aggregate initializers
-
-For a constant data array used within a single function, declare it as a
-`static` local **inside the function** (not at file scope). File-scope statics
-always emit zeros regardless of any initializer; static locals trigger proper
-initialization code using efficient MEMCPY4_C_D bulk copies:
-```c
-// Wrong: file-scope static ignores the initializer, emits all zeros
-static char s_col_strs[28] = {'@','3','1',0, ...};  // file scope
-
-// Right: static local triggers MEMCPY4_C_D initialization at function entry
-static void my_func(void) {
-    static char s_col_strs[28] = {'@','3','1',0, ...};  // local static
-    // compiler emits 7x MEMCPY4_C_D to copy 28 bytes -- very efficient
-    ...
-}
-```
-Note: the initialization runs every call (not once), so prefer this pattern
-for infrequently-called functions.
-
-### 12. Table lookup to replace dispatch chains
-
-A chain of `if (x == 0) ...; else if (x == 1) ...; ... else if (x == N) ...`
-generates N BinaryBool patterns. If the values are compact integers, replace
-with a table indexed by a shift of x:
-```c
-// Expensive: 6 BinaryBool patterns
-if      (s_cur_color == 0) print("@31");
-else if (s_cur_color == 1) print("@37");
-...
-
-// Cheap: one shift, one array access, zero BinaryBool patterns
-s_col_off = s_cur_color & 0x00FF;
-s_col_off = s_col_off << 2;          // multiply by 4 (entry size)
-printf("%s", &s_col_strs[s_col_off]);
-```
-Declare the table as a static local array with an aggregate initializer
-(see technique 11) so the data is properly initialized.
-
-### 13. Exploit natural integer wrap for loop termination
-
-When iterating over all values of a `uint8_t` counter (0-255 or 1-255), use a
-`do { ... counter++; } while (counter)` loop. After `counter++` from 255, the
-value wraps to 0 and `while (counter)` exits -- no explicit count or comparison
-needed. This saves one BinaryBool per iteration:
-```c
-// se_page is uint8_t: wraps 255 -> 0, exits while(se_page) naturally
-se_page = 1;
-do {
-    ...
-    se_page++;
-} while (se_page);   // 255 iterations, no comparison instruction
-```
-
-### 14. Hoist special cases outside loops to eliminate per-iteration branches
-
-If the first (or last) iteration of a loop requires special-case handling,
-emit it explicitly before (or after) the loop and start the loop at iteration
-1 (or end at N-1). This removes a per-iteration branch:
-```c
-// Hoist page-0 (always special) outside the 1-255 loop
-print("@34");
-emit_ch(0xB2);              // page 0: always scratch, emitted once
-se_bit_mask = 0x40;         // start at page 1's bit
-se_page = 1;
-do { ... se_page++; } while (se_page);   // pages 1-255 only, no branch
-```
-
+- **A/B write to bus through ALU only**: use identity op to copy out. MOV instructions exist for C/D -> A/B direction only.
+- **No CMP instruction**: compare via `ALUOP_FLAGS %A-B%`. O=1 means A < B (underflow), O=0 means A >= B.
+- **MEMCPY/MEMFILL count is N-1**: AL=0 copies 1 unit, AL=255 copies 256.
+- **Timer values are BCD**: DS1511Y RTC uses BCD encoding.
