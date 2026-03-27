@@ -13,6 +13,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         self.output = output
         self.label_num = 0
         self.debug_depth = 0
+        # (no per-binary helper tracking needed -- helpers live in BIOS ROM)
 
     def visit(self, node, mode, **kwargs):
         """
@@ -1347,6 +1348,38 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             if not var:
                 raise ValueError(f"Unable to find variable {node.name} in variable table")
 
+            # Arrays and structs decay to pointer-like address (no deref needed)
+            if var.is_array or (var.typespec.is_struct and not var.is_pointer):
+                self._get_var_base_address(var, dest_reg)
+                return var
+
+            # Check if we can use a rvalue CALL helper for frame-relative vars
+            # Helpers only exist for A and B registers (not C/D address registers)
+            use_rval_helper = (
+                dest_reg in ('A', 'B')
+                and var.offset is not None
+                and var.offset != 0
+                and abs(var.offset) >= self.context.rval_threshold
+            )
+
+            if use_rval_helper:
+                # Determine load size: pointers are always 2 bytes, else use var.sizeof()
+                load_size = 2 if var.is_pointer else var.sizeof()
+                size_bits = 16 if load_size == 2 else 8
+                reg_suffix = f"{dest_reg}L" if size_bits == 8 else dest_reg
+
+                if var.offset > 0:
+                    # Positive offset: pass unsigned byte in dest_reg's low byte
+                    self.emit(f"LDI_{dest_reg}L {var.offset}", f"Rvalue load {var.friendly_name()} at offset {var.offset}")
+                    helper = f"__cc_rval{size_bits}p_{reg_suffix}"
+                else:
+                    # Negative offset: pass signed 16-bit in full dest_reg
+                    self.emit(f"LDI_{dest_reg} {var.offset}", f"Rvalue load {var.friendly_name()} at offset {var.offset}")
+                    helper = f"__cc_rval{size_bits}n_{reg_suffix}"
+                self.emit(f"CALL :{helper}", f"Rvalue load {var.friendly_name()}")
+                return var
+
+            # Fallback: inline rvalue load (original code path)
             if var.is_pointer:
                 other_reg = 'B' if dest_reg == 'A' else 'A'
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg} while we load pointer")
@@ -1360,12 +1393,6 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 self.emit(f"POP_{other_reg}H", f"Restore {other_reg}, pointer value in {dest_reg}")
                 self.emit(f"POP_{other_reg}L", f"Restore {other_reg}, pointer value in {dest_reg}")
 
-                return var
-
-            # Arrays and structs decay to pointer-like address
-            elif var.is_array or var.typespec.is_struct:
-                # Just return the address (array/struct decay)
-                self._get_var_base_address(var, dest_reg)
                 return var
 
             else:
@@ -2151,7 +2178,17 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"{'DECR' if var.offset > 0 else 'INCR'}4_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 for _ in range(one):
                     self.emit(f"{'DECR' if var.offset > 0 else 'INCR'}_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+            elif self.context.use_lval_helpers:
+                # Use CALL helper for big offsets (>= 10)
+                if var.offset > 0:
+                    self.emit(f"LDI_{other_reg}L {var.offset}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                    helper = f"__cc_lval_p_{dest_reg}"
+                else:
+                    self.emit(f"LDI_{other_reg} {var.offset}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                    helper = f"__cc_lval_n_{dest_reg}"
+                self.emit(f"CALL :{helper}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
             else:
+                # Inline big-offset path (original code)
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 self.emit(f"MOV_DH_{dest_reg}H", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
@@ -2172,6 +2209,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             element_size = var_or_size
 
+        # Inline code paths
         if element_size == 1:
             self.emit(f"ALUOP16O_{addr_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
         elif element_size in (2, 4, 8, 16, 32, 64, 128):
@@ -2193,13 +2231,40 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self.emit(f"ALUOP16O_{addr_reg} %A+B%+%AL%+%BL% %A+B%+%AH%+%BH%+%Cin% %A+B%+%AH%+%BH%", f"Add array offset in {index_reg} to address reg {addr_reg}, element size {element_size}")
 
     def _add_member_offset(self, member_var, addr_reg):
-        """Add struct member offset to address in addr_reg."""
+        """Add struct member offset to address in addr_reg.
+
+        Tiered optimization:
+        - offset 0: no-op
+        - offset 1-2 with struct_self_incr: ALUOP16O self-increment (pure win)
+        - offset 3-255 with struct_helpers: CALL helper with push/pop wrapper
+        - fallback: inline push/LDI/ALUOP16O/pop (original code)
+        """
         if addr_reg not in ('A', 'B',):
             raise ValueError("addr_reg must be A or B")
+        if member_var.offset == 0:
+            return
+
+        other_reg = 'B' if addr_reg == 'A' else 'A'
+
+        # Tier 1: Self-increment for small offsets (smaller AND faster than inline)
+        if member_var.offset <= 2 and self.context.use_struct_self_incr:
+            for _ in range(member_var.offset):
+                self.emit(
+                    f"ALUOP16O_{addr_reg} %{addr_reg}+1%+%{addr_reg}L% %{addr_reg}+1%+%{addr_reg}H% %{addr_reg}%+%{addr_reg}H%",
+                    f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            return
+
+        # Tier 2: CALL helper for medium offsets (saves 5B per call, 13c penalty)
+        if member_var.offset <= 255 and self.context.use_struct_helpers:
+            self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Save {other_reg}L before struct offset CALL")
+            self.emit(f"LDI_{other_reg}L {member_var.offset}", f"Add struct member {member_var.name} offset")
+            helper = f"__cc_add_off_p_{addr_reg}"
+            self.emit(f"CALL :{helper}", f"Add struct member {member_var.name} offset to address in {addr_reg}")
+            self.emit(f"POP_{other_reg}L", f"Restore {other_reg}L after struct offset CALL")
+            return
+
+        # Fallback: inline code (original implementation)
         if member_var.offset > 0:
-            other_reg = 'B'
-            if addr_reg == 'B':
-                other_reg='A'
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
             self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Add struct member {member_var.name} offset to address in {addr_reg}")
             self.emit(f"LDI_{other_reg} {member_var.offset}", f"Add struct member {member_var.name} offset to address in {addr_reg}")
@@ -2309,14 +2374,22 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             self._emit_bulk_store(var, lvalue_reg, rvalue_reg)
         else:
             if var.is_pointer or var.typespec.sizeof() == 2:
-                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}H%", f"Store to {var.friendly_name()}")
-                #           16-bit ALU op         low-op (stored to AL)            hi-op (if low-op overflowed)     hi-op (if low-op no overflow)
-                self.emit(f"ALUOP16O_{lvalue_reg} %{lvalue_reg}+1%+%{lvalue_reg}L% %{lvalue_reg}+1%+%{lvalue_reg}H% %{lvalue_reg}%+%{lvalue_reg}H%", f"Store to {var.friendly_name()}")
-                self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
-                #           16-bit ALU op         low-op (stored to AL)            hi-op (if low-op overflowed)     hi-op (if low-op no overflow)
-                self.emit(f"ALUOP16O_{lvalue_reg} %{lvalue_reg}-1%+%{lvalue_reg}L% %{lvalue_reg}-1%+%{lvalue_reg}H% %{lvalue_reg}%+%{lvalue_reg}H%", f"Store to {var.friendly_name()}")
+                if self.context.use_store_helpers:
+                    self.emit(f"CALL :__cc_store16_{rvalue_reg}{lvalue_reg}", f"Store to {var.friendly_name()}")
+                else:
+                    self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}H%", f"Store to {var.friendly_name()}")
+                    #           16-bit ALU op         low-op (stored to AL)            hi-op (if low-op overflowed)     hi-op (if low-op no overflow)
+                    self.emit(f"ALUOP16O_{lvalue_reg} %{lvalue_reg}+1%+%{lvalue_reg}L% %{lvalue_reg}+1%+%{lvalue_reg}H% %{lvalue_reg}%+%{lvalue_reg}H%", f"Store to {var.friendly_name()}")
+                    self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
+                    #           16-bit ALU op         low-op (stored to AL)            hi-op (if low-op overflowed)     hi-op (if low-op no overflow)
+                    self.emit(f"ALUOP16O_{lvalue_reg} %{lvalue_reg}-1%+%{lvalue_reg}L% %{lvalue_reg}-1%+%{lvalue_reg}H% %{lvalue_reg}%+%{lvalue_reg}H%", f"Store to {var.friendly_name()}")
             elif var.typespec.sizeof() == 1:
                 self.emit(f"ALUOP_ADDR_{lvalue_reg} %{rvalue_reg}%+%{rvalue_reg}L%", f"Store to {var.friendly_name()}")
             else:
                 raise NotImplementedError(f"_emit_store can't store simple values larger than 16 bit")
+
+    # Helper functions for rvalue/lvalue/store/struct-offset operations
+    # live in BIOS ROM (os/bios/lib/c_helpers.asm). The compiler just
+    # emits CALL :__cc_* instructions; the assembler resolves them via
+    # bios.sym. No per-binary helper generation is needed.
 
