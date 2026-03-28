@@ -126,8 +126,18 @@ ALUOP16O_A %ALU16_A+B%          # A = dirent + 0x1E (low word of filesize, BE)
 LDA_A_BH                        # BH = filesize low word high byte
 ALUOP16O_A %ALU16_A+1%
 LDA_A_BL                        # BL = filesize low word low byte
-ALUOP_BH %B>>1%+%BH%            # BH = sectors (filesize >> 9, + 1)
-ALUOP_BH %B+1%+%BH%
+# Compute sector count = ceil(filesize / 512).
+# Formula: if BL==0 (exact multiple of 256), decrement BH first
+# to implement (filesize-1)>>9 + 1 instead of filesize>>9 + 1.
+# This avoids over-reading by 1 sector for files that are exact
+# multiples of 512 bytes (which causes a hang when the file also
+# fills an exact number of clusters).
+ALUOP_FLAGS %B%+%BL%
+JNZ .mode1_no_borrow
+ALUOP_BH %B-1%+%BH%             # BL was 0, adjust for (filesize-1)
+.mode1_no_borrow
+ALUOP_BH %B>>1%+%BH%            # BH = adjusted_high >> 1
+ALUOP_BH %B+1%+%BH%             # +1 for ceiling division
 ALUOP_ADDR %B%+%BH% $fat16_readfile_total_sectors_remaining
 ALUOP_ADDR %B%+%BH% $fat16_readfile_original_limit
 
@@ -195,8 +205,13 @@ ALUOP16O_A %ALU16_A+B%          # A = dirent + 0x1E (low word of filesize, BE)
 LDA_A_BH                        # BH = filesize low word high byte
 ALUOP16O_A %ALU16_A+1%
 LDA_A_BL                        # BL = filesize low word low byte
-ALUOP_BH %B>>1%+%BH%            # BH = total file sectors
-ALUOP_BH %B+1%+%BH%
+# Compute sector count = ceil(filesize / 512) -- see Mode 1 for details
+ALUOP_FLAGS %B%+%BL%
+JNZ .mode2_no_borrow
+ALUOP_BH %B-1%+%BH%             # BL was 0, adjust for (filesize-1)
+.mode2_no_borrow
+ALUOP_BH %B>>1%+%BH%            # BH = adjusted_high >> 1
+ALUOP_BH %B+1%+%BH%             # +1 for ceiling division
 
 # Save total file sectors into state->file_sectors_remaining (offset 0x0A-0x0B)
 LD_DH $fat16_readfile_state_ptr
