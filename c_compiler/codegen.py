@@ -2179,14 +2179,24 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 for _ in range(one):
                     self.emit(f"{'DECR' if var.offset > 0 else 'INCR'}_D", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
             elif self.context.use_lval_helpers:
-                # Use CALL helper for big offsets (>= 10)
+                # Use CALL helper for big offsets (>= 10).
+                # Must save/restore other_reg since LDI clobbers it
+                # and callers expect it preserved (e.g. UnaryOp stores
+                # the rvalue in other_reg while computing the lvalue).
                 if var.offset > 0:
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                     self.emit(f"LDI_{other_reg}L {var.offset}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                     helper = f"__cc_lval_p_{dest_reg}"
+                    self.emit(f"CALL :{helper}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                    self.emit(f"POP_{other_reg}L", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                 else:
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                    self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}H%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                     self.emit(f"LDI_{other_reg} {var.offset}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
                     helper = f"__cc_lval_n_{dest_reg}"
-                self.emit(f"CALL :{helper}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                    self.emit(f"CALL :{helper}", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                    self.emit(f"POP_{other_reg}H", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
+                    self.emit(f"POP_{other_reg}L", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
             else:
                 # Inline big-offset path (original code)
                 self.emit(f"ALUOP_PUSH %{other_reg}%+%{other_reg}L%", f"Load base address of {var.name} at offset {var.offset} into {dest_reg}")
