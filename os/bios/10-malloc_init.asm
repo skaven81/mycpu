@@ -6,12 +6,12 @@ CALL :extmalloc_init
 
 # Initialize main memory allocation
 LDI_A 0x6000
-LDI_BL 160   # 160 128 byte segments = 20KiB
+LDI_BL 190   # 190 128 byte segments =~ 24KiB
 CALL :malloc_init
 LDI_C .malloc_init_banner
-LDI_A 0xb000-0x6000
+LDI_A 0xbf00-0x6000
 CALL :heap_push_A
-LDI_A 0xafff
+LDI_A 0xbeff
 CALL :heap_push_AL
 CALL :heap_push_AH
 LDI_A 0x6000

@@ -74,8 +74,8 @@ LD_SLOW_PUSH %uart_rbr%
 POP_TD
 
 # initialize uart buffer pointer
-ST16 $uart_buf_ptr_write 0xbd00
-ST16 $uart_buf_ptr_read 0xbd00
+ST16 $uart_buf_ptr_write 0xcb00
+ST16 $uart_buf_ptr_read 0xcb00
 
 RET
 

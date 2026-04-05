@@ -86,8 +86,8 @@
 # Inputs:
 #  A:  address of the beginning of the range
 #  BL: number of 128 byte segments to allocate. Max is 254, which allocates just under 32KiB.
-#      But there is only ~20KiB of free RAM in main memory so in practical terms, 158 is
-#      likely the largest value that should be used.
+#      But there is only ~24KiB of free RAM in main memory so this will never be fully
+#      utilized.
 #
 # Output:
 #  none; A and BL unchanged

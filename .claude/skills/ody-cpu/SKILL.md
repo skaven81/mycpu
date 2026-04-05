@@ -109,12 +109,12 @@ Two separate LIFO structures:
 - `ALUOP_PUSH %A%+%AL%` / `POP_AL` save/restore A/B registers
 - `PUSH_CH` / `POP_CH` save/restore C/D half-registers
 
-**Software Heap (0xB000-0xB9FF, 2.5 KiB)** -- parameter passing between functions:
+**Software Heap (0xF000-0xFFEF, ~4 KiB)** -- parameter passing between functions:
 - `:heap_push_AL`, `:heap_push_A`, `:heap_push_D` -- push args before calling
 - `:heap_pop_AL`, `:heap_pop_A` -- pop results after calling
 - `:heap_push_all` / `:heap_pop_all` -- bulk save/restore all register pairs
 - `:heap_advance_AL` / `:heap_retreat_AL` -- allocate/deallocate frames (C compiler)
-- Grows upward from 0xB000. Pointer in `$heap_ptr`.
+- Grows upward from 0xF000. Pointer in `$heap_ptr`.
 
 ## Calling Convention
 

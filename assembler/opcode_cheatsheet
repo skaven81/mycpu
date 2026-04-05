@@ -162,17 +162,16 @@ STATUS_{AL,BL}
 0x5000 - 0x5eff framebuffer color
 0x5f00 - 0x5f0f interrupt addresses
 0x5f10 - 0x5fff hidden framebuffer (global asm vars)
-0x6000 - 0xafff ~20k RAM (see lib/malloc.asm)
-0xb000 - 0xb9ff 2.5k heap (lib/heap.asm) for parameters and local vars
-0xba00 - 0xbcff 768b global asm arrays
-0xbd00 - 0xbdff 256b UART buffer (lib/uart.asm)
-0xbe00 - 0xbeff 256b keyboard buffer (lib/keyboard.asm)
+0x6000 - 0xbeff ~24k RAM (see lib/malloc.asm)
 0xbf00 - 0xbfff 256b CPU stack
 0xc000 - 0xc7ff peripherals
-0xc800 - 0xcfff exp RAM (2k)
+0xc800 - 0xcaff exp RAM 768b global asm arrays
+0xcb00 - 0xcbff exp RAM 256b UART buffer (lib/uart.asm)
+0xcc00 - 0xccff exp RAM 256b keyboard buffer (lib/keyboard.asm)
+0xcd00 - 0xcfff exp RAM 768b free
 0xd000 - 0xdfff ext RAM D-page window (4k)
 0xe000 - 0xefff ext RAM E-page window (4k)
-0xf000 - 0xffef exp RAM (~4k)
+0xf000 - 0xffef exp RAM (~4k) heap (lib/heap.asm) for parameters and local vars
 0xfff0 - 0xfffe unallocated
          0xffff reserved (idle bus) 
 
@@ -207,6 +206,16 @@ STATUS_{AL,BL}
 0xc200 - 0xc2ff extended RAM control
     0xc2x0 (any even 0xc2) - Page address for 0xdxxx
     0xc2x1 (any odd 0xc2)  - Page address for 0xexxx
+0xc300 - 0xc3ff ATA port
+    0xc300 - ata_data
+    0xc310 - ata_lowreg
+    0xc301 - ata_err
+    0xc302 - ata_numsec
+    0xc303 - ata_lba0
+    0xc304 - ata_lba1
+    0xc305 - ata_lba2
+    0xc306 - ata_lba3
+    0xc307 - ata_cmd_stat
 
 # Extended memory zero-page allocation
 0x[de]000 - 0x[de]7ff malloc ledger

@@ -67,14 +67,14 @@ LD_AL $exec_dirent_ptr+1
 ST $exec_dirent_ptr   0x00
 ST $exec_dirent_ptr+1 0x00
 
-# Validate the IPC dirent pointer: valid malloc range is 0x6000-0xAFFF,
-# meaning AH must be in 0x60..0xAF.
+# Validate the IPC dirent pointer: valid malloc range is 0x6000-0xBEFF,
+# meaning AH must be in 0x60..0xBE.
 # Check 1: AH < 0x60 -> fallback (O=1 means underflow = AH too small)
 LDI_BH 0x60
 ALUOP_FLAGS %A-B%+%AH%+%BH%
 JO .exec_loop_fallback
-# Check 2: AH > 0xAF -> fallback (O=1 means underflow = 0xAF - AH < 0)
-LDI_BH 0xAF
+# Check 2: AH > 0xBE -> fallback (O=1 means underflow = 0xBE - AH < 0)
+LDI_BH 0xBE
 ALUOP_FLAGS %B-A%+%BH%+%AH%
 JO .exec_loop_fallback
 
@@ -211,7 +211,7 @@ ALUOP_DL %A%+%AL%               # D = dirent_ptr
 ST_CH $current_fs_handle_ptr
 ST_CL $current_fs_handle_ptr+1
 # Restore user's drive selection if one was set before the fallback search.
-# Valid fs_handle addresses are 0xBAxx-0xBCxx (global arrays region), so a
+# Valid fs_handle addresses are 0xC8xx-0xCAxx (global arrays region), so a
 # saved high byte of 0x00 means the pointer was uninitialized (cold boot).
 LD_AH $exec_loop_saved_fsh_ptr
 LD_AL $exec_loop_saved_fsh_ptr+1
@@ -430,10 +430,10 @@ CALL_D
 # Pop return code pushed by the program before it returned (required by ABI)
 CALL :heap_pop_A                # A = return code (currently ignored)
 
-# Check heap resilience: $heap_ptr high byte must be >= 0xB0 (heap region starts at 0xB000)
+# Check heap resilience: $heap_ptr high byte must be >= 0xF0 (heap region starts at 0xF000)
 LD_AH $heap_ptr
-LDI_BH 0xB0
-ALUOP_FLAGS %A-B%+%AH%+%BH%    # AH - 0xB0; O=1 if AH < 0xB0 (underflow)
+LDI_BH 0xF0
+ALUOP_FLAGS %A-B%+%AH%+%BH%    # AH - 0xF0; O=1 if AH < 0xF0 (underflow)
 JNO .exec_heap_ok
 
 # Heap underflow: warn and reinitialize

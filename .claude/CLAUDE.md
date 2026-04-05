@@ -126,9 +126,9 @@ For the full memory map, peripheral addresses, interrupt vectors, video system d
 ## Constraints Summary
 
 - **ROM**: 16 KiB, ~12 KiB used
-- **CPU stack**: 256 bytes -- deep recursion dangerous
-- **Heap**: 2.5 KiB -- C frames + asm parameter passing
-- **RAM**: ~20 KiB (0x6000-0xAFFF) for malloc/ODY executables
+- **CPU stack**: 256 bytes (0xBF00-0xBFFF) -- deep recursion dangerous
+- **Heap**: ~4 KiB (0xF000-0xFFEF) -- C frames + asm parameter passing
+- **RAM**: ~24 KiB (0x6000-0xBEFF) for malloc/ODY executables
 - **No linker**: assembler concatenates all source files as one unit
 - **A/B write to bus through ALU only**: use identity op to copy out. MOV instructions exist for C/D -> A/B direction only.
 - **No CMP instruction**: compare via `ALUOP_FLAGS %A-B%`. O=1 means A < B (underflow), O=0 means A >= B.

@@ -15,16 +15,18 @@ version: 1.0.0
 0x5000-0x5EFF  Framebuffer color (1 byte/char)
 0x5F00-0x5F0F  Interrupt vector table (8 x 16-bit)
 0x5F10-0x5FFF  Hidden framebuffer (global variables)
-0x6000-0xAFFF  ~20 KiB dynamic RAM (malloc region)
-0xB000-0xB9FF  2.5 KiB heap/software stack
-0xBA00-0xBCFF  768 bytes global assembly arrays
-0xBD00-0xBDFF  256 bytes UART circular buffer
-0xBE00-0xBEFF  256 bytes keyboard circular buffer
+0x6000-0xBEFF  ~24 KiB dynamic RAM (malloc region)
 0xBF00-0xBFFF  256 bytes CPU hardware stack
-0xC000-0xCFFF  Peripheral registers (memory-mapped I/O)
+0xC000-0xC7FF  Peripheral registers (memory-mapped I/O)
+0xC800-0xCAFF  768 bytes expanded RAM global assembly arrays
+0xCB00-0xCBFF  256 bytes expanded RAM UART circular buffer
+0xCC00-0xCCFF  256 bytes expanded RAM keyboard circular buffer
+0xCD00-0xCFFF  768 bytes expanded RAM (free/future use)
 0xD000-0xDFFF  Extended RAM D-page window (4 KiB)
 0xE000-0xEFFF  Extended RAM E-page window (4 KiB)
-0xF000-0xFFFF  Unallocated (0xFFFF reserved/idle bus)
+0xF000-0xFFEF  ~4 KiB expanded RAM heap/software stack
+0xFFF0-0xFFFE  Unallocated
+0xFFFF          Reserved (idle bus)
 ```
 
 ## Peripherals

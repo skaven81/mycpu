@@ -203,7 +203,7 @@ concat_source = [ ]
 global_vars = { }
 global_arrays = { }
 next_global_var = 0x4f00 # hidden framebuffer, 256 bytes, when full goes to 0x5f10 (more hidden framebuffer)
-next_global_array = 0xbcff
+next_global_array = 0xcaff
 global_static_local_init_labels = []
 
 # If we are importing a symbol table, read that and update vars and arrays
@@ -278,7 +278,7 @@ for input_file in args.sources:
                 else:
                     next_global_array -= int(match['size'])
                     global_arrays[match['var']] = next_global_array + 1
-                    assert 0xba00 <= next_global_array <= 0xbcff
+                    assert 0xc800 <= next_global_array <= 0xcaff
                 # If we have filled up the first global var range, roll to the next one
                 if match['size'] in ('byte', 'word','dword',):
                     if next_global_var <= 0x4fff:

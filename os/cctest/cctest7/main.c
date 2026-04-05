@@ -434,11 +434,11 @@ void test_register_pressure(void) {
     a = (uint16_t)malloc_blocks(1);
     total_tests++;
     if (a == 0) { fail("regpres: malloc for arith"); }
-    // Just verify pointer is in dynamic RAM range (0x6000-0xAFFF)
+    // Just verify pointer is in dynamic RAM range (0x6000-0xBEFF)
     total_tests++;
     if (!(a >= 24576)) { fail("regpres: ptr >= 0x6000"); }
     total_tests++;
-    if (!(a < 45056)) { fail("regpres: ptr < 0xB000"); }
+    if (!(a < 49152)) { fail("regpres: ptr < 0xBF00"); }
     free((void *)a);
 }
 

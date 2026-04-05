@@ -11,8 +11,8 @@
 MASKINT                 # Don't process interrupts until we're ready
 
 # initialize keyboard buffer pointer
-ST16 $kb_buf_ptr_write 0xbe00
-ST16 $kb_buf_ptr_read 0xbe00
+ST16 $kb_buf_ptr_write 0xcc00
+ST16 $kb_buf_ptr_read 0xcc00
 
 PUSH_DH
 PUSH_DL

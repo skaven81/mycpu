@@ -1,3 +1,31 @@
+2026-04-04: Expanded RAM addition
+=================================
+
+Added an AS7C164A 8Kx8 static RAM chip to the video card board.  Unlike the
+extended RAM which requires window registers and page management, this chip
+connects directly to the address and data buses and appears as ordinary flat
+RAM in two regions of the address space: 2KB at 0xC800-0xCFFF (in the
+peripheral decode space, previously unused) and ~4KB at 0xF000-0xFFEF (above
+the extended RAM windows, stopping short of 0xFFFF which is reserved as the
+idle bus address).
+
+With the new chip in place, the old 0xB000-0xBEFF region that was carved up
+for the heap, UART buffer, keyboard buffer, and global assembly arrays is now
+part of the contiguous malloc range.  The buffers and heap were relocated to
+the new expanded RAM:
+
+  * Software heap: 0xB000-0xB9FF (2.5KB) -> 0xF000-0xFFEF (~4KB)
+  * UART circular buffer: 0xBD00 -> 0xCB00
+  * Keyboard circular buffer: 0xBE00 -> 0xCC00
+  * Global assembly arrays: 0xBA00-0xBCFF -> 0xC800-0xCAFF
+  * Free expanded RAM reserved for future use: 0xCD00-0xCFFF
+
+The malloc range consequently grew from 0x6000-0xAFFF (~20KB) to
+0x6000-0xBEFF (~24KB) -- about 4KB of additional malloc space for user
+programs and the OS.  The BIOS and assembler were updated to use the new
+base addresses throughout.
+
+
 2026-03-20: Reorganize cctest suite into os/cctest/ with automatic chaining (claude)
 =====================================================================================
 

@@ -51,7 +51,7 @@ All instructions are left-justified in actual code. Indentation above is for rea
 - **Hardware bulk ops**: `MEMCPY_C_D`, `MEMCPY4_C_D`, `MEMFILL4_C_PEEK`, `MEMFILL4_C_I` auto-increment C (and D for copies).
 - **JMP for tail calls**: preserves caller's return address on stack.
 - **MASKINT/UMASKINT**: required around transfer register (TAH/TAL/TD) use, since interrupts clobber them. Heap functions do this internally.
-- **256-byte circular buffers**: keyboard (0xBE00) and UART (0xBD00) -- only low byte of pointers changes for natural wraparound.
+- **256-byte circular buffers**: keyboard (0xCC00) and UART (0xCB00) -- only low byte of pointers changes for natural wraparound.
 - **Display memory is directly manipulated**: terminal input works on display memory, not a separate buffer. `:cursor_mark_getstring` copies from display to buffer.
 - **Timer values are BCD**: DS1511Y RTC uses BCD (0x75 = 75, not 117).
 - **Shared error labels**: related functions share error-exit labels when stack frames match.
