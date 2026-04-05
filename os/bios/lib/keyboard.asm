@@ -5,44 +5,35 @@
 #####
 
 ######
-# Initializes the keyboard by waiting 750ms and then
-# clearing any keyboard interrupts.
+# Flush the keyboard buffer by resetting both read and write
+# pointers to 0xcc00, discarding any buffered keystrokes.
+:kb_flush
+ST16 $kb_buf_ptr_write 0xcc00
+ST16 $kb_buf_ptr_read 0xcc00
+RET
+
+######
+# Initializes the keyboard by flushing the buffer, waiting 750ms
+# for the hardware to settle, then flushing again to discard any
+# spurious keystrokes during the pause.  IRQ1 must already be set
+# to :kb_irq_buf before calling this function.  After this returns,
+# the buffer is clean and keystroke buffering is active.
 :keyboard_init
 MASKINT                 # Don't process interrupts until we're ready
 
-# initialize keyboard buffer pointer
-ST16 $kb_buf_ptr_write 0xcc00
-ST16 $kb_buf_ptr_read 0xcc00
+# Flush buffer before the pause
+CALL :kb_flush
 
-PUSH_DH
-PUSH_DL
-ALUOP_PUSH %A%+%AL%
-
-# Save the current IRQ1 address
-LD_DH   %IRQ1addr%
-LD_DL   %IRQ1addr%+1
-PUSH_DH
-PUSH_DL
-
-# Set up IRQ1 to use our handler
-ST16    %IRQ1addr%  :kb_clear_irq
-
-# Pause for 0.75 sec
+# Pause for 0.75 sec to let the keyboard hardware settle
 LDI_AH  0x00    # BCD, seconds
 CALL :heap_push_AH
 LDI_AH  0x75    # BCD, subseconds
 CALL :heap_push_AH
-CALL :sleep     # Sleep for 0.75 sec
+CALL :sleep     # Sleep for 0.75 sec (ends with UMASKINT)
 
-# Restore IRQ1 address
-POP_DL
-POP_DH
-ST_DH   %IRQ1addr%
-ST_DL   %IRQ1addr%+1
+# Flush again to discard any spurious keystrokes during the pause
+CALL :kb_flush
 
-POP_AL
-POP_DL
-POP_DH
 RET
 
 

@@ -27,15 +27,6 @@
 :input
 CALL :heap_push_all
 
-MASKINT
-LD_CH %IRQ1addr%
-LD_CL %IRQ1addr%+1
-PUSH_CH                         # save the current IRQ1 vector
-PUSH_CL
-LD_TD  %kb_key%                 # clear any pending KB interrupt
-ST16 %IRQ1addr%  :kb_irq_buf    # use buffered keyboard input
-UMASKINT
-
 # Store our current cursor position at mark 0 and mark 1
 LDI_AL 0
 CALL :cursor_save_mark
@@ -323,14 +314,5 @@ CALL :cursor_mark_right
 JMP .input_loop
 
 .input_done
-
-# Restore IRQ1 vector
-MASKINT
-POP_CL
-POP_CH
-ST_CH   %IRQ1addr%
-ST_CL   %IRQ1addr%+1
-UMASKINT
-
 CALL :heap_pop_all
 RET

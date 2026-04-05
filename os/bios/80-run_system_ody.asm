@@ -58,6 +58,9 @@ ST $exec_argv_ptr+1 0x00
 # Main exec loop - jump target for every loop iteration
 ###
 :exec_loop_top
+# Ensure interrupts are always enabled at the start of each exec iteration.
+# This is the boundary where normal (interrupts-on) program execution begins.
+UMASKINT
 # Reset the heap to a clean slate before anything else this iteration
 CALL :heap_init
 

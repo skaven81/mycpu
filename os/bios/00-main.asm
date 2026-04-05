@@ -5,7 +5,7 @@ NOP
 # Install default IRQ handlers.
 MASKINT
 ST16    %IRQ0addr%  .noirq
-ST16    %IRQ1addr%  :kb_clear_irq
+ST16    %IRQ1addr%  :kb_irq_buf
 ST16    %IRQ2addr%  .noirq
 ST16    %IRQ3addr%  :timer_clear_irq
 ST16    %IRQ4addr%  :uart_clear_usr_msr
