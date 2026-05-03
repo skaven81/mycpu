@@ -216,6 +216,15 @@ STATUS_{AL,BL}
     0xc305 - ata_lba2
     0xc306 - ata_lba3
     0xc307 - ata_cmd_stat
+0xc400 - 0xc4ff Programmable Timer
+    0xc408 - clear timer2 interrupt (only addr assertion needed)
+    0xc410 - clear timer1 interrupt (only addr assertion needed)
+    0xc420 - clear timer0 interrupt (only addr assertion needed)
+    0xc440 - clock select (00=1.8432MHz, 01=32kHz, 10=1.000MHz, 11=system clock) [xx t2 t1 t0]
+    0xc480 - counter0
+    0xc481 - counter1
+    0xc482 - counter2
+    0xc483 - control/read-back
 
 # Extended memory zero-page allocation
 0x[de]000 - 0x[de]7ff malloc ledger
@@ -229,8 +238,8 @@ left one place (so a 16-bit address can be placed at each location):
 
  * IRQ0 0x5f00
  * IRQ1 0x5f02 - keyboard
- * IRQ2 0x5f04
- * IRQ3 0x5f06 - timer
+ * IRQ2 0x5f04 - Programmable timer
+ * IRQ3 0x5f06 - RTC timer
  * IRQ4 0x5f08 - UART modem interrupt
  * IRQ5 0x5f0a - UART data ready
  * IRQ6 0x5f0c

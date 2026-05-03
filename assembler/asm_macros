@@ -328,3 +328,97 @@
 %ata_stat_rdy%          0x40 # ready for command
 %ata_stat_busy%         0x80 # controller is busy executing command
 
+
+
+
+######################
+### Programmable timer
+######################
+
+%ptmr_base%             0xC400   # base: IRQ clear only, no other effect
+%ptmr_base_ctrl%        0xC480   # base: 82C54 register access (A7)
+%ptmr_base_clksel%      0xC440   # base: clock mux register (A6)
+
+# Address offsets for clearing IRQ latches: add to a base address above
+# for interleaved clearing behavior.
+%ptmr_clr_t0%           0x0020   # A5: clear Timer 0 IRQ latch
+%ptmr_clr_t1%           0x0010   # A4: clear Timer 1 IRQ latch
+%ptmr_clr_t2%           0x0008   # A3: clear Timer 2 IRQ latch
+%ptmr_clr_all%          0x0038   # A5|A4|A3: clear all IRQ latches
+
+# Composed addresses
+
+# 82C54 register access (no IRQ clear)
+%ptmr_counter0%         0xc480
+%ptmr_counter1%         0xc481
+%ptmr_counter2%         0xc482
+%ptmr_ctrl_write%       0xc483
+%ptmr_ctrl_read%        0xc483
+%ptmr_clk_sel%          0xc440
+
+# IRQ clear only (no 82C54 access)
+%ptmr_clr_t0_irq%       0xc420 # %ptmr_base%+%ptmr_clr_t0%
+%ptmr_clr_t1_irq%       0xc410 # %ptmr_base%+%ptmr_clr_t1%
+%ptmr_clr_t2_irq%       0xc408 # %ptmr_base%+%ptmr_clr_t2%
+%ptmr_clr_all_irq%      0xc438 # %ptmr_base%+%ptmr_clr_all%
+
+# Combined 82C54 counter access + matching IRQ latch clear
+%ptmr_counter0_clr_t0%  0xc4a0 # %ptmr_base_ctrl%+0x00+%ptmr_clr_t0%
+%ptmr_counter1_clr_t1%  0xc491 # %ptmr_base_ctrl%+0x01+%ptmr_clr_t1%
+%ptmr_counter2_clr_t2%  0xc48a # %ptmr_base_ctrl%+0x02+%ptmr_clr_t2%
+
+### Clock Source Selection Bytes
+
+# OR together one value per timer and write to `%ptmr_clk_sel%`.
+%ptmr_clk_tmr0_18M%     0b00000000   # Timer 0: 1.8432 MHz
+%ptmr_clk_tmr0_32k%     0b00000001   # Timer 0: 32.768 kHz
+%ptmr_clk_tmr0_10M%     0b00000010   # Timer 0: 1.000 MHz
+%ptmr_clk_tmr0_sys%     0b00000011   # Timer 0: system clock
+%ptmr_clk_tmr1_18M%     0b00000000   # Timer 1: 1.8432 MHz
+%ptmr_clk_tmr1_32k%     0b00000100   # Timer 1: 32.768 kHz
+%ptmr_clk_tmr1_10M%     0b00001000   # Timer 1: 1.000 MHz
+%ptmr_clk_tmr1_sys%     0b00001100   # Timer 1: system clock
+%ptmr_clk_tmr2_18M%     0b00000000   # Timer 2: 1.8432 MHz
+%ptmr_clk_tmr2_32k%     0b00010000   # Timer 2: 32.768 kHz
+%ptmr_clk_tmr2_10M%     0b00100000   # Timer 2: 1.000 MHz
+%ptmr_clk_tmr2_sys%     0b00110000   # Timer 2: system clock
+
+### Composed Control Words
+
+# OR together one macro from each section to build up a control word
+
+# Counter select (bits 7:6) -- combine with RW and mode fields
+%ptmr_cw_sel_t0%        0b00000000   # SC=00, Counter 0
+%ptmr_cw_sel_t1%        0b01000000   # SC=01, Counter 1
+%ptmr_cw_sel_t2%        0b10000000   # SC=10, Counter 2
+
+# Latch command (RW=00) -- OR with counter select to latch that counter
+%ptmr_cw_latch%         0b00000000   # RW=00, Counter Latch Command
+
+# Full control words: counter select | RW=11 (LSB+MSB) | mode | binary
+%ptmr_cw_t0_mode0%      0b00110000   # Counter 0, Mode 0, LSB+MSB, binary
+%ptmr_cw_t1_mode0%      0b01110000   # Counter 1, Mode 0, LSB+MSB, binary
+%ptmr_cw_t2_mode0%      0b10110000   # Counter 2, Mode 0, LSB+MSB, binary
+%ptmr_cw_t0_mode2%      0b00110100   # Counter 0, Mode 2, LSB+MSB, binary
+%ptmr_cw_t1_mode2%      0b01110100   # Counter 1, Mode 2, LSB+MSB, binary
+%ptmr_cw_t2_mode2%      0b10110100   # Counter 2, Mode 2, LSB+MSB, binary
+%ptmr_cw_t0_mode0_lo%   0b00010000   # Counter 0, Mode 0, LSB only, binary
+%ptmr_cw_t1_mode0_lo%   0b01010000   # Counter 1, Mode 0, LSB only, binary
+%ptmr_cw_t2_mode0_lo%   0b10010000   # Counter 2, Mode 0, LSB only, binary
+
+### Read-Back Commands
+
+%ptmr_rb_status_all%    0b11101110   # latch status, all three counters
+%ptmr_rb_both_all%      0b11001110   # latch count+status, all counters
+%ptmr_rb_status_t0%     0b11100010   # latch status, Timer 0 only
+%ptmr_rb_status_t1%     0b11100100   # latch status, Timer 1 only
+%ptmr_rb_status_t2%     0b11101000   # latch status, Timer 2 only
+
+### Status Byte Masks
+
+%ptmr_stat_out%         0b10000000   # D7: OUT pin state
+%ptmr_stat_nullcnt%     0b01000000   # D6: count not yet loaded
+%ptmr_stat_mode_mask%   0b00001110   # D3:D1: programmed mode
+%ptmr_stat_mode0%       0b00000000   # mode field value for Mode 0
+%ptmr_stat_mode2%       0b00000100   # mode field value for Mode 2
+
