@@ -184,7 +184,9 @@ RET
 .cmd_040 "help\0"           .print_help
 .cmd_050 "mount\0"          :cmd_mount
 .cmd_060 "peek\0"           :cmd_peek
+.cmd_061 "fpeek\0"          :cmd_fpeek
 .cmd_070 "poke\0"           :cmd_poke
+.cmd_071 "fpoke\0"          :cmd_fpoke
 .cmd_080 "ascii\0"         :cmd_ascii
 .cmd_090 "clock\0"         :cmd_clock
 .cmd_100 "colors\0"        :cmd_colors
