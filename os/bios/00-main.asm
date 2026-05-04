@@ -6,12 +6,17 @@ NOP
 MASKINT
 ST16    %IRQ0addr%  .noirq
 ST16    %IRQ1addr%  :kb_irq_buf
-ST16    %IRQ2addr%  .noirq
+ST16    %IRQ2addr%  :ptmr_isr
 ST16    %IRQ3addr%  :timer_clear_irq
 ST16    %IRQ4addr%  :uart_clear_usr_msr
 ST16    %IRQ5addr%  :uart_clear_dr
 ST16    %IRQ6addr%  .noirq
 ST16    %IRQ7addr%  .noirq
+
+# Initialize the programmable timer. The :ptmr_isr has its
+# own handler addresses that need to be set before we
+# unmask interrupts.
+CALL :ptmr_init
 
 # Initialize the heap - this is needed for most commands to work (including :print)
 CALL :heap_init
