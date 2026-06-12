@@ -217,6 +217,7 @@ STATUS_{AL,BL}
     0xc306 - ata_lba3
     0xc307 - ata_cmd_stat
 0xc400 - 0xc4ff Programmable Timer
+    0xc404 - timer OUT latch (D7=timer2, D6=timer1, D5=timer0)
     0xc408 - clear timer2 interrupt (only addr assertion needed)
     0xc410 - clear timer1 interrupt (only addr assertion needed)
     0xc420 - clear timer0 interrupt (only addr assertion needed)
@@ -236,14 +237,14 @@ of interrupts, IRQ handler addresses must be loaded into the following memory
 locations.  The first byte is 0x5f, the second byte is the IRQ number, shifted
 left one place (so a 16-bit address can be placed at each location):
 
- * IRQ0 0x5f00
+ * IRQ0 0x5f00 (highest priority)
  * IRQ1 0x5f02 - keyboard
  * IRQ2 0x5f04 - Programmable timer
  * IRQ3 0x5f06 - RTC timer
  * IRQ4 0x5f08 - UART modem interrupt
  * IRQ5 0x5f0a - UART data ready
  * IRQ6 0x5f0c
- * IRQ7 0x5f0e
+ * IRQ7 0x5f0e (lowest priority)
 
 The IRQ opcode saves the PC onto the stack, then loads 0x5f into DH and the
 IRQ ID (shifted left) into DL.  This address is loaded into PCH.  Then D is

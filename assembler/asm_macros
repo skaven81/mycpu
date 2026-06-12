@@ -348,6 +348,9 @@
 
 # Composed addresses
 
+# Timer OUT IRQ latch status (D7=timer2, D6=timer1, D5=timer0)
+%ptmr_irqlatch%         0xc404
+
 # 82C54 register access (no IRQ clear)
 %ptmr_counter0%         0xc480
 %ptmr_counter1%         0xc481

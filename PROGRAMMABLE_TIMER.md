@@ -27,6 +27,7 @@ The timer is intended for three primary use cases:
 
 | Address | Macro | R/W | Description |
 |---------|-------|-----|-------------|
+| `0xC404` | `%ptmr_irqlatch%` |  R   | Timer IRQ latch readout (MSB=timer2, D6=timer1, D5=timer0) |
 | `0xC480` | `%ptmr_counter0%` | R/W | 82C54 Counter 0 |
 | `0xC481` | `%ptmr_counter1%` | R/W | 82C54 Counter 1 |
 | `0xC482` | `%ptmr_counter2%` | R/W | 82C54 Counter 2 |
@@ -39,13 +40,13 @@ The timer is intended for three primary use cases:
 | `0xC4A0` | `%ptmr_counter0_clr_t0%` | W | 82C54 Counter 0 + clear Timer 0 IRQ latch |
 | `0xC491` | `%ptmr_counter1_clr_t1%` | W | 82C54 Counter 1 + clear Timer 1 IRQ latch |
 | `0xC48A` | `%ptmr_counter2_clr_t2%` | W | 82C54 Counter 2 + clear Timer 2 IRQ latch |
-| `0xC4BB` | `%ptmr_isr_fastpath%` | W | 82C54 Control Word + clear all IRQ latches |
 
 IRQ clear bits are decoded directly from address lines A5 (Timer 0), A4 (Timer
 1), and A3 (Timer 2) within the `0xC400-0xC4FF` page. These bits are additive
 offsets that may be combined with any other address in the page. Any
-combination of clear bits may be asserted in a single bus cycle. The data value
-written is always ignored for IRQ latch clears; only the address lines matter.
+combination of clear bits may be asserted in a single bus cycle. The clear is
+triggered by the address lines alone; the bus cycle direction does not matter
+(a `LD_TD` is just as effective as a `ST`) and any data on the bus is ignored.
 
 ---
 
@@ -99,9 +100,8 @@ The ISR must be written to handle the case where a second timer fires
 during execution of the handler for a first timer. The correct pattern
 is:
 
-1. On ISR entry, issue a Read-Back status command to latch the current
-   OUT state of all three counters.
-2. Inspect the latched status bytes to determine which timers were
+1. On ISR entry, read the IRQ latch status (0xC404)
+2. Inspect the latched status bits to determine which timers were
    active *at ISR entry*.
 3. Clear the IRQ latches **only for those timers that were observed
    active**. Do not clear latches for timers whose OUT bit was not set.
@@ -110,10 +110,10 @@ is:
    still set, `/IRQ2` remains asserted, and the CPU re-enters the ISR
    immediately.
 
-**Clearing a latch that was not observed active risks silently dropping
-an interrupt.** If Timer 1 fires between when its status byte is read
-(OUT=0) and when an indiscriminate "clear all" is issued, that firing
-is lost. Per-timer conditional clearing is the only safe pattern.
+**Clearing a latch that was not observed active risks silently dropping an
+interrupt.** If Timer 1 fires between when the IRQ latch status byte is read
+and when an indiscriminate "clear all" is issued, that firing is lost.
+Per-timer conditional clearing is the only safe pattern.
 
 ---
 
@@ -248,20 +248,22 @@ RW=11).
 | D6 (NULLCNT)  | 1 = written count not yet transferred to counting element. |
 | D5:D0         | Programmed mode, as written in last control word. |
 
-`OUT` (D7) is the MSB. After loading the status byte into a register,
-use `ALUOP_FLAGS %Amsb%+%AL%` (or `%Bmsb%+%BL%`) to test this bit
-without requiring a mask value in a peer register. Z=0 indicates the
-timer fired; Z=1 indicates it did not.
+`OUT` (D7) is not a reliable way of determining which timer fired to enter the ISR.
+Instead, use the IRQ latch read-back byte at 0xC404. This reads out the state of the
+IRQ latch flip-flops directly, avoiding issues with e.g. mode 2 timers resetting the
+state of OUT to low before the ISR has a chance to read-out the status byte.
 
 ---
 
 ## IRQ Latch Clear Interleaving
 
-Because IRQ latch clear bits are decoded directly from address lines
-A5, A4, and A3 independently of all other address decoding, any bus
-cycle in the `0xC400-0xC4FF` page can simultaneously clear one or more
-IRQ latches at no extra cost. The clear offset macros are designed to
-be added to any other PTMR address:
+Because IRQ latch clear bits are decoded directly from address lines A5, A4,
+and A3 independently of all other address decoding, any read or write bus cycle
+in the `0xC400-0xC4FF` page can simultaneously clear one or more IRQ latches at
+no extra cost. When no other access is needed, `LD_TD %ptmr_clr_tN_irq%` (5
+cycles, TD is volatile and discarded) is the cheapest standalone latch clear --
+one cycle faster than `ST %ptmr_clr_tN_irq% 0x00`. The clear offset macros are
+designed to be added to any other PTMR address:
 
 | Macro            | Value    | IRQ latches cleared |
 |------------------|----------|---------------------|
@@ -280,306 +282,25 @@ Combined-operation addresses with their macros:
 | `0xC478` | `%ptmr_clk_sel%+%ptmr_clr_all%` | Clock mux register + clear all IRQ latches |
 | `0xC438` | `%ptmr_clr_all_irq%`            | Clear all IRQ latches, no other effect |
 
-`%ptmr_isr_fastpath%` (`0xC4BB`) is useful when an ISR can safely clear
-all three latches unconditionally -- for example when only one timer is
-active and re-entry within a single ISR execution is impossible. Writing
-a Read-Back status command to this address simultaneously latches the
-status of all three counters and clears all three IRQ flip-flops in one
-bus cycle:
-
-```asm
-ST %ptmr_isr_fastpath% %ptmr_rb_status_all%
-```
-
-For ISRs where multiple timers may be active simultaneously, use the
-per-timer conditional clear pattern in the ISR example below: read all
-status bytes first, then clear only latches for timers observed active.
-This prevents clearing a latch for a timer that fired after the status
-read but before the clear, which would silently drop that interrupt.
-
 ---
 
 ## Assembly Macros
 
-Defined in `asm_macros`. All macros prefixed `%ptmr_`.
-
-### Address Bases
-
-```
-%ptmr_base%             0xC400   ; base: IRQ clear only, no other effect
-%ptmr_base_ctrl%        0xC480   ; base: 82C54 register access (A7)
-%ptmr_base_clksel%      0xC440   ; base: clock mux register (A6)
-```
-
-### IRQ Latch Clear Offsets
-
-These are additive offsets onto any PTMR base address. OR or add them
-to any address in `0xC400–0xC4FF` to clear the corresponding latch(es)
-as part of that bus cycle.
-
-```
-%ptmr_clr_t0%           0x0020   ; A5: clear Timer 0 IRQ latch
-%ptmr_clr_t1%           0x0010   ; A4: clear Timer 1 IRQ latch
-%ptmr_clr_t2%           0x0008   ; A3: clear Timer 2 IRQ latch
-%ptmr_clr_all%          0x0038   ; A5|A4|A3: clear all IRQ latches
-```
-
-### Composed Addresses
-
-```
-; 82C54 register access (no IRQ clear)
-%ptmr_counter0%         %ptmr_base_ctrl%+0x00   ; 0xC480
-%ptmr_counter1%         %ptmr_base_ctrl%+0x01   ; 0xC481
-%ptmr_counter2%         %ptmr_base_ctrl%+0x02   ; 0xC482
-%ptmr_ctrl_write%       %ptmr_base_ctrl%+0x03   ; 0xC483
-%ptmr_ctrl_read%        %ptmr_base_ctrl%+0x03   ; 0xC483
-%ptmr_clk_sel%          %ptmr_base_clksel%       ; 0xC440
-
-; IRQ clear only (no 82C54 access)
-%ptmr_clr_t0_irq%       %ptmr_base%+%ptmr_clr_t0%              ; 0xC420
-%ptmr_clr_t1_irq%       %ptmr_base%+%ptmr_clr_t1%              ; 0xC410
-%ptmr_clr_t2_irq%       %ptmr_base%+%ptmr_clr_t2%              ; 0xC408
-%ptmr_clr_all_irq%      %ptmr_base%+%ptmr_clr_all%             ; 0xC438
-
-; Combined 82C54 counter access + matching IRQ latch clear
-%ptmr_counter0_clr_t0%  %ptmr_base_ctrl%+0x00+%ptmr_clr_t0%   ; 0xC4A0
-%ptmr_counter1_clr_t1%  %ptmr_base_ctrl%+0x01+%ptmr_clr_t1%   ; 0xC491
-%ptmr_counter2_clr_t2%  %ptmr_base_ctrl%+0x02+%ptmr_clr_t2%   ; 0xC48A
-
-; Combined 82C54 control register + clear all IRQ latches
-%ptmr_isr_fastpath%     %ptmr_base_ctrl%+0x03+%ptmr_clr_all%  ; 0xC4BB
-```
-
-### Clock Source Selection Bytes
-
-OR together one value per timer and write to `%ptmr_clk_sel%`.
-
-```
-%ptmr_clk_tmr0_18M%     0b00000000   ; Timer 0: 1.8432 MHz
-%ptmr_clk_tmr0_32k%     0b00000001   ; Timer 0: 32.768 kHz
-%ptmr_clk_tmr0_10M%     0b00000010   ; Timer 0: 1.000 MHz
-%ptmr_clk_tmr0_sys%     0b00000011   ; Timer 0: system clock
-%ptmr_clk_tmr1_18M%     0b00000000   ; Timer 1: 1.8432 MHz
-%ptmr_clk_tmr1_32k%     0b00000100   ; Timer 1: 32.768 kHz
-%ptmr_clk_tmr1_10M%     0b00001000   ; Timer 1: 1.000 MHz
-%ptmr_clk_tmr1_sys%     0b00001100   ; Timer 1: system clock
-%ptmr_clk_tmr2_18M%     0b00000000   ; Timer 2: 1.8432 MHz
-%ptmr_clk_tmr2_32k%     0b00010000   ; Timer 2: 32.768 kHz
-%ptmr_clk_tmr2_10M%     0b00100000   ; Timer 2: 1.000 MHz
-%ptmr_clk_tmr2_sys%     0b00110000   ; Timer 2: system clock
-```
-
-### Composed Control Words
-
-```
-; Counter select (bits 7:6) -- combine with RW and mode fields
-%ptmr_cw_sel_t0%        0b00000000   ; SC=00, Counter 0
-%ptmr_cw_sel_t1%        0b01000000   ; SC=01, Counter 1
-%ptmr_cw_sel_t2%        0b10000000   ; SC=10, Counter 2
-
-; Latch command (RW=00) -- OR with counter select to latch that counter
-%ptmr_cw_latch%         0b00000000   ; RW=00, Counter Latch Command
-
-; Full control words: counter select | RW=11 (LSB+MSB) | mode | binary
-%ptmr_cw_t0_mode0%      0b00110000   ; Counter 0, Mode 0, LSB+MSB, binary
-%ptmr_cw_t1_mode0%      0b01110000   ; Counter 1, Mode 0, LSB+MSB, binary
-%ptmr_cw_t2_mode0%      0b10110000   ; Counter 2, Mode 0, LSB+MSB, binary
-%ptmr_cw_t0_mode2%      0b00110100   ; Counter 0, Mode 2, LSB+MSB, binary
-%ptmr_cw_t1_mode2%      0b01110100   ; Counter 1, Mode 2, LSB+MSB, binary
-%ptmr_cw_t2_mode2%      0b10110100   ; Counter 2, Mode 2, LSB+MSB, binary
-%ptmr_cw_t0_mode0_lo%   0b00010000   ; Counter 0, Mode 0, LSB only, binary
-%ptmr_cw_t1_mode0_lo%   0b01010000   ; Counter 1, Mode 0, LSB only, binary
-%ptmr_cw_t2_mode0_lo%   0b10010000   ; Counter 2, Mode 0, LSB only, binary
-```
-
-### Read-Back Commands
-
-```
-%ptmr_rb_status_all%    0b11101110   ; latch status, all three counters
-%ptmr_rb_both_all%      0b11001110   ; latch count+status, all counters
-%ptmr_rb_status_t0%     0b11100010   ; latch status, Timer 0 only
-%ptmr_rb_status_t1%     0b11100100   ; latch status, Timer 1 only
-%ptmr_rb_status_t2%     0b11101000   ; latch status, Timer 2 only
-```
-
-### Status Byte Masks
-
-```
-%ptmr_stat_out%         0b10000000   ; D7: OUT pin state
-%ptmr_stat_nullcnt%     0b01000000   ; D6: count not yet loaded
-%ptmr_stat_mode_mask%   0b00001110   ; D3:D1: programmed mode
-%ptmr_stat_mode0%       0b00000000   ; mode field value for Mode 0
-%ptmr_stat_mode2%       0b00000100   ; mode field value for Mode 2
-```
+Defined in `asm_macros`
 
 ---
 
-## Programming Sequences
+## Shutdown: Idling Timers
 
-### Mode 0: One-Shot Countdown
+Writing a control word for a given timer resets the counter and drives OUT to
+its mode-specific idle state immediately (no CLK pulse required).  Mode 0 idle:
+OUT low. Mode 2 idle: OUT high (counting halted until a count is written).
 
-```asm
-# Configure Timer 0 for a 1ms delay using 1MHz clock.
-# Interrupt fires once; ISR must reload to repeat.
-# Mask interrupts during setup to prevent spurious IRQ2 entry.
-#
-# The clock selection register controls all three timers simultaneously.
-# Writing %ptmr_clk_tmr0_10M% alone would zero the clock selections for
-# Timer 1 and Timer 2. Instead, maintain a global variable $ptmr_clk_cfg
-# that tracks the current register state, and OR in the new field before
-# writing. Example assumes Timer 1 and Timer 2 are already configured.
-
-VAR global byte $ptmr_clk_cfg   ; shadow of clock selection register
-
-MASKINT
-LD_AL $ptmr_clk_cfg              # load current clock config
-LDI_BL 0b11111100                # mask off Timer 0 bits [1:0]
-ALUOP_AL %A&B%+%AL%+%BL%
-LDI_BL %ptmr_clk_tmr0_10M%      # OR in new Timer 0 selection
-ALUOP_AL %A|B%+%AL%+%BL%
-ST $ptmr_clk_cfg AL              # update shadow
-ST %ptmr_clk_sel% AL             # write to hardware
-
-ST %ptmr_ctrl_write% %ptmr_cw_t0_mode0% # Mode 0, LSB+MSB; OUT goes low
-ST %ptmr_counter0% 0xE8                  # count LSB (1000 = 0x03E8)
-ST %ptmr_counter0_clr_t0% 0x03
-  # counter 0 MSB committed to 82C54 and Timer 0 IRQ latch cleared
-  # in one bus cycle; counting begins immediately after this write
-UMASKINT
-# IRQ2 fires in ~1ms
-```
-
-### Mode 2: Fixed-Rate Periodic
+To idle safely, write a Mode 0 control word to all counters.  Do not write a
+count value; the counter waits indefinitely.  Mask interrupts to prevent the
+OUT transition from triggering IRQ2.
 
 ```asm
-# Configure Timer 1 for 8kHz periodic interrupt using 1MHz clock.
-# Count = 1000000 / 8000 = 125. ISR does not reload.
-# IRQ fires on the rising edge of OUT (end of the one-CLK-wide low pulse).
-#
-# As with Mode 0 setup, use the $ptmr_clk_cfg shadow variable to update
-# only Timer 1's clock field without clobbering Timer 0 or Timer 2.
-
-MASKINT
-LD_AL $ptmr_clk_cfg              # load current clock config
-LDI_BL 0b11110011                # mask off Timer 1 bits [3:2]
-ALUOP_AL %A&B%+%AL%+%BL%
-LDI_BL %ptmr_clk_tmr1_10M%      # OR in new Timer 1 selection
-ALUOP_AL %A|B%+%AL%+%BL%
-ST $ptmr_clk_cfg AL
-ST %ptmr_clk_sel% AL
-
-ST %ptmr_ctrl_write% %ptmr_cw_t1_mode2% # Mode 2, LSB+MSB; OUT goes high
-ST %ptmr_counter1% 0x7D                  # count LSB (125 = 0x007D)
-ST %ptmr_counter1_clr_t1% 0x00
-  # counter 1 MSB (zero) committed to 82C54 and Timer 1 IRQ latch cleared
-  # in one bus cycle; counting begins immediately after this write
-UMASKINT
-# IRQ2 fires every 125us indefinitely
-```
-
-### Profiling: Micro-op and Elapsed Time Measurement
-
-The system clock source makes the timer directly useful for profiling:
-because each timer tick corresponds to one micro-op executed by the CPU,
-the counted value is independent of clock frequency. If the system clock
-changes, the micro-op count between start and latch remains accurate.
-This is the correct source for profiling code paths by instruction cost.
-
-For measuring wall-clock elapsed time, the 1.000 MHz source gives 1µs
-per tick with a ~65ms range. The 32.768 kHz source gives ~30.5µs per
-tick with a ~2s range, suitable for coarser spans. Note that timer setup
-and readback each require several micro-ops; sub-10-µs measurements are
-not meaningful.
-
-```asm
-# Profile a code region by micro-op count using Timer 2.
-# System clock source: 1 tick = 1 micro-op, clock-speed independent.
-# The counter counts down; elapsed = 0xFFFF - latched_count.
-# Profiling counter will assert IRQ2 if it reaches zero (~65535 micro-ops
-# at system clock); mask interrupts or install a no-op handler if needed.
-
-MASKINT
-LD_AL $ptmr_clk_cfg
-LDI_BL 0b11001111                # mask off Timer 2 bits [5:4]
-ALUOP_AL %A&B%+%AL%+%BL%
-LDI_BL %ptmr_clk_tmr2_sys%      # OR in system clock for Timer 2
-ALUOP_AL %A|B%+%AL%+%BL%
-ST $ptmr_clk_cfg AL
-ST %ptmr_clk_sel% AL
-
-ST %ptmr_ctrl_write% %ptmr_cw_t2_mode0% # Mode 0, LSB+MSB
-ST %ptmr_counter2% 0xFF                  # count LSB (0xFFFF)
-ST %ptmr_counter2% 0xFF                  # count MSB; counting begins
-ST %ptmr_clr_t2_irq% 0x00               # clear any latch set during setup
-UMASKINT
-
-# --- code under measurement ---
-
-# Latch count atomically without disturbing the counter
-# Counter Latch Command for Timer 2: SC=10, RW=00, M=000, BCD=0
-ST %ptmr_ctrl_write% 0b10000000   ; = %ptmr_cw_sel_t2% | %ptmr_cw_latch%
-
-# Read latched count LSB then MSB
-LD_AL %ptmr_counter2%             # LSB of remaining count
-# ... save AL ...
-LD_AL %ptmr_counter2%             # MSB of remaining count
-# elapsed micro-ops = 0xFFFF - (MSB:LSB)
-```
-
-For wall-clock elapsed time, substitute `%ptmr_clk_tmr2_10M%` (1µs/tick)
-or `%ptmr_clk_tmr2_32k%` (~30.5µs/tick) and multiply accordingly.
-
-### ISR: Determine Which Timer(s) Fired
-
-```asm
-:ptmr_isr
-# Latch status of all three counters atomically.
-# Do NOT clear IRQ latches yet.
-ST %ptmr_ctrl_write% %ptmr_rb_status_all%
-
-# Read status bytes. OUT bit (D7) indicates which timers fired.
-# Clear the IRQ latch only for timers observed active.
-# Timers firing after the status read will retain their latches.
-
-LD_AL %ptmr_counter0%          # Timer 0 status byte
-ALUOP_FLAGS %Amsb%+%AL%        # Z=0 means OUT=1, timer 0 fired
-JZ .ptmr_isr_check_t1
-ST %ptmr_clr_t0_irq% 0x00      # clear Timer 0 IRQ latch
-CALL :ptmr_t0_handler
-
-.ptmr_isr_check_t1
-LD_AL %ptmr_counter1%          # Timer 1 status byte
-ALUOP_FLAGS %Amsb%+%AL%
-JZ .ptmr_isr_check_t2
-ST %ptmr_clr_t1_irq% 0x00      # clear Timer 1 IRQ latch
-CALL :ptmr_t1_handler
-
-.ptmr_isr_check_t2
-LD_AL %ptmr_counter2%          # Timer 2 status byte
-ALUOP_FLAGS %Amsb%+%AL%
-JZ .ptmr_isr_done
-ST %ptmr_clr_t2_irq% 0x00      # clear Timer 2 IRQ latch
-CALL :ptmr_t2_handler
-
-.ptmr_isr_done
-# Any timer that fired after its status was read still has its
-# IRQ latch set. /IRQ2 will remain asserted and the CPU re-enters
-# this ISR immediately after RETI.
-RETI
-```
-
-### Shutdown: Idle All Timers
-
-```asm
-# Writing a control word resets the counter and drives OUT to its
-# mode-specific idle state immediately (no CLK pulse required).
-# Mode 0 idle: OUT low. Mode 2 idle: OUT high (counting halted
-# until a count is written).
-#
-# To idle safely, write a Mode 0 control word to all counters.
-# Do not write a count value; the counter waits indefinitely.
-# Mask interrupts to prevent the OUT transition from triggering IRQ2.
-
 MASKINT
 ST %ptmr_ctrl_write% %ptmr_cw_t0_mode0%
 ST %ptmr_ctrl_write% %ptmr_cw_t1_mode0%
