@@ -1,0 +1,132 @@
+ASSEMBLER.LOG REMAP SUMMARY
+===========================
+
+INPUT FILE: assembler.log
+TRACE POINTS PROVIDED:
+  log 0x001a -> RAM 0xa000
+  log 0x023b -> RAM 0xc500
+
+OFFSET COMPUTATION:
+  Mapping 1: RAM 0xa000 - log 0x001a = offset 0x9fe6 (40934 decimal)
+  Mapping 2: RAM 0xc500 - log 0x023b = offset 0xc2c5 (49861 decimal)
+
+CONSISTENCY CHECK: FAILED
+  The two trace points produce DIFFERENT offsets.
+  Difference: 0xc2c5 - 0x9fe6 = 0x22df (8927 bytes)
+  The mappings are INCONSISTENT -- a single linear offset cannot satisfy both.
+
+  This means the assembler.log cannot be reliably remapped to RAM addresses
+  using a single offset. Possible causes:
+    - One of the provided trace points is incorrect (typo in log or RAM address)
+    - The program was relocated or patched between the two trace points
+    - The log file offset for one trace point does not match the actual load address
+
+REMAPPED OUTPUT (using Mapping 1, offset 0x9fe6)
+  [Mapping 1 anchors the START_MARK at RAM 0xa000 as given]
+
+  log 0x0000 -> RAM 0x9fe6  4f  # Magic string 'O'
+  log 0x0001 -> RAM 0x9fe7  44  # Magic string 'D'
+  log 0x0002 -> RAM 0x9fe8  59  # Magic string 'Y'
+  log 0x0003 -> RAM 0x9fe9  00  # Execution flags
+  log 0x0004 -> RAM 0x9fea  00  # hi>rewrite count (4)
+  log 0x0005 -> RAM 0x9feb  04  # lo>rewrite count (4)
+  log 0x0006 -> RAM 0x9fec  00  # hi>rewrite offset
+  log 0x0007 -> RAM 0x9fed  3b  # lo>rewrite offset
+  log 0x0008 -> RAM 0x9fee  00  # hi>rewrite offset
+  log 0x0009 -> RAM 0x9fef  45  # lo>rewrite offset
+  log 0x000a -> RAM 0x9ff0  00  # hi>rewrite offset
+  log 0x000b -> RAM 0x9ff1  4d  # lo>rewrite offset
+  log 0x000c -> RAM 0x9ff2  00  # hi>rewrite offset
+  log 0x000d -> RAM 0x9ff3  52  # lo>rewrite offset
+  log 0x000e -> RAM 0x9ff4  04  # JMP
+  log 0x000f -> RAM 0x9ff5  00  # @addr high
+  log 0x0010 -> RAM 0x9ff6  1a  # @addr low
+  log 0x0011 -> RAM 0x9ff7  00  # padding
+  log 0x0012 -> RAM 0x9ff8  00  # padding
+  log 0x001a -> RAM 0xa000  01  # CALL <-- .MYPROG_start_mark  [ANCHOR]
+  log 0x001b -> RAM 0xa001  3b  # @addr high
+  log 0x001c -> RAM 0xa002  dc  # @addr low
+  log 0x001d -> RAM 0xa003  02  # RET
+  log 0x001e -> RAM 0xa004  05  # LDI_AH
+  log 0x001f -> RAM 0xa005  42  # $data
+  log 0x0020 -> RAM 0xa006  05  # LDI_AH
+  log 0x0021 -> RAM 0xa007  00  # $data
+  log 0x0022 -> RAM 0xa008  01  # CALL
+  log 0x0023 -> RAM 0xa009  08  # @addr high
+  log 0x0024 -> RAM 0xa00a  14  # @addr low
+  log 0x0025 -> RAM 0xa00b  04  # JMP
+  log 0x0026 -> RAM 0xa00c  00  # @addr high
+  log 0x0027 -> RAM 0xa00d  50  # @addr low
+  log 0x0050 -> RAM 0xa036  01  # CALL
+  log 0x0051 -> RAM 0xa037  08  # @addr high
+  log 0x0052 -> RAM 0xa038  20  # @addr low
+  log 0x0053 -> RAM 0xa039  02  # RET
+  log 0x0054 -> RAM 0xa03a  00  # padding
+  log 0x0100 -> RAM 0xa0e6  01  # CALL
+  log 0x0101 -> RAM 0xa0e7  3b  # @addr high
+  log 0x0102 -> RAM 0xa0e8  ee  # @addr low
+  log 0x0103 -> RAM 0xa0e9  00  # .MYPROG_argv_buf \00
+  log 0x0104 -> RAM 0xa0ea  00  # .MYPROG_argv_buf \00
+  log 0x0105 -> RAM 0xa0eb  00  # .MYPROG_argv_buf \00
+  log 0x023b -> RAM 0xa221  01  # CALL <-- .MYPROG_end_mark  [EXPECTED 0xc500 -- MISMATCH]
+  log 0x023c -> RAM 0xa222  3b  # @addr high
+  log 0x023d -> RAM 0xa223  ee  # @addr low
+  log 0x023e -> RAM 0xa224  02  # RET
+
+REMAPPED OUTPUT (using Mapping 2, offset 0xc2c5)
+  [Mapping 2 anchors the END_MARK at RAM 0xc500 as given]
+
+  log 0x0000 -> RAM 0xc2c5  4f  # Magic string 'O'
+  log 0x0001 -> RAM 0xc2c6  44  # Magic string 'D'
+  log 0x0002 -> RAM 0xc2c7  59  # Magic string 'Y'
+  log 0x0003 -> RAM 0xc2c8  00  # Execution flags
+  log 0x0004 -> RAM 0xc2c9  00  # hi>rewrite count (4)
+  log 0x0005 -> RAM 0xc2ca  04  # lo>rewrite count (4)
+  log 0x0006 -> RAM 0xc2cb  00  # hi>rewrite offset
+  log 0x0007 -> RAM 0xc2cc  3b  # lo>rewrite offset
+  log 0x0008 -> RAM 0xc2cd  00  # hi>rewrite offset
+  log 0x0009 -> RAM 0xc2ce  45  # lo>rewrite offset
+  log 0x000a -> RAM 0xc2cf  00  # hi>rewrite offset
+  log 0x000b -> RAM 0xc2d0  4d  # lo>rewrite offset
+  log 0x000c -> RAM 0xc2d1  00  # hi>rewrite offset
+  log 0x000d -> RAM 0xc2d2  52  # lo>rewrite offset
+  log 0x000e -> RAM 0xc2d3  04  # JMP
+  log 0x000f -> RAM 0xc2d4  00  # @addr high
+  log 0x0010 -> RAM 0xc2d5  1a  # @addr low
+  log 0x0011 -> RAM 0xc2d6  00  # padding
+  log 0x0012 -> RAM 0xc2d7  00  # padding
+  log 0x001a -> RAM 0xc2df  01  # CALL <-- .MYPROG_start_mark  [EXPECTED 0xa000 -- MISMATCH]
+  log 0x001b -> RAM 0xc2e0  3b  # @addr high
+  log 0x001c -> RAM 0xc2e1  dc  # @addr low
+  log 0x001d -> RAM 0xc2e2  02  # RET
+  log 0x001e -> RAM 0xc2e3  05  # LDI_AH
+  log 0x001f -> RAM 0xc2e4  42  # $data
+  log 0x0020 -> RAM 0xc2e5  05  # LDI_AH
+  log 0x0021 -> RAM 0xc2e6  00  # $data
+  log 0x0022 -> RAM 0xc2e7  01  # CALL
+  log 0x0023 -> RAM 0xc2e8  08  # @addr high
+  log 0x0024 -> RAM 0xc2e9  14  # @addr low
+  log 0x0025 -> RAM 0xc2ea  04  # JMP
+  log 0x0026 -> RAM 0xc2eb  00  # @addr high
+  log 0x0027 -> RAM 0xc2ec  50  # @addr low
+  log 0x0050 -> RAM 0xc315  01  # CALL
+  log 0x0051 -> RAM 0xc316  08  # @addr high
+  log 0x0052 -> RAM 0xc317  20  # @addr low
+  log 0x0053 -> RAM 0xc318  02  # RET
+  log 0x0054 -> RAM 0xc319  00  # padding
+  log 0x0100 -> RAM 0xc3c5  01  # CALL
+  log 0x0101 -> RAM 0xc3c6  3b  # @addr high
+  log 0x0102 -> RAM 0xc3c7  ee  # @addr low
+  log 0x0103 -> RAM 0xc3c8  00  # .MYPROG_argv_buf \00
+  log 0x0104 -> RAM 0xc3c9  00  # .MYPROG_argv_buf \00
+  log 0x0105 -> RAM 0xc3ca  00  # .MYPROG_argv_buf \00
+  log 0x023b -> RAM 0xc500  01  # CALL <-- .MYPROG_end_mark  [ANCHOR]
+  log 0x023c -> RAM 0xc501  3b  # @addr high
+  log 0x023d -> RAM 0xc502  ee  # @addr low
+  log 0x023e -> RAM 0xc503  02  # RET
+
+CONCLUSION:
+  The two trace points are INCONSISTENT and cannot both be correct for a
+  single linear load. Both remappings are provided above for reference.
+  The user should verify which trace point is correct before relying on
+  the remapped addresses for debugging.

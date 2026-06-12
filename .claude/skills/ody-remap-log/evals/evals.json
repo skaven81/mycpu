@@ -1,0 +1,48 @@
+{
+  "skill_name": "ody-remap-log",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need to remap my assembler.log. My trace told me the CALL instruction at log offset 001a is actually running at RAM address 0xc56a. The log is at /net/geofront/raid/mycpu2/.claude/skills/ody-remap-log/evals/files/test1_assembler.log. Overwrite it in place.",
+      "expected_output": "Skill computes offset 0xc550 (0xc56a - 0x001a), rewrites ALL address lines (both INFO section and final byte-dump section), reports load address 0xc550, and shows the anchor line at c56a confirming the CALL instruction.",
+      "files": ["evals/files/test1_assembler.log"],
+      "expectations": [
+        "Computed offset is 0xc550 (c56a - 001a = c550)",
+        "Final assembly line '001a 01 # CALL <-- .MYPROG_start_mark' is now 'c56a 01 # CALL <-- .MYPROG_start_mark'",
+        "INFO assembly line 'INFO:root:001a 01 CALL     <-- .MYPROG_start_mark' is now 'INFO:root:c56a 01 CALL     <-- .MYPROG_start_mark'",
+        "INFO relocation line 'INFO:root:003a: hi>:argv_init->28' is now 'INFO:root:c58a: hi>:argv_init->28'",
+        "Non-address INFO lines like 'INFO:root:Reading opcodes.out' pass through unchanged",
+        "Skill reports inferred load address as 0xc550",
+        "Anchor verification line is shown after remapping"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Remap my assembler.log with two trace mappings so you can validate consistency. Log file: /net/geofront/raid/mycpu2/.claude/skills/ody-remap-log/evals/files/test2_assembler.log. My trace output: the CALL at log 001a is at RAM 0xd97a, and the CALL at log 023b is at RAM 0xdb9b. Write the output to /net/geofront/raid/mycpu2/.claude/skills/ody-remap-log/evals/files/test2_remapped.log instead of overwriting.",
+      "expected_output": "Skill validates both mappings agree on offset 0xd960, remaps both INFO and final assembly sections to a new file, reports load address 0xd960, and shows both anchor lines.",
+      "files": ["evals/files/test2_assembler.log"],
+      "expectations": [
+        "Both mappings compute the same offset 0xd960 (d97a-001a=d960, db9b-023b=d960)",
+        "Skill confirms consistency of both mappings",
+        "Output is written to test2_remapped.log, original is not modified",
+        "Final assembly: line formerly at 001a now shows d97a",
+        "Final assembly: line formerly at 023b now shows db9b",
+        "INFO assembly: 'INFO:root:001a 01 CALL' is remapped to 'INFO:root:d97a 01 CALL'",
+        "Both anchor lines are shown in the final verification report"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Remap assembler.log at /net/geofront/raid/mycpu2/.claude/skills/ody-remap-log/evals/files/test3_assembler.log. I have two trace points: log 001a = RAM 0xa000, and log 023b = RAM 0xc500. Those should let you validate.",
+      "expected_output": "Skill detects that the two mappings give different offsets (0xa000-0x001a=0x9fe6 vs 0xc500-0x023b=0xc2c5) and warns the user rather than silently proceeding.",
+      "files": ["evals/files/test3_assembler.log"],
+      "expectations": [
+        "Skill detects the offset mismatch (0x9fe6 vs 0xc2c5)",
+        "Skill warns the user about the inconsistency rather than silently picking one",
+        "Skill shows both mappings and their computed offsets in the warning",
+        "Skill asks the user which mapping to trust or to recheck trace output",
+        "Skill does NOT silently rewrite the file with a wrong offset"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+Assembler Log Remap Summary
+===========================
+
+Input:  assembler.log
+Output: assembler_remapped.log
+
+Trace Mapping 1 (start mark):
+  Log offset: 0x001a  (line: "001a 01 # CALL <-- .MYPROG_start_mark")
+  RAM address: 0xd97a
+  Computed offset: 0xd97a - 0x001a = 0xd960
+
+Trace Mapping 2 (end mark):
+  Log offset: 0x023b  (line: "023b 01 # CALL <-- .MYPROG_end_mark")
+  RAM address: 0xeaeb
+  Computed offset: 0xeaeb - 0x023b = 0xe8b0
+
+Consistency Check: FAIL
+  Mapping 1 offset: 0xd960
+  Mapping 2 offset: 0xe8b0
+  Difference:       0x0f50
+
+  The two mappings are INCONSISTENT. They give different load offsets,
+  which means the provided RAM addresses cannot both be correct for a
+  single contiguous load of the ODY executable.
+
+  Distance in log between the two CALLs: 0x023b - 0x001a = 0x0221 (545 bytes)
+  Distance in RAM between the two CALLs: 0xeaeb - 0xd97a = 0x1171 (4465 bytes)
+  These differ by 0x0f50 (3920 bytes) -- inconsistent with a single fixed offset.
+
+Action Taken:
+  Despite the inconsistency, the log was remapped using Mapping 1 (offset 0xd960),
+  as it corresponds to the program entry point (start mark).
+
+  All address lines (format "XXXX YY # ...") have been rewritten with
+  RAM addresses: new_addr = file_offset + 0xd960
+
+Key remapped addresses:
+  d960  -- start of ODY header (magic 'O')
+  d97a  -- CALL at .MYPROG_start_mark (entry point, matches mapping 1)
+  db9b  -- CALL at .MYPROG_end_mark (would need to be at 0xeaeb per mapping 2 -- MISMATCH)

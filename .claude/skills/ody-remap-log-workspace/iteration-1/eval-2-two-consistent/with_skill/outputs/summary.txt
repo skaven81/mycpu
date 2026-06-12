@@ -1,0 +1,42 @@
+Remap Summary
+=============
+
+Input log:  .../eval-2-two-consistent/with_skill/assembler.log
+Output log: .../eval-2-two-consistent/with_skill/outputs/assembler_remapped.log
+
+Mappings provided
+-----------------
+  Mapping 1: log 0x001a -> RAM 0xd97a  =>  offset = 0xd97a - 0x001a = 0xd960
+  Mapping 2: log 0x023b -> RAM 0xeaeb  =>  offset = 0xeaeb - 0x023b = 0xe8b0
+
+Consistency check
+-----------------
+  OFFSETS DISAGREE: 0xd960 != 0xe8b0  (delta = 0x0f50)
+
+  WARNING: The two mappings produce different offsets. This means at least one
+  of the RAM addresses or log addresses is wrong. The user should recheck their
+  trace output or verify which anchor instruction they observed.
+
+  Possible causes:
+    - The second trace address (0xeaeb) may have been read from a different run
+      or a different program loaded at a different address.
+    - The log address 0x023b is correct (the log shows CALL at 023b), so the
+      mismatch is likely in the RAM address for the second anchor.
+
+Action taken
+------------
+  Proceeded with Mapping 1 offset only (0xd960), as no guidance was given on
+  which mapping to trust.
+
+  Load address (inferred): 0xd960
+
+Anchor verification (using Mapping 1 offset 0xd960)
+----------------------------------------------------
+  Anchor 1 (expected RAM 0xd97a):
+    d97a 01 # CALL <-- .MYPROG_start_mark          [OK - matches expected 0xd97a]
+
+  Anchor 2 (expected RAM 0xeaeb):
+    With offset 0xd960: log 0x023b maps to RAM 0xfb9b, NOT 0xeaeb.
+    The second anchor does NOT verify.                [MISMATCH]
+
+Remapped 48 address lines.

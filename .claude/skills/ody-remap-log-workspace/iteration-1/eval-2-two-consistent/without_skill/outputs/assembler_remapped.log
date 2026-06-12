@@ -1,0 +1,52 @@
+INFO:root:Reading opcodes.out for opcodes
+INFO:root:Reading asm_macros for assembly macros
+INFO:root:0003 01 CALL     <-- .MYPROG_start_mark
+INFO:root:023b 01 CALL     <-- .MYPROG_end_mark
+d960 4f # Magic string 'O'
+d961 44 # Magic string 'D'
+d962 59 # Magic string 'Y'
+d963 00 # Execution flags
+d964 00 # hi>rewrite count (4)
+d965 04 # lo>rewrite count (4)
+d966 00 # hi>rewrite offset
+d967 3b # lo>rewrite offset
+d968 00 # hi>rewrite offset
+d969 45 # lo>rewrite offset
+d96a 00 # hi>rewrite offset
+d96b 4d # lo>rewrite offset
+d96c 00 # hi>rewrite offset
+d96d 52 # lo>rewrite offset
+d96e 04 # JMP
+d96f 00 # @addr high
+d970 1a # @addr low
+d971 00 # padding
+d972 00 # padding
+d97a 01 # CALL <-- .MYPROG_start_mark
+d97b 3b # @addr high
+d97c dc # @addr low
+d97d 02 # RET
+d97e 05 # LDI_AH
+d97f 42 # $data
+d980 05 # LDI_AH
+d981 00 # $data
+d982 01 # CALL
+d983 08 # @addr high
+d984 14 # @addr low
+d985 04 # JMP
+d986 00 # @addr high
+d987 50 # @addr low
+d9b0 01 # CALL
+d9b1 08 # @addr high
+d9b2 20 # @addr low
+d9b3 02 # RET
+d9b4 00 # padding
+da60 01 # CALL
+da61 3b # @addr high
+da62 ee # @addr low
+da63 00 # .MYPROG_argv_buf \00
+da64 00 # .MYPROG_argv_buf \00
+da65 00 # .MYPROG_argv_buf \00
+db9b 01 # CALL <-- .MYPROG_end_mark
+db9c 3b # @addr high
+db9d ee # @addr low
+db9e 02 # RET

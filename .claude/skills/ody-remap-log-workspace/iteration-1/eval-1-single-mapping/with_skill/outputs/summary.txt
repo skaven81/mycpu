@@ -1,0 +1,6 @@
+Offset applied: +0xc550 (load address: 0xc550)
+
+Anchor check:
+  c56a 01 # CALL <-- .MYPROG_start_mark    [expected c56a OK]
+
+Remapped 48 address lines.

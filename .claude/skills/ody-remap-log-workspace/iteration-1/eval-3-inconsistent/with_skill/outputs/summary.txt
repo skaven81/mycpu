@@ -1,0 +1,41 @@
+INCONSISTENT ANCHOR OFFSETS -- ABORTING REMAP
+
+Log file: assembler.log
+  52 lines total (mix of INFO lines and address lines)
+
+Anchor mappings provided:
+  Mapping 1: log 0x001a -> RAM 0xa000
+    computed offset = 0xa000 - 0x001a = 0x9fe6
+    inferred load address: 0x9fe6
+
+  Mapping 2: log 0x023b -> RAM 0xc500
+    computed offset = 0xc500 - 0x023b = 0xc2c5
+    inferred load address: 0xc2c5
+
+Offset comparison:
+  offset1 = 0x9fe6
+  offset2 = 0xc2c5
+  DISAGREE -- difference is 0x22df
+
+Log lines at the anchor addresses (for reference):
+  001a 01 # CALL <-- .MYPROG_start_mark
+  023b 01 # CALL <-- .MYPROG_end_mark
+
+Action taken: STOPPED -- file NOT rewritten.
+
+WARNING TO USER:
+  The two anchor mappings produce different offsets (0x9fe6 vs 0xc2c5),
+  which differ by 0x22df bytes. This is a large and suspicious discrepancy.
+  A correct remap requires a single consistent offset across the entire file.
+
+  Possible causes:
+    1. One of the RAM addresses from your trace output is wrong. Double-check
+       that both trace values were captured from the same run of the same binary.
+    2. One of the log offsets is wrong. Verify that the log address you paired
+       with each RAM address is the correct line in assembler.log.
+    3. The binary was recompiled between the two trace captures, shifting code
+       to different positions. Rebuild and re-run to get fresh trace data.
+
+  Please recheck your trace output and log addresses, then provide corrected
+  mappings. Once both mappings agree (or you identify which one to trust),
+  the remap can proceed.

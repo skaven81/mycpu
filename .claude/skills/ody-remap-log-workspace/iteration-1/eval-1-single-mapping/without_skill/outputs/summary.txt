@@ -1,0 +1,22 @@
+Remap Summary
+=============
+
+Anchor: log offset 0x001a contains CALL instruction, observed at RAM address 0xc56a.
+
+Offset computed: 0xc56a - 0x001a = 0xc550
+
+Load address: 0xc550 (the address where log offset 0x0000 maps in RAM)
+
+All address lines (matching ^[0-9a-f]{4} ) were incremented by 0xc550.
+
+Anchor verification:
+  Before: 001a 01 # CALL <-- .MYPROG_start_mark
+  After:  c56a 01 # CALL <-- .MYPROG_start_mark  [CORRECT]
+
+Additional verification lines:
+  c550 4f # Magic string 'O'   (was 0000)
+  c553 00 # Execution flags     (was 0003)
+  c78b 01 # CALL <-- .MYPROG_end_mark  (was 023b)
+  c78e 02 # RET                 (was 023e)
+
+Total lines remapped: 48 address lines across 52 total log lines.
