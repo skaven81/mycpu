@@ -1,0 +1,2 @@
+# Build artifacts not covered by the top-level os/.gitignore
+# (top-level already ignores *.ODY, *.log, *.hex, *.sym)
