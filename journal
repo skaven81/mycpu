@@ -1,3 +1,166 @@
+2026-06-12: RETI microcode bug: back-to-back interrupts corrupt status flags
+===========================================================================
+
+While bringing up the programmable timer (ptmrtest), the program was exiting
+the main wait loop early -- before the 10-second RTC watchdog fired -- without
+the watchdog ISR's 'W' character appearing on the display.  A logic analyzer
+trace of the failing sequence revealed the following at the main loop's
+ALUOP_FLAGS / JZ boundary:
+
+  0xbaae  ALUOP_FLAGS executes  -> OEZ = 0b001  (done_flag == 0, Z=1)
+  IRQ opcode fires  (programmable timer interrupt)
+  RETI returns to 0xbab0       -> OEZ = 0b000  (expected 0b001!)
+  IRQ opcode fires again        -> OEZ = 0b001  (???)
+  RETI returns to 0xbab0        -> OEZ = 0b001
+  JZ fires                      -> OEZ = 0b000  (Z=0, jump not taken, exits loop)
+
+One key observation from the trace: OEZ flags are written by RETI's
+WriteStatus micro-op, but the new value only becomes visible at the start of
+the NEXT opcode after RETI completes.  This is normal flip-flop pipeline
+behavior, but it matters for understanding the trace.
+
+Root cause: the RETI microcode had UnmaskInterrupts at step 0, BEFORE
+RestoreStatusFlags WriteStatus at step 1.  The status flag save/restore
+mechanism uses the upper bits of the status register (bits 7:5) as a backup:
+
+  * IRQMASK=0, STRES=0 (normal): /WSTAT writes current ALU flags toi
+    BOTH primary[2:0] and backup[7:5].  So the backup always mirrors the
+    last ALU result.
+  * IRQMASK=1, STRES=0 (inside ISR): /WSTAT writes current ALU flags
+    to primary[2:0], and the backup[7:5] to backup[7:5].  Backup is
+    frozen at the value it held when the IRQ fired.
+  * IRQMASK=1, STRES=1 (RETI, intended): /WSTAT writes BOTH
+    primary[2:0] AND backup[7:5] from backup[7:5]. Backup is restored
+    into primary and is retained.
+  * IRQMASK=0, STRES=1 (invalid fourth state): /WSTAT writes current
+    ALU flags to backup[7:5] and backup[7:5] to primary[2:0].  This
+    is not a useful state, as it's not needed by any flows.
+
+Because RETI step 0 executed UnmaskInterrupts (IRQMASK->0) before step 1
+executed RestoreStatusFlags WriteStatus (STRES=1), the hardware was ALWAYS
+in the "fourth state" during the restoration.  In the fourth state, the
+/WSTAT correctly restores primary[2:0] from the backup value, but also
+CORRUPTS backup[7:5] to 0b000 (because the backup bit positions of the
+STRES-driven data bus are zero).
+
+For a SINGLE interrupt this is invisible: primary is correctly restored, and
+the immediately-following instruction uses the correct flags.  The backup is
+corrupted to 0b000, but a subsequent ALU instruction with IRQMASK=0 will
+write the correct value to backup before the next IRQ could ever freeze it.
+
+For BACK-TO-BACK interrupts the corruption is fatal: the second IRQ fires at
+RETI step 3 (NextInstruction) and immediately sets IRQMASK=1, freezing the
+already-corrupted backup at 0b000.  The second ISR runs with backup=0b000.
+The second RETI then "restores" primary from backup=0b000, causing the
+subsequent JZ/JNZ to evaluate the wrong flags and the loop to exit early.
+
+Fix: move UnmaskInterrupts to AFTER WriteStatus in the RETI microcode.
+
+  Before (broken):
+    x 0 AddrBusSP WritePCH DecrementSP UnmaskInterrupts
+    x 1 AddrBusSP WritePCL DecrementSP RestoreStatusFlags WriteStatus
+    x 2 NextInstruction
+
+  After (fixed):
+    x 0 AddrBusSP WritePCH DecrementSP
+    x 1 AddrBusSP WritePCL DecrementSP RestoreStatusFlags WriteStatus
+    x 2 UnmaskInterrupts
+    x 3 NextInstruction
+
+With this change, WriteStatus fires while IRQMASK=1 (the correct third
+state), so backup[7:5] is left intact and primary[2:0] is correctly restored.
+UnmaskInterrupts fires one step later, and NextInstruction one step after
+that.  Any pending IRQ detected at NextInstruction now freezes backup at the
+correctly-restored value instead of whateverthe current ALU status is.
+
+Note: we don't combine UnmaskInterrupts with NextInstruction because the
+JK flip-flop that toggles the interrupt mask status is handled at the end
+of the instruction.  Since the IRQ state it latched in at the midpoint of
+the (now) SEQ3 microcode step, this arrangement ensures that back-to-back
+IRQ entry is possible (e.g. for super tight interrupt loops).
+
+
+2026-05-11: Programmable timer (with one bug)
+=============================================
+
+In order to provide asynchronous but wall-clock-timed operations, the Odyssey
+has the Dallas RTC chip, which has a watchdog timer.  This has limited utility,
+though, because it can't perform self-resetting timer intervals (the ISR has
+to restart the timer on its own, meaning the actual interrupt intervals will
+have some timing jitter), and it doesn't have an accessible count (e.g. for
+profiling).
+
+The 82C54 chip adds three programmable interval timers to the Odyssey.  The
+three timers run independently, and can each be configured with one of four
+clock sources: 1.8432MHz (useful for generating baud rate sampling), 1.000MHz
+(useful for high frequency, high precision timing in us and ms), 32.768kHz
+(useful for low frequency timing up to 2 seconds), and the system clock
+(useful for system profiling when combined with count capture functionality).
+
+While the 82C54 supports many different timing modes, only two are supported
+as implemented in the Odyssey.  Mode 0 is a one-shot timer much like the
+Dallas RTC. In this mode, you first write a control word to set up the timer,
+then write the starting count to the timer.  Writing the count immediately
+starts the timer counting down.  When the counter gets to zero, it triggers
+an interrupt, and counting is suspended until the timer is reconfigured or
+a new count is loaded.  Mode 2 is a repetitive timer.  Once the count is
+loaded, it begins counting down, and upon reaching 0, triggers an interrupt,
+but immediately reloads the last count and begins counting down again.  It
+will keep generating interrupts at a precise interval.
+
+While counting is happening, it is possible to tell the 82C54 to latch
+the current count, and read it out. This can allow for either checking how
+close to expiration the timer is, or (more usefully) checking how many clock
+ticks have elapsed since the timer was started.
+
+At any time (but usually after an interrupt has fired) it is possible to
+get the 82C54 to latch status information about one or more timers. These
+status bytes can be read out to determine how the timer was configured
+(which also says what order and number of count operands are required to
+restart counting), as well as the status of the OUT signal which says
+that the count has concluded.
+
+Controlling the 82C54 is a bit tricky -- it uses a state machine inside, so
+that once a control word is written for one or more timers, that timer now goes
+into a state where it's expecting certain values to be written or read, in a
+specific order.  Any other operations in between upsets the configuration of
+this state machine, so it's super critical that writes and reads are carefully
+choreographed to match the expectation of the chip's internal state machine.
+This was revealed by a bug caused by the fact that the /RD signal was
+unbuffered: it was generated directly from the /WRAM and /CS signals.  So
+during the first 75% of the clock cycle while the address bus and /WRAM was
+settling, there were brief glitches where both /CS and /RD would be asserted
+simultaneously.  Depending on what A1 and A0 happened to be at the time of
+these glitches, timers would have their state machines advanced, resulting in
+crazy, unexplainable behavior.  Gating the /RD signal against a low clock
+(same as /WR already was) corrected this behavior, ensuring that only legitimate
+reads show up with /RD and /CS simultaneously asserted.
+
+Since there are three timers with three OUT signals all feeding one IRQ2
+line, the OUT signals are buffered by D-flip-flops, so that once an OUT
+signal is asserted (rising edge), that timer's IRQ latch is asserted and
+stays that way until explicitly cleared. This brings us to the bug that currently
+exists: Mode 2 timers cannot be usefully implemented right now.  The problem
+is that OUT only pulses for a single timer clock cycle. The rising edge of
+OUT sets that timer's IRQ latch, and this causes the ISR to run.  But by
+the time the ISR gets around to issuing the read-back command to get the
+timer state (so it can figure out which of the three timers caused the
+interrupt) the Mode 2 timer has long set OUT back to 0, so the ISR can't
+reliably route itself to the correct handler.
+
+The bug above will be corrected by adding a '245 bus transceiver and some
+decoding logic so that the outputs of the three timer IRQ latches become
+visible through a LD operation.  This will avoid needing to perform a
+read-back operation at all (unless there's some other good reason to do
+so).  The ISR upon entry can just grab the state of the IRQ latches and
+issue the corresponding handler routines.
+
+So I have a little more wiring to do for that last step, but once in place
+the timer should be fully operational, meaning that including the RTC
+watchdog, I'll have four independent timers for doing things like triggering
+frame generation, object movement, or detecting timeouts.
+
+
 2026-04-04: Expanded RAM addition
 =================================
 

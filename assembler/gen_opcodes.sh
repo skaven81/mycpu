@@ -120,13 +120,26 @@ EOF
 
 # IRQ return -- like RET, but unmasks interrupts.  Also
 # restores the status flags from the backup preserved
-# while interrupts are unmasked.
+# while interrupts are masked.
+#
+# IMPORTANT: UnmaskInterrupts MUST come AFTER RestoreStatusFlags WriteStatus.
+# The flag save/restore mechanism uses the upper bits (7:5) of the status
+# register as a backup.  When IRQMASK=0, any /WSTAT write updates BOTH the
+# primary bits (2:0) AND the backup bits (7:5).  STRES drives the backup
+# bits in primary-bit positions on the data bus, but drives 0b000 to the
+# backup-bit positions.  If UnmaskInterrupts fires before WriteStatus
+# (IRQMASK=0 + STRES=1, the "fourth state"), the backup is corrupted to
+# 0b000.  On a back-to-back IRQ the second RETI then "restores" primary
+# from the corrupted backup, causing JZ/JNZ to evaluate the wrong flags.
+# With UnmaskInterrupts at step 2 (after WriteStatus at step 1), the
+# restoration fires with IRQMASK=1 so backup is left intact.
 cat <<EOF
 
 [0x03] RETI
-x 0 AddrBusSP WritePCH DecrementSP UnmaskInterrupts
+x 0 AddrBusSP WritePCH DecrementSP
 x 1 AddrBusSP WritePCL DecrementSP RestoreStatusFlags WriteStatus
-x 2 NextInstruction
+x 2 UnmaskInterrupts
+x 3 NextInstruction
 EOF
 
 # Explicitly mask/unmask interrupts
