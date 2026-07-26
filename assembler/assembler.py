@@ -7,7 +7,7 @@ import re
 import argparse
 import logging
 import yaml
-from pyparsing import Word, alphanums, nums, Regex, Literal, QuotedString, Or, And, Char, srange, printables, Optional, Combine, Group, StringStart, OneOrMore, oneOf, ParseException
+from pyparsing import Word, alphanums, nums, Regex, Literal, QuotedString, Or, And, Char, srange, printables, Optional, Combine, Group, StringStart, OneOrMore, one_of, ParseException
 
 parser = argparse.ArgumentParser(description='Assemble program ROM')
 parser.add_argument('--opcodes', default='opcodes', help='File containing opcodes')
@@ -95,9 +95,9 @@ comment = Regex('#.*')
 labelprefix = Literal(':') | Literal('.')
 labelname = Word(alphanums+"_", min=4)
 labeloffset = Combine((Literal('+')|Literal('-')) + Word(nums))
-labeloffset.setName('labeloffset')
+labeloffset.set_name('labeloffset')
 label = Combine(labelprefix + labelname + Optional(labeloffset))
-label.setName('label')
+label.set_name('label')
 # Variable declarations. `global` assigns a permanent address from the variable
 # pool, and the name will be valid across all assembler files. Both `byte` and
 # `word` return a single 16-bit address, but `word` also marks the following
@@ -105,12 +105,12 @@ label.setName('label')
 # `word`, then an array is reserved. Currently `global` is the only scope but
 # we reserve the syntax to add other scopes later.
 #  VAR {global} {byte|word|dword|<num_bytes>} $name
-varprefix = Literal('VAR').setResultsName('var_declare')
-varscope = Literal('global').setResultsName('scope')
-varsize = Combine(Literal('byte') | Literal('word') | Literal('dword') | Word(nums)).setResultsName('size')
-varname = Combine(Literal('$') + Word(alphanums+"_")).setResultsName('var')
+varprefix = Literal('VAR').set_results_name('var_declare')
+varscope = Literal('global').set_results_name('scope')
+varsize = Combine(Literal('byte') | Literal('word') | Literal('dword') | Word(nums)).set_results_name('size')
+varname = Combine(Literal('$') + Word(alphanums+"_")).set_results_name('var')
 var = varprefix + varscope + varsize + varname
-var.setName('var')
+var.set_name('var')
 # Bytes can be represented in binary, hex, char, or a number (0-255 or -128-127)
 # and may include embedded arithmetic
 #  OPCODE 0b00001100
@@ -119,23 +119,23 @@ var.setName('var')
 #  OPCODE 254-0x0a
 #  OPCODE 'a'&0b00001111
 binbyte = Combine(Literal('0b') + Char('01') * 8)
-binbyte.setName('binbyte')
-binbyte.setParseAction(lambda t: [int(t[0], 2)])
+binbyte.set_name('binbyte')
+binbyte.set_parse_action(lambda t: [int(t[0], 2)])
 hexbyte = Combine(Literal('0x') + Char(srange("[0-9a-fA-F]")) * 2)
-hexbyte.setName('hexbyte')
-hexbyte.setParseAction(lambda t: [int(t[0], 16)])
-chrbyte = QuotedString(quoteChar="'", unquoteResults=True)
-chrbyte.setName('char')
-chrbyte.setParseAction(lambda t: [ord(t[0])])
+hexbyte.set_name('hexbyte')
+hexbyte.set_parse_action(lambda t: [int(t[0], 16)])
+chrbyte = QuotedString(quote_char="'", unquote_results=True)
+chrbyte.set_name('char')
+chrbyte.set_parse_action(lambda t: [ord(t[0])])
 number = Word(nums+'-')
-number.setName('number')
-number.setParseAction(lambda t: [int(t[0])])
+number.set_name('number')
+number.set_parse_action(lambda t: [int(t[0])])
 allbytes = binbyte | hexbyte | chrbyte | number
-mathtoken = Combine(oneOf('* / + - & |') + allbytes)
+mathtoken = Combine(one_of('* / + - & |') + allbytes)
 bytemathexpression = Combine(allbytes + OneOrMore(mathtoken))
-bytemathexpression.setParseAction(lambda t: [eval(t[0])])
+bytemathexpression.set_parse_action(lambda t: [eval(t[0])])
 byte = bytemathexpression | allbytes
-byte.setName('byte')
+byte.set_name('byte')
 # Words can be represented in binary, hex, label, or number (0-65535 or -32768-32767)
 #  OPCODE 0b0000111100001111
 #  OPCODE 0x2911
@@ -143,29 +143,29 @@ byte.setName('byte')
 #  OPCODE .label+4
 #  OPCODE 2490
 binword = Combine(Literal('0b') + Char('01') * 16)
-binword.setName('binword')
-binword.setParseAction(lambda t: [int(t[0], 2)])
+binword.set_name('binword')
+binword.set_parse_action(lambda t: [int(t[0], 2)])
 hexword = Combine(Literal('0x') + Char(srange("[0-9a-fA-F]")) * 4)
-hexword.setName('hexword')
-hexword.setParseAction(lambda t: [int(t[0], 16)])
+hexword.set_name('hexword')
+hexword.set_parse_action(lambda t: [int(t[0], 16)])
 allwords = binword | hexword | number
-wordmathtoken = Combine(oneOf('* / + - & |') + allwords)
+wordmathtoken = Combine(one_of('* / + - & |') + allwords)
 wordmathexpression = Combine(allwords + OneOrMore(wordmathtoken))
-wordmathexpression.setParseAction(lambda t: [eval(t[0])])
+wordmathexpression.set_parse_action(lambda t: [eval(t[0])])
 word = wordmathexpression | label | allwords
-word.setName('word')
+word.set_name('word')
 # Data can be represented as a label followed by a combination of double-quoted strings, series of bytes, or labels.
 #  .label "Hello World\0"
 #  .mapping "some_cmd" :cmd_label 0x00
-data = label + OneOrMore(QuotedString(quoteChar='"', unquoteResults=True) | byte | label)
-data.setName('data')
+data = label + OneOrMore(QuotedString(quote_char='"', unquote_results=True) | byte | label)
+data.set_name('data')
 # Opcodes are an opcode followed by some number of bytes and/or words
 #  OPCODE
 #  OPCODE 0xa0
 #  OPCODE .label
 opcode_syntax = [ ]
 for opcode in opcodes.values():
-    op_grammar = Literal(opcode.name).setResultsName('opcode')
+    op_grammar = Literal(opcode.name).set_results_name('opcode')
     arg_grammar = None
     for arg in opcode.args:
         if arg.startswith('$'):
@@ -181,13 +181,13 @@ for opcode in opcodes.values():
         else:
             raise SyntaxError("Argument with unknown sigil: {}".format(arg))
     if arg_grammar:
-        opcode_syntax.append(op_grammar + arg_grammar.setResultsName('args'))
+        opcode_syntax.append(op_grammar + arg_grammar.set_results_name('args'))
     else:
         opcode_syntax.append(op_grammar)
 
 opcode = Or(opcode_syntax)
 # Grammar is all of this OR'd
-grammar = StringStart() + ((data.setResultsName('data') ^ label.setResultsName('label') ^ opcode ^ var) + Optional(comment)) | Optional(comment)
+grammar = StringStart() + ((data.set_results_name('data') ^ label.set_results_name('label') ^ opcode ^ var) + Optional(comment)) | Optional(comment)
 logging.info("Generated grammar")
 logging.debug(grammar)
 
@@ -258,7 +258,7 @@ for input_file in args.sources:
 
             # Look for global variable declarations
             try:
-                match = grammar.parseString(newline, parseAll=True).asDict()
+                match = grammar.parse_string(newline, parse_all=True).as_dict()
             except ParseException:
                 match = None # clear match since we're looping to next line
                 pass # ignore parsing exceptions for now, we'll catch them later
@@ -342,7 +342,7 @@ for input_file, line_num, line in concat_source:
             line = newline;
 
     try:
-        match = grammar.parseString(line, parseAll=True).asDict()
+        match = grammar.parse_string(line, parse_all=True).as_dict()
     except ParseException:
         print(f"ERROR on line {line_num}: {line}")
         raise
