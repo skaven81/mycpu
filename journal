@@ -1,3 +1,50 @@
+2026-07-25: Fixed UART hardware flow control
+============================================
+
+Hardware flow control has not been working in the UART since the Odyssey
+was first built.  I always thought it was a wiring problem of some kind.
+So I did a comprehensive step-by-step validation of the wiring and it turned
+out to all be fine.
+
+I also had Claude gin up a couple test programs so I could validate the
+RTS/CTS plumbing between the PC and the Odyssey, and that turned out to
+be fine as well.
+
+The problem ended up being that because the datasheet shows the control
+lines as inverted logic (/RTS, /CTS, /DSR, /DTR) I thought that 0 had to
+be written to the MCR (and read from the MSR) to show that these signals
+were asserted.  But it turns out that it's the other way around.  A 1
+in those bit positions means "asserted", which does indeed cause the control
+signal to go low. This is then inverted when passed through the MAX202
+and out to the RS232 cable.  So the bit value ends up matching the value
+on the wire, but not at the chip edge.
+
+With this new knowledge in hand, I was able to update the UART handling
+code so that it now properly implements flow control.  When the receive
+buffer gets over 0xe0 bytes, RTS is deasserted, causing the PC to stop
+sending data.  Once the receive buffer is drawn down to under 0x20 bytes,
+RTS is asserted again.
+
+Live testing of a text file transfer using the Odyssey 'console' utility
+showed that max transfer speed (when the display is scrolling) is about
+1.3KB/sec (somewhere between 9600 and 19200 baud).  I expect faster rates
+will be possible if doing a file transfer only (no printing to the screen).
+
+Now that flow control is working, I can (if I like) default the Odyssyey
+to use 115200 baud, as I have shown that it works reliably due to the now-
+functional flow control, so the baud rate doesn't have to be constrained
+to avoid corrupted data or buffer overruns.
+
+Next step will be to implement a "receive and run ODY" utility that opens
+the UART, receives an ODY file over the serial connection, writing it
+to RAM, then performs the ODY execution process.  I can also update the
+SYSTEM.ODY shell so that it accepts input from the serial port as if it
+was keyboard input.  This would be sufficient to create a setup that allows
+remote development: I can see the display using the USB-to-VGA adapter;
+send commands over serial; and compile and run software over serial.
+The only missing piece is the ability to issue an out of band reset.
+
+
 2026-06-12: RETI microcode bug: back-to-back interrupts corrupt status flags
 ===========================================================================
 

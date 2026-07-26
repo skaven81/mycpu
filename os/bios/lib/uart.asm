@@ -56,12 +56,17 @@ JMP .uart_init
 #  5. read RBR
 #  6. enable interrupts
 .uart_init
-# RTS & DTR unset
+VAR global byte $uart_rts_state
+MASKINT
 # ITEN unset - INTR (IRQ5) will not fire on errors
 # mode=0, normal
 # REN receiver enabled
 # MIEN unset - do not trigger interrupts on DSR/CTS line changes
-ST_SLOW %uart_mcr% %uart_mcr_REN%
+# DTR and RTS signals asserted (DTR is n/c but for completeness)
+#  -- RTS asserted signals remote side we're ready to receive
+#     data; the uart rx interrupt handler will unset RTS if the
+#     buffer gets full.
+ST_SLOW %uart_mcr% %uart_mcr_REN%|%uart_mcr_RTS%|%uart_mcr_DTR%
 
 # read MSR to clear status bits and interrupts
 LD_SLOW_PUSH %uart_msr%
@@ -73,10 +78,14 @@ POP_TD
 LD_SLOW_PUSH %uart_rbr%
 POP_TD
 
+# initialize RTS mirror
+ST $uart_rts_state 0x01
+
 # initialize uart buffer pointer
 ST16 $uart_buf_ptr_write 0xcb00
 ST16 $uart_buf_ptr_read 0xcb00
 
+UMASKINT
 RET
 
 ######
@@ -117,6 +126,23 @@ POP_BH
 ALUOP_ADDR_A %B%+%BH%                           # write character to buffer
 ALUOP_ADDR %A+1%+%AL% $uart_buf_ptr_write+1     # increment write pointer, wraps back to 00
 
+CALL :uart_bufsize                              # buffer utilization 0-255 in AL
+LDI_BH 0xe0                                     # RTS toggle threshold at 224 bytes
+ALUOP_FLAGS %B-A%+%AL%+%BH%                     # if overflow, bufsize > threshold
+JNO .uart_irq_dr_buf_done
+
+LD_AL $uart_rts_state                           # only clear RTS bit if it's set already
+ALUOP_FLAGS %A%+%AL%
+JZ .uart_irq_dr_buf_done
+
+LD_SLOW_PUSH %uart_mcr%                         # clear RTS bit in MCR
+POP_AL                                          # |
+LDI_BH %uart_mcr_RTS%                           # |
+ALUOP_PUSH %A&~B%+%AL%+%BH%                     # |
+ST_SLOW_POP %uart_mcr%                          # |
+ST $uart_rts_state 0x00                         # mirror RTS state
+
+.uart_irq_dr_buf_done
 POP_BH
 POP_AH
 POP_AL
@@ -141,6 +167,7 @@ RET
 # buffer is empty, returns 0x00. You have to use :uart_bufsize
 # to distinguish between a received NULL and an empty buffer.
 :uart_readbuf
+MASKINT
 CALL :uart_bufsize
 ALUOP_FLAGS %A%+%AL%
 JNZ .uart_readbuf_fetch
@@ -155,8 +182,29 @@ LD_BL   $uart_buf_ptr_read+1
 LDA_B_AL                # load the character into AL
 ALUOP_ADDR %B+1%+%BL% $uart_buf_ptr_read+1 # save new read pointer back to RAM
 
+ALUOP_PUSH %A%+%AL%                             # save return value
+
+CALL :uart_bufsize
+LDI_BH 0x20                                     # RTS toggle threshold at 32 bytes
+ALUOP_FLAGS %B-A%+%AL%+%BH%                     # if overflow, bufsize > threshold so no RTS toggle
+JO .uart_readbuf_done
+
+LD_AL $uart_rts_state                           # only toggle RTS if it's already clear
+ALUOP_FLAGS %A%+%AL%
+JNZ .uart_readbuf_done
+
+LD_SLOW_PUSH %uart_mcr%                         # set RTS bit in MCR
+POP_AL                                          # |
+LDI_BH %uart_mcr_RTS%                           # |
+ALUOP_PUSH %A|B%+%AL%+%BH%                      # |
+ST_SLOW_POP %uart_mcr%                          # |
+ST $uart_rts_state 0x01                         # mirror RTS state
+
+.uart_readbuf_done
+POP_AL                                          # restore return value
 POP_BL
 POP_BH
+UMASKINT
 RET
 
 #####
