@@ -70,9 +70,13 @@ LDI_C .status_str
 CALL :printf
 
 # --- check for a keypress: 'r' toggles RTS, 'q' quits ---
-CALL :kb_readbuf        # AL = char, 0x00 if buffer empty
+CALL :kb_readbuf        # AH = flags, AL = char: 0x00 if buffer empty
 ALUOP_FLAGS %A%+%AL%
 JZ .rtstest_loop         # nothing pressed, keep looping
+
+LDI_BL %kb_keyflag_BREAK%
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JNZ .rtstest_loop       # key release, keep looping
 
 LDI_BL 'q'
 ALUOP_FLAGS %A-B%+%AL%+%BL%
