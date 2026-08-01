@@ -1,3 +1,35 @@
+2026-08-01: Docs/skills overhaul so Sonnet-class models can write Odyssey code (claude)
+=======================================================================================
+
+Deep-dived the assembler grammar, C compiler codegen, BIOS libraries, and
+journal history to rewrite CLAUDE.md and all four ody-* skills around what
+actually makes weaker models fail on the first try: exact syntax rules
+(4-char label minimum, exact-width hex literals), the complete heap API,
+verified program skeletons, the C support matrix (no * / % operators;
+bitwise non-short-circuiting && and ||), flag semantics per ALU op (derived
+from alu/ as the canonical source), the BIOS exec loop interface, code/data
+placement guidance (ODY -> BIOS promotion and eviction, VAR vs label data
+segments, extended-memory constant offsets), and tight-loop optimization
+with an explicit "this is not x86/6502/Z80" framing.
+
+New tooling: assembler/asmcheck.sh syntax-checks any .asm in one command
+(the assembler run is the only check we have -- no emulator).
+
+Assembler fixes: macro expansion and label localization no longer corrupt
+quoted strings (CCTEST1.ODY had been silently shipping "Rect array
+[1].MAIN_height" -- the string data was being rewritten by the localization
+regex); $foo/$foobar same-line substitution collision fixed; error messages
+now report per-file line numbers.  Full rebuild verified byte-identical
+except the cctest1 string repair.  rules.mk now detects 'int main' as well
+as 'void main' for entry-file ordering.  Also solved the old asm_macros
+mystery comment: keyboard flag 0x20 is NUMLOCK, which the ATtiny firmware
+initializes ON at boot -- that's why it looked "stuck on".
+
+Validation: a fresh Sonnet agent, restricted to only the new docs, wrote
+a memsum utility (assembly, argv + tight loop) and an avgtest utility (C)
+-- both built on the first attempt with zero errors.  The test utilities
+were discarded after validation.
+
 2026-07-25: Fixed UART hardware flow control
 ============================================
 

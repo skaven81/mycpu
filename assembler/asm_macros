@@ -1,6 +1,9 @@
 # The string on the left is replaced with exactly what is
-# on the right in the ASM source before compliling.  Only
-# unquoted strings to the right of opcodes are evaluated.
+# on the right in the ASM source before compiling.  Macros are
+# expanded everywhere except the first token of a line (the
+# label or mnemonic), the contents of double-quoted data
+# strings, and comments.  Expansion repeats to a fixed point,
+# so macros may expand to other macros.
 
 # flags
 %Cin%   0x20
@@ -167,12 +170,12 @@
 %kb_keyflag_ALT%         0x04
 %kb_keyflag_FUNCTION%    0x08
 %kb_keyflag_SHIFT%       0x10
-# bit 0x20 is stuck on for some reason,
-# also SUPER and GUI report as normal
-# chars, not flags.  Need to check KB
-# controller code.
-%kb_keyflag_SUPER%       0x20
-%kb_keyflag_GUI%         0x20
+# Per keyboard_controller_attiny.ino: 0x20=NUMLOCK (initialized ON at
+# boot, which is why it appears "stuck on"), 0x40=CAPSLOCK,
+# 0x80=SCROLLLOCK.  SUPER/GUI keys are not reported as flags.
+%kb_keyflag_NUMLOCK%     0x20
+%kb_keyflag_CAPSLOCK%    0x40
+%kb_keyflag_SCROLLLOCK%  0x80
 
 # Timer clock (all data in BCD)
 %tmr_clk_sec%           0xc080

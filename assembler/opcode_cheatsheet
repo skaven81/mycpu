@@ -1,5 +1,18 @@
+# Assembler syntax quick rules (see assembler.py for the grammar):
+#  - Label/variable names: [A-Za-z0-9_], MINIMUM 4 chars after the : or . sigil
+#  - :label = global/exported; .label = file-scoped local
+#  - 8-bit literals: exactly 0xNN / 8-digit 0b / 'c' / decimal
+#  - 16-bit literals: exactly 0xNNNN / 16-digit 0b / decimal / label
+#  - Label offsets are decimal only, no spaces (:main+2)
+#  - Expressions (ops * / + - & |) contain NO whitespace: %A+B%+%AH%
+#  - Mnemonics UPPERCASE; comments start with #; one statement per line
+#  - Data lines start with a label; mixed items ok: .tabl "cmd\0" :addr 0xff
+#  - $var expands to a 16-bit address (usable only where @addr is expected)
+
 # Variable declaration
-VAR global {byte,word,num_bytes} $name
+# byte/word/dword allocate from the scalar pool (0x4f00+/0x5f10+);
+# a numeric size allocates from the array pool (grows down from 0xcaff)
+VAR global {byte,word,dword,num_bytes} $name
 
 # Transfer operations
 MOV_CH_{AH,AL,BH,BL,TAL,TD}
@@ -87,8 +100,8 @@ ALUOP_ADDR $op @addr    ** TAH TAL **
 ALUOP_ADDR_SLOW $op @addr ** TAH TAL **
 # Store ALU result into RAM@{addr_reg}
 ALUOP_ADDR_{A,B,C,D} $op
-# Store ALU result into {reg}
-ALUOP_{AH,AL,BH,BL,CH,CL,DH,DL,TAL,TD} $op
+# Store ALU result into {reg} (note: no ALUOP_TAL or ALUOP_TD)
+ALUOP_{AH,AL,BH,BL,CH,CL,DH,DL} $op
 
 # 16-bit ALU operations: $lo_op writes to low dest reg (or just to flags),
 # $hi_op writes to high dest reg (or just to flags) conditionally based on
@@ -104,6 +117,8 @@ MEMCPY4_C_D         ** TD ** (C and D are incremented after copy)
 MEMFILL4_C_DL       ** TD ** (C is incremented after write)
 MEMFILL4_C_PEEK     ** TD ** (C is incremented after write)
 MEMFILL4_C_I $byte  ** TD ** (C is incremented after write)
+                    ** BROKEN: microcode samples the opcode byte instead of
+                    ** the immediate; use MEMFILL4_C_PEEK or MEMFILL4_C_DL
 
 # General purpose
 NOP

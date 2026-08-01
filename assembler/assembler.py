@@ -38,6 +38,41 @@ def twos_comp(val, bits):
         val = val - (1 << bits)
     return val
 
+def split_asm_line(line):
+    """Split a source line into ([(is_quoted, text), ...], comment).
+
+    Text transformations (macro expansion, label localization, $var
+    substitution) must never touch the contents of double-quoted data
+    strings, so callers transform only the is_quoted=False segments and
+    rejoin.  A '#' outside quotes starts the comment, which is returned
+    verbatim (including the '#').  The assembler has no \\" escape, so a
+    bare quote-toggle scan is exact.
+    """
+    segments = []
+    cur = ''
+    in_quote = False
+    comment = ''
+    for idx, ch in enumerate(line):
+        if in_quote:
+            cur += ch
+            if ch == '"':
+                segments.append((True, cur))
+                cur = ''
+                in_quote = False
+        elif ch == '#':
+            comment = line[idx:]
+            break
+        elif ch == '"':
+            if cur:
+                segments.append((False, cur))
+            cur = ch
+            in_quote = True
+        else:
+            cur += ch
+    if cur:
+        segments.append((in_quote, cur))
+    return segments, comment
+
 # Read the opcode data so we can parse the assembly
 opcodes = { }
 with open(args.opcodes, 'r') as fh:
@@ -80,6 +115,16 @@ for macro_file in args.macros:
             macro, value = line.split(maxsplit=1)
             asm_macros[macro] = value
             logging.debug("ASM Macro {} = {}".format(macro, value))
+
+def expand_macros(text):
+    """Expand %..% macros in text to a fixed point (macros may nest)."""
+    while True:
+        newtext = text
+        for m, v in asm_macros.items():
+            newtext = newtext.replace(m, v)
+        if newtext == text:
+            return text
+        text = newtext
 
 #####
 # Generate the assembly parser based on the available opcodes
@@ -220,6 +265,7 @@ if args.symbols:
 
 for input_file in args.sources:
     label_prefix="{}_".format(input_file.split('/')[-1].split('.')[0].replace(' ','_').replace('-','_')).upper()
+    line_num = 0  # error messages report per-file line numbers alongside the filename
     with open(input_file, 'r') as fh:
         while True:
             line = fh.readline()
@@ -229,32 +275,28 @@ for input_file in args.sources:
             line = line.rstrip()
             if not line:
                 continue
-            
-            # Look for ASM macros and replace them
-            partline = [*line.partition('#')]
-            splitline = partline[0].split(' ')
-            newsplitline = [ *splitline ]
-            if splitline[0].startswith('.'):
-                logging.debug("{:16.16s} Line {}: Not processing tokens because label [{}]".format(input_file, line_num, splitline[0]))
-            else:
-                for idx, token in enumerate(splitline[1:]):
-                    while True:
-                        foundmacro = False
-                        for m, v in asm_macros.items():
-                            newtoken = token.replace(m, v)
-                            if newtoken != token:
-                                foundmacro = True
-                                newsplitline[idx+1] = newtoken
-                            token = newtoken
-                        if not foundmacro:
-                            break
 
-            oldline = ' '.join(splitline) + partline[1] + partline[2]
-            newline = ' '.join(newsplitline) + partline[1] + partline[2]
-
-            # Look for dot-style labels and replace them with localized
-            # versions that have the filename prepended
-            newline = re.sub(r"\.([a-zA-Z0-9_]{3}[a-zA-Z0-9_]+)", f".{label_prefix}\\1", newline)
+            # Expand ASM macros and localize dot-style labels, but never
+            # inside double-quoted data strings (a printf format like
+            # "%B%B" or a filename like "config.json" must pass through
+            # untouched).  The first token (label or mnemonic) is skipped
+            # for macro expansion but included for label localization.
+            segments, comment = split_asm_line(line)
+            oldline = ''.join(text for _, text in segments) + comment
+            newsegments = []
+            first_unquoted = True
+            for is_quoted, text in segments:
+                if not is_quoted:
+                    if first_unquoted:
+                        first_unquoted = False
+                        head = re.match(r'\s*\S*', text)
+                        text = head.group(0) + expand_macros(text[head.end():])
+                    else:
+                        text = expand_macros(text)
+                    # Localize dot-style labels by prepending the filename
+                    text = re.sub(r"\.([a-zA-Z0-9_]{3}[a-zA-Z0-9_]+)", f".{label_prefix}\\1", text)
+                newsegments.append(text)
+            newline = ''.join(newsegments) + comment
 
             # Look for global variable declarations
             try:
@@ -329,14 +371,21 @@ for input_file, line_num, line in concat_source:
         current_file = input_file
 
     # We have to replace variables inline so that the pyparsing bits that
-    # handle math (e.g. `$some_var+1`) will work as expected.
+    # handle math (e.g. `$some_var+1`) will work as expected.  Each $name is
+    # replaced as a whole match so a variable that is a prefix of another
+    # ($foo / $foobar) cannot corrupt it, and quoted data strings are never
+    # touched.
     if not line.startswith('VAR') and not line.startswith('#'):
-        newline = line
-        for v in re.findall(r'\$[a-zA-Z0-9_]+', line.split('#')[0]):
+        def replace_var(m):
+            v = m.group(0)
             varval = global_vars.get(v, global_arrays.get(v))
             if not varval:
                 raise SyntaxError(f"In {input_file} line {line_num}: undefined variable {v}\nSource code line: {line}")
-            newline = newline.replace(v, f"0x{varval:04x}")
+            return f"0x{varval:04x}"
+        segments, comment = split_asm_line(line)
+        newline = ''.join(
+            text if is_quoted else re.sub(r'\$[a-zA-Z0-9_]+', replace_var, text)
+            for is_quoted, text in segments) + comment
         if newline != line:
             logging.debug("{:16.16s} {:3d}: VAR: {}".format(input_file, line_num, newline))
             line = newline;
@@ -344,7 +393,7 @@ for input_file, line_num, line in concat_source:
     try:
         match = grammar.parse_string(line, parse_all=True).as_dict()
     except ParseException:
-        print(f"ERROR on line {line_num}: {line}")
+        print(f"ERROR in {input_file} line {line_num}: {line}")
         raise
     logging.debug("{:16.16s} {:3d}: OUT: {}".format(input_file, line_num, match))
 

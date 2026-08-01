@@ -29,10 +29,10 @@ ASM_SOURCES ?= $(sort $(filter-out $(C_ASMS), $(wildcard *.asm)))
 
 # Entry-point ordering: the ODY loader jumps to the first byte of the binary,
 # so the ASM containing :main must be first on the assembler command line.
-# Detect the entry-point file by grepping C sources for void main() and
-# hand-written ASM sources for a :main label.  Programs without :main
-# (e.g. SYSTEM.ODY) fall back to plain sorted order.
-_ENTRY_C := $(if $(C_SOURCES),$(shell grep -l 'void main' $(C_SOURCES) 2>/dev/null))
+# Detect the entry-point file by grepping C sources for a main() definition
+# (int main or void main) and hand-written ASM sources for a :main label.
+# Programs without :main (e.g. SYSTEM.ODY) fall back to plain sorted order.
+_ENTRY_C := $(if $(C_SOURCES),$(shell grep -lE 'void main|int main' $(C_SOURCES) 2>/dev/null))
 _ENTRY_ASM := $(if $(ASM_SOURCES),$(shell grep -l '^:main\b' $(ASM_SOURCES) 2>/dev/null))
 ENTRY_ASM := $(strip $(_ENTRY_C:.c=.asm) $(_ENTRY_ASM))
 OTHER_ASMS := $(filter-out $(ENTRY_ASM),$(sort $(ASM_SOURCES) $(C_ASMS)))

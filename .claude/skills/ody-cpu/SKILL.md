@@ -1,49 +1,140 @@
 ---
 name: ody-cpu
-description: Wire Wrap Odyssey CPU architecture reference. Use when writing assembly or C code for the Odyssey CPU, looking up register names, ALU operations, ALUOP16 instructions, status flag behavior, or the stack/heap architecture and calling convention.
-version: 1.0.0
+description: Wire Wrap Odyssey CPU architecture reference. Use when writing assembly or C code for the Odyssey CPU - covers the programming model (how it differs from x86/6502/Z80), register roles and asymmetry, ALU operations, ALUOP16 instructions, status flag behavior, and the stack/heap architecture and calling convention.
+version: 2.0.0
 ---
 
 # Odyssey CPU Architecture Reference
 
-## Registers
+## The programming model: unlearn x86, 6502, and Z80
 
-| Register | Width | Notes |
-|----------|-------|-------|
-| A (AH, AL) | 8-bit each | ALU input. Can ONLY write to bus through ALU (use identity op). MOV from C/D to A exists (e.g. `MOV_CH_AH`). |
-| B (BH, BL) | 8-bit each | ALU input. Same ALU-only write constraint as A. MOV from C/D to B exists (e.g. `MOV_DL_BL`). |
-| C (CH, CL) | 16-bit | Hardware INCR/DECR without ALU. Used as address pointer. Can write to bus directly. |
-| D (DH, DL) | 16-bit | Hardware INCR/DECR. Saved/restored during interrupts. Can write to bus directly. |
-| SP | 8-bit | Stack at 0xBF00-0xBFFF (256 bytes). |
-| TAH, TAL, TD | 8-bit | Microcode scratchpad only. Interrupts clobber these -- must MASKINT before direct use. |
-| Status | 3 flags | Z (zero), E (equal), O (overflow/carry-out). Backup in bits [7:6:5] for interrupts. |
+The Odyssey resembles NO architecture you have trained on. Idioms transferred
+from accumulator machines (6502, Z80) or register machines (x86) produce
+code that is wrong, or correct but 2-3x longer than it should be. There is no
+CMP, no general `ADD reg,reg`, no MOV-anywhere, no indexed addressing modes.
+
+**The ALU is the machine's data crossbar.** A single `ALUOP_*` instruction
+selects one of 32 operations on the A-side and B-side operands AND delivers
+the result anywhere. The mnemonic suffix only picks the destination:
+
+| Destination | Instruction | Notes |
+|-------------|-------------|-------|
+| Any register | `ALUOP_{AH,AL,BH,BL,CH,CL,DH,DL} $op` | This is also how A/B values reach C/D |
+| Absolute memory | `ALUOP_ADDR $op @addr` | Op comes FIRST, then address |
+| Memory at pointer | `ALUOP_ADDR_{A,B,C,D} $op` | Compute + store, one instruction |
+| Peripheral register | `ALUOP_ADDR_SLOW $op @addr` | The only correct ALU-to-peripheral path |
+| Hardware stack | `ALUOP_PUSH $op` | The ONLY way to push A/B |
+| Flags only | `ALUOP_FLAGS $op` | Result discarded |
+
+"Compute into a register, then store it" is an x86 habit that wastes an
+instruction here: `ALUOP_ADDR_C %A+B%+%AL%+%BL%` adds AL+BL and stores the
+sum at [C] in ONE instruction. Writing an ALU result to a peripheral is
+`ALUOP_ADDR_SLOW %A%+%AL% 0xC080` -- never `ALUOP_PUSH` followed by
+`ST_SLOW_POP`. Before emitting any compute-then-move pair, check whether one
+ALUOP with the right destination does both.
+
+**Every ALUOP latches the status flags** (Z, E, O), regardless of
+destination. A decrement that lands in a register has already set Z -- a
+following `ALUOP_FLAGS` on the same value is a wasted instruction.
+
+## Registers and their asymmetry
+
+| Register | Width | Role |
+|----------|-------|------|
+| A (AH, AL) | 8+8 | ALU operand. Can ONLY reach the bus through the ALU (identity op `%A%`). |
+| B (BH, BL) | 8+8 | ALU operand. Same constraint as A. |
+| C (CH, CL) | 16 | Pointer. Writes to bus directly. Hardware `INCR_C`/`DECR_C`. |
+| D (DH, DL) | 16 | Pointer. Hardware INCR/DECR incl. `INCR4_D`/`INCR8_D`. Saved during interrupts. |
+| SP | 8 | Hardware stack at 0xBF00-0xBFFF (256 bytes). |
+| TAH, TAL, TD | 8 | Microcode scratch. Interrupts clobber them -- MASKINT around direct use. |
+| Status | 3 flags | Z (zero), E (equal), O (overflow/carry). Backup bits [7:6:5] for interrupts. |
+
+Data-movement asymmetries that trip up every newcomer:
+
+- **A/B -> anywhere**: through the ALU only (`ALUOP_DL %A%+%AL%` copies AL
+  to DL; `ALUOP_ADDR_C %A%+%AL%` stores AL at [C]).
+- **C/D -> A/B/T**: dedicated `MOV_<SRC>_<DST>` instructions, source named
+  first: `MOV_CH_AH`, `MOV_DL_BL`, `MOV_CL_TD`. There are NO MOVs in the
+  other direction and none between A and B.
+- **Math on C/D**: the ALU cannot read C/D. Copy to A/B via MOV, compute,
+  write back via `ALUOP_CH/CL/DH/DL`. For plain +1/-1 stepping use the
+  hardware `INCR_C`/`DECR_D` etc. instead (no ALU, no flags).
+- **A-side/B-side selection**: the ALU's A input can only be AH or AL; the B
+  input only BH or BL. You cannot compute AH-AL in one op -- that is why
+  complementary ops exist (`%A-B%` and `%B-A%`, `%A%` and `%B%`).
 
 **CRITICAL - Status Flag Behavior:**
-- **Z (zero)** and **O (overflow/carry-out)** flags are computed by the ALU itself based on the result
-- **E (equal)** flag is computed OUTSIDE the ALU by XOR gates comparing the two input operands (A-side vs B-side)
-- The E flag is set when the two operands are equal, regardless of the ALU operation or result
-- Example: `ALUOP_FLAGS %A&B%+%AL%+%BH%` sets E flag if AL==BH (operand comparison), Z flag if (AL&BH)==0 (result comparison)
+- **Z (zero)**: set when the full 8-bit result is zero.
+- **E (equal)**: computed OUTSIDE the ALU by XOR gates comparing the two
+  SELECTED input operands (e.g. AL vs BH if those selectors are used) -- E
+  is set when the operands are equal regardless of the operation.
+  `ALUOP_FLAGS %A&B%+%AL%+%BH%` sets E if AL==BH (operand comparison) and Z
+  if (AL&BH)==0 (result comparison).
+- **O (overflow)**: the high ALU slice's carry-out. Its meaning depends on
+  the operation -- verified against `alu/four_bit_alu.py`, the canonical
+  source:
 
-C/D increment/decrement: `INCR_C`, `DECR_C`, `INCR_D`, `DECR_D`, `INCR4_D`, `INCR8_D`, `DECR4_D`, `DECR8_D`.
+| Operation class | O flag meaning |
+|-----------------|----------------|
+| Unsigned add (`%A+B%`, `%A+1%`, ...) | Carry out of bit 7 (result wrapped past 0xFF) |
+| Unsigned subtract (`%A-B%`, `%A-1%`, ...) | Borrow: result wrapped below 0 (for `%A-B%`: A < B) |
+| Signed add/sub (`_signed` ops) | Signed overflow (result sign inconsistent with operand signs) |
+| Signed negate (`%-A_signed%`) | Set only when negating -128 |
+| Logical shift left (`%A<<1%`, `%B<<1%`) | The bit shifted out of the MSB |
+| Logical shift right (`%A>>1%`, `%B>>1%`) | Always 0 -- **the shifted-out LSB is LOST** (mask bit 0 first if you need it) |
+| Arithmetic shift left (`%A*2%`) | Sign changed (signed overflow), NOT the shifted-out bit |
+| Arithmetic shift right (`%A/2%`) | Always 0 (shifted-out LSB lost) |
+| Logic (`%A&B%`, `%A\|B%`, `%AxB%`, `%~A%`, ...) | Always 0 |
+| `%Amsb%`/`%Bmsb%`/`%Amsb^Bmsb%` | Always 0 (use Z: set iff tested bit clear / signs match) |
+| Constants (`%zero%`, `%one%`, `%negone%`) | Always 0 |
+
+- **Unsigned comparison** (no CMP exists): `ALUOP_FLAGS %A-B%+%AL%+%BL%`
+  then `JO` (A < B) or `JNO` (A >= B). For pure equality use E with any op:
+  `JEQ`/`JNE`.
+- **Signed comparison**: O after `%A-B_signed%` means signed OVERFLOW, not
+  less-than. Compare signed values by cases -- this is what `%Amsb^Bmsb%`
+  exists for:
+
+```asm
+:main
+ALUOP_FLAGS %Amsb^Bmsb%+%AL%+%BL%   # Z=1: same sign, Z=0: signs differ
+JZ .same_sign
+ALUOP_FLAGS %Amsb%+%AL%             # signs differ: negative one is smaller
+JNZ .a_less_than_b                  # Z=0 -> AL's MSB set -> AL negative -> AL < BL
+JMP .a_greater_equal
+.same_sign
+ALUOP_FLAGS %A-B%+%AL%+%BL%         # same sign: unsigned compare is valid
+JO .a_less_than_b
+.a_greater_equal
+RET
+.a_less_than_b
+RET
+```
+
+**The ALU is a lookup table, and `alu/` is its canonical source.** When you
+need to know exactly what an ALU op does to the result or flags, read
+`alu/four_bit_alu.py` (per-op logic, E simulated there for completeness) and
+`alu/eight_bit_alu.py` (how the two 4-bit slices chain; the O status flag is
+the high slice's cout_msb, and the low slice's cout_lsb is disconnected).
+`alu/alu_repl.py` lets you interactively evaluate any op. The ALU is also
+MUTABLE -- same cost tier as a microcode change (EEPROM reflash, docs,
+tooling) -- so if a new ALU operation would massively simplify a problem,
+proposing one to the owner is a legitimate option.
 
 ## ALU Operations
 
-Register selectors: `%AH%` (0x40), `%AL%` (0x00), `%BH%` (0x80), `%BL%` (0x00), `%Cin%` (0x20). **All ALU instructions must include register selection macros**, even for low registers, for readability.
-
-**Critical:** ALU operations have an "A" side and a "B" side. The "A" side can only select from AH or AL; the B side can only select from BH or BL. It is not possible to subtract AH-AL using %A-B%. That is why there are complementary operations for %A-B% and %B-A% as well as separate %A% and %B% identity operations. %AL% and %BL% macros are both zero (default state of the ALU). %AH% and %BH% set bits to select the high register for that side.
+Register selectors: `%AH%` (0x40), `%AL%` (0x00), `%BH%` (0x80), `%BL%`
+(0x00), `%Cin%` (0x20). **Always write the selector macros, even for the
+low registers** (they are 0x00 but the convention keeps code readable).
 
 | Opcode | Macro | Description |
 |--------|-------|-------------|
-| 0x00 | `%zero%` | Constant 0 |
-| 0x01 | `%one%` | Constant 1 |
-| 0x02 | `%negone%` | Constant 0xFF (-1) |
+| 0x00-0x02 | `%zero%`, `%one%`, `%negone%` | Constants 0, 1, 0xFF |
 | 0x03 | `%A%` | Identity A (add `%AH%` for high reg) |
 | 0x04 | `%B%` | Identity B (add `%BH%` for high reg) |
-| 0x05 | `%A+B%` | Add A+B |
-| 0x06 | `%A-B%` | Subtract A-B |
-| 0x07 | `%B-A%` | Subtract B-A |
-| 0x08 | `%A-1%` | Decrement A |
-| 0x09 | `%B-1%` | Decrement B |
+| 0x05 | `%A+B%` | Add |
+| 0x06 / 0x07 | `%A-B%` / `%B-A%` | Subtract |
+| 0x08 / 0x09 | `%A-1%` / `%B-1%` | Decrement |
 | 0x0a | `%A_clrmsb%` | Clear MSB of A |
 | 0x0b-0x0d | `%A+B_signed%`, `%A-B_signed%`, `%B-A_signed%` | Signed arithmetic |
 | 0x0e-0x0f | `%-A_signed%`, `%-B_signed%` | Signed negation |
@@ -53,72 +144,83 @@ Register selectors: `%AH%` (0x40), `%AL%` (0x00), `%BH%` (0x80), `%BL%` (0x00), 
 | 0x1d-0x1e | `%A*2%`, `%A/2%` | Arithmetic shift left/right |
 | 0x1f | `%Amsb^Bmsb%` | XOR of MSBs |
 
-Add `%Cin%` (0x20) for +1 variants (e.g., `%A+1%` = 0x23, `%A+B+1%` = 0x25).
+Adding `%Cin%` (0x20) gives the +1 variants. Predefined in `asm_macros`:
+`%A+1%` (0x23), `%B+1%` (0x24), `%A+B+1%`, `%A-B-1%`, `%B-A-1%`, `%A-2%`,
+`%B-2%`, and signed forms `%A+B+1_signed%`, `%A-B-1_signed%`,
+`%B-A-1_signed%`. **These already include `%Cin%` -- do not add it again.**
+Display-color helpers also exist: `%A_setmsb%`/`%A_setblink%` (same op, sets
+bit 7) and `%A_clrmsb%`/`%A_clrblink%`. When in doubt,
+`assembler/asm_macros` is the authoritative list.
 
 ## ALUOP16 Instructions (16-bit ALU)
 
-Perform 16-bit operations using the 8-bit ALU in two steps: operate on low byte, then conditionally operate on high byte based on the resulting flags.
+Perform 16-bit operations with the 8-bit ALU in one instruction: operate on
+the low byte, then operate on the high byte, optionally selecting the high
+op based on the low op's flags.
 
-**Unconditional (2 operands)**: `ALUOP16_{A,B} lo_op hi_op` -- lo_op stores to low reg, hi_op stores to high reg.
+**Unconditional (2 operands)**: `ALUOP16_{A,B} $lo_op $hi_op` -- needs
+hand-written operand bytes, e.g. `ALUOP16_A %A|B% %A|B%+%AH%+%BH%`.
 
-**Conditional (3 operands)** -- lo_op executes first, sets flags, then flag selects which hi_op runs:
-- `ALUOP16O_{A,B,FLAGS}` -- checks **O** (overflow) flag
-- `ALUOP16E_{A,B,FLAGS}` -- checks **E** (equal) flag
-- `ALUOP16Z_{A,B,FLAGS}` -- checks **Z** (zero) flag
+**Conditional (3 operands)** -- `ALUOP16{O,E,Z}_{A,B,FLAGS} $lo $hi_if_set
+$hi_if_clear`. The `%ALU16_*%` macros expand to all THREE operands and fit
+ONLY these conditional forms:
 
-Format: `ALUOP16O_A lo_op hi_op_if_set hi_op_if_clear`. The `_FLAGS` variants only set flags without writing registers.
-
-**Key insight**: the low byte operation's flags inform high byte handling. E.g., 16-bit add: if low byte overflows, high byte add includes carry (+1); if not, normal high byte add.
-
-### Predefined ALUOP16 macros (from `asm_macros`)
-
-Each macro expands to 3 values (the operand tuple). Use with `ALUOP16O_` for arithmetic/shifts:
-
-| Macro | Operation |
-|-------|-----------|
-| `%ALU16_A+1%` / `%ALU16_B+1%` | 16-bit increment |
-| `%ALU16_A-1%` / `%ALU16_B-1%` | 16-bit decrement |
-| `%ALU16_A+B%` | 16-bit A = A + B |
-| `%ALU16_A-B%` / `%ALU16_B-A%` | 16-bit subtraction |
-| `%ALU16_sA+B%` / `%ALU16_sA-B%` / `%ALU16_sB-A%` | Signed 16-bit arithmetic |
-| `%ALU16_A<<1%` / `%ALU16_B<<1%` | 16-bit left shift |
-
-Use with `ALUOP16E_FLAGS` or `ALUOP16Z_FLAGS` for comparisons:
-
-| Macro | Operation |
-|-------|-----------|
-| `%ALU16_Azero%` / `%ALU16_Bzero%` | Test == 0 (Z flag) |
-| `%ALU16_A\|Beq%` | Test A == B (E flag) |
-
-### ALUOP16 examples
+| Macro | Operation | Use with |
+|-------|-----------|----------|
+| `%ALU16_A+1%` / `%ALU16_B+1%` | 16-bit increment | `ALUOP16O_` |
+| `%ALU16_A-1%` / `%ALU16_B-1%` | 16-bit decrement | `ALUOP16O_` |
+| `%ALU16_A+B%`, `%ALU16_A-B%`, `%ALU16_B-A%` | 16-bit add/sub | `ALUOP16O_` |
+| `%ALU16_sA+B%`, `%ALU16_sA-B%`, `%ALU16_sB-A%` | Signed 16-bit | `ALUOP16O_` |
+| `%ALU16_A<<1%` / `%ALU16_B<<1%` | 16-bit left shift | `ALUOP16O_` |
+| `%ALU16_Azero%` / `%ALU16_Bzero%` | Test == 0 (Z flag) | `ALUOP16Z_FLAGS` |
+| `%ALU16_A\|Beq%` | Test A == B (E flag) | `ALUOP16E_FLAGS` |
 
 ```asm
-ALUOP16O_A %ALU16_A+B%              # A = A + B (16-bit)
+:main
+ALUOP16O_A %ALU16_A+B%              # A = A + B (16-bit, carry propagated)
 ALUOP16O_A %ALU16_A+1%              # A++ (16-bit)
 ALUOP16E_FLAGS %ALU16_A|Beq%        # test A == B (flags only)
 ALUOP16Z_FLAGS %ALU16_Azero%        # test A == 0 (flags only)
-ALUOP16_A %A|B% %A|B%+%AH%+%BH%    # unconditional OR (manual operands)
+ALUOP16_A %A|B% %A|B%+%AH%+%BH%     # unconditional OR (manual operands)
 ```
+
+Never compose the three operand bytes of a 16-bit arithmetic op by hand --
+a wrong third operand silently computes the wrong high byte. Use the macros.
 
 ## Dual Stack/Heap Architecture
 
-Two separate LIFO structures:
+Two separate LIFO structures -- do not conflate them:
 
-**Hardware Stack (0xBF00-0xBFFF, 256 bytes)** -- register preservation and control flow only:
+**Hardware Stack (0xBF00-0xBFFF, 256 bytes)** -- register preservation and
+control flow only:
 - `CALL`/`RET` push/pop return addresses
-- `ALUOP_PUSH %A%+%AL%` / `POP_AL` save/restore A/B registers
-- `PUSH_CH` / `POP_CH` save/restore C/D half-registers
+- `ALUOP_PUSH %A%+%AL%` / `POP_AL` save/restore A/B
+- `PUSH_CH` / `POP_CH` etc. save/restore C/D halves
+- Only 256 bytes: deep recursion is dangerous
 
-**Software Heap (0xF000-0xFFEF, ~4 KiB)** -- parameter passing between functions:
-- `:heap_push_AL`, `:heap_push_A`, `:heap_push_D` -- push args before calling
-- `:heap_pop_AL`, `:heap_pop_A` -- pop results after calling
-- `:heap_push_all` / `:heap_pop_all` -- bulk save/restore all register pairs
-- `:heap_advance_AL` / `:heap_retreat_AL` -- allocate/deallocate frames (C compiler)
-- Grows upward from 0xF000. Pointer in `$heap_ptr`.
+**Software Heap (0xF000-0xFFEF, ~4 KiB)** -- parameter passing between
+functions via `:heap_push_*` / `:heap_pop_*` (full API in skill **ody-asm**).
+Grows upward; pointer in `$heap_ptr`; no overflow checking.
+
+Both are ordinary main-memory speed. The hardware stack doubles as fast
+single-instruction scratch space when registers run short; the heap costs a
+CALL plus internal interrupt masking per access. That masking also means
+**heap functions must never be called from an ISR** (their `UMASKINT` would
+re-enable interrupts inside the handler), and never between your own
+`MASKINT`/`UMASKINT` pair.
 
 ## Calling Convention
 
-- **Simple functions**: inputs/outputs in specific registers (AL for byte, A for word, C/D for addresses)
-- **Complex functions**: caller pushes args to heap, function pops internally. Args pushed in documented order (popped LIFO inside function).
-- **Callee-save**: virtually every function saves/restores ALL registers it modifies using PUSH/POP pairs. Caller can assume registers are preserved.
-- **IRQ handler patching**: functions save current IRQ vector on stack, install temporary handler, restore after. Handlers communicate with main loop by modifying registers directly (e.g., spinlocks).
+- **Simple functions**: inputs/outputs in registers (AL byte, A word, C/D
+  addresses), documented in the function's header comment.
+- **Complex functions**: caller heap-pushes args in the documented order,
+  callee pops them (LIFO), callee heap-pushes results, caller pops them.
+- **Callee-save**: functions save/restore every register they modify with
+  hardware-stack PUSH/POP pairs (restore in exact reverse order). Callers
+  assume registers are preserved.
+- Heap-push a result BEFORE the epilog POPs (the two structures are
+  separate); never push a result onto the hardware stack across your own
+  POPs -- that shifts every subsequent pop by one.
+- **IRQ handler patching**: save the current vector, install a temporary
+  handler, restore after. Handlers communicate with the main loop through
+  registers/globals directly.

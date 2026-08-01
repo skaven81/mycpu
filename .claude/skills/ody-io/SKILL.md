@@ -1,10 +1,52 @@
 ---
 name: ody-io
-description: Wire Wrap Odyssey memory map, peripherals, I/O, and storage reference. Use when working with memory addresses, peripheral registers, interrupts, video/color output, extended memory paging, FAT16 disk access, ODY executable format, printf format specifiers, color codes, or keyboard flags.
-version: 1.0.0
+description: Wire Wrap Odyssey memory map, peripherals, I/O, and storage reference. Use when working with memory addresses, peripheral registers, _SLOW peripheral access, interrupts, video/color output, extended memory paging, FAT16 disk access, ODY executable format, printf format specifiers, color codes, or keyboard flags.
+version: 2.0.0
 ---
 
 # Odyssey Memory Map, I/O, and Storage Reference
+
+## _SLOW opcodes for peripheral access
+
+Some peripherals gate their /RD and /WR strobes on stretched instruction
+timing and silently return/write garbage with regular loads and stores. The
+`_SLOW` instruction variants exist for this:
+`LD_SLOW_PUSH @addr`, `ST_SLOW @addr $data`, `ST_SLOW_POP @addr`,
+`LDA_{A,B,C,D}_SLOW_PUSH`, `STA_{A,B,C,D}_SLOW_POP`,
+`ALUOP_ADDR_SLOW $op @addr`, `ALUOP_PUSH_SLOW $op`.
+
+**Rule of thumb: ALL peripheral access (0xC000-0xC7FF) should use `_SLOW`
+instructions.** It is correct for every address (the shell's peek/poke do
+exactly this) and only costs a few extra cycles. The reality is that only
+certain peripherals strictly need it -- the UART and ATA definitely do,
+while the BIOS libraries access the keyboard, RTC/timer, page registers,
+and 82C54 with regular instructions. When in doubt, follow existing code,
+especially the BIOS library for that peripheral.
+
+To write an ALU/register value to a `_SLOW` peripheral, prefer the single
+instruction `ALUOP_ADDR_SLOW %A%+%AL% %uart_tbr%` over an
+`ALUOP_PUSH`+`ST_SLOW_POP` pair. RAM above 0xC7FF (buffers, D/E windows,
+heap) is normal-speed.
+
+## Use the named peripheral macros, not raw addresses
+
+`assembler/asm_macros` defines `%name%` constants for every peripheral
+register and bit mask -- always use them instead of hex literals:
+
+| Group | Examples |
+|-------|----------|
+| Video | `%display_chars%` (0x4000), `%display_color%` (0x5000), `%cursor%`, `%blink%` |
+| Colors | `%white% %red% %green% %blue% %cyan% %magenta% %yellow%`, dark `%dred%`-style, `%ansi_*%` |
+| IRQ vectors | `%IRQ0addr%`..`%IRQ7addr%` (0x5F00..0x5F0E) |
+| Keyboard | `%kb_key%`, `%kb_keyflags%`, `%kb_keyflag_{BREAK,CTRL,ALT,FUNCTION,SHIFT,NUMLOCK,CAPSLOCK,SCROLLLOCK}%` |
+| RTC/timer | `%tmr_clk_{sec,min,hr,day,date,month,year}%`, `%tmr_alarm_*%`, `%tmr_wdog_*%`, `%tmr_ctrl_{a,b,c}%`, `%tmr_sram_*%`, masks |
+| UART | `%uart_{tbr,rbr,ucr,usr,mcr,brsr,msr}%` + bit masks (`%uart_usr_DR%`, `%uart_ucr_8n1%`, `%uart_brsr_9600%`, ...) |
+| Prog. timer | `%ptmr_base%`, `%ptmr_counter{0,1,2}%`, `%ptmr_clr_*%`, `%ptmr_ctrl_*%` (82C54) |
+| Ext. memory | `%d_page%` (0xC200), `%e_page%` (0xC201) |
+| ATA | `%ata_{data,err,numsec,lba0..lba3,cmd_stat,lowreg}%`, `%ata_cmd_*%`, `%ata_err_*%` |
+
+Grep `assembler/asm_macros` for the full list (~240 peripheral/constant
+macros with per-bit comments).
 
 ## Memory Map
 
@@ -47,11 +89,18 @@ version: 1.0.0
 | IRQ | Vector | Source |
 |-----|--------|--------|
 | 1 | 0x5F02 | Keyboard |
-| 3 | 0x5F06 | Timer |
+| 2 | 0x5F04 | Programmable timer (82C54, all three counters) |
+| 3 | 0x5F06 | RTC timer (DS1511Y) |
 | 4 | 0x5F08 | UART modem status |
 | 5 | 0x5F0A | UART data ready |
 
-IRQ 0/2/6/7 reserved.
+IRQ 0/6/7 reserved (IRQ0 highest priority, IRQ7 lowest).
+
+**ISR contract**: an ISR behaves like any other function -- it must save
+and restore EVERY register it touches before `RETI` (flags are covered by
+the status backup bits + RETI). ISRs must never call heap functions or
+anything else that executes `UMASKINT`. Install a handler by writing its
+address to the vector (`ST16 %IRQ2addr% :my_isr`).
 
 ## Video
 
