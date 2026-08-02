@@ -63,7 +63,7 @@ $(OPCODES_FILE): $(OPCODES_GEN)
 #------------------------------------------------------------------------------
 # Common Phony Targets - Use .PHONY (Make built-in)
 #------------------------------------------------------------------------------
-.PHONY: clean sdcard clean-opcodes
+.PHONY: clean sdcard serial clean-opcodes
 
 clean:
 	$(Q)echo "  CLEAN   $(DIRNAME)"
@@ -79,6 +79,13 @@ sdcard: $(FILENAME)
 	$(Q)mkdir -p $(INSTALL_DIRECTORY)/$(INSTALL_SUBDIR)
 	$(Q)echo "  INSTALL $(FILENAME) -> $(INSTALL_DIRECTORY)/$(INSTALL_SUBDIR)/$(FILENAME)"
 	$(Q)cp $(FILENAME) $(INSTALL_DIRECTORY)/$(INSTALL_SUBDIR)/$(FILENAME)
+
+# Send this program to a waiting `serrun` on the Odyssey over the serial
+# port, instead of copying it to the SD card.  Run from the directory of
+# the program you're actively developing (not fanned out across every
+# util -- only one program can be received/run at a time).
+serial: $(FILENAME)
+	$(Q)$(SERIAL_SEND) --port $(SERIAL_PORT) --baud $(SERIAL_BAUD) $(FILENAME)
 
 #------------------------------------------------------------------------------
 # Validation Helpers - Use Make's built-in string functions

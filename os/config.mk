@@ -28,6 +28,13 @@ INSTALL_SUBDIR := SYS
 ASSEMBLER := $(ASSEMBLER_DIR)/assembler.py
 C_COMPILER := $(C_COMPILER_DIR)/c_compiler.py
 OPCODES_GEN := $(ASSEMBLER_DIR)/gen_opcodes.sh
+SERIAL_SEND := $(ROOT_DIR)tools/serial_send.py
+
+#------------------------------------------------------------------------------
+# Serial transfer (make serial) defaults
+#------------------------------------------------------------------------------
+SERIAL_PORT ?= /dev/ttyUSB0
+SERIAL_BAUD ?= 9600
 
 # Use wildcard instead of ls - it's Make-native
 MACROS := $(wildcard $(ASSEMBLER_DIR)/asm_macros)
