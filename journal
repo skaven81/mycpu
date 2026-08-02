@@ -1,3 +1,75 @@
+2026-08-02: Serial program deployment: make serial + serrun (claude)
+=====================================================================
+
+Built the remote-development workflow the 2026-07-25 UART entry was
+setting up for: `make serial` on the PC streams a freshly-built .ODY
+straight to the Odyssey over the wire, and `serrun` (new util) receives
+it into RAM and runs it. No more swapping the SD card to install a binary.
+
+Odyssey is the active side: serrun sends a SERODY hello repeatedly until
+the PC's serial_send.py replies OK, then reads a 14-byte header (8.3 name
++ size) and the raw file stream, then sends DONE once it has it all.
+serrun caches the first 4 bytes to read the ODY flags byte, allocates
+main RAM or an extended-memory page depending on the target, localizes
+the binary with the existing fat16_localize_ody, and hands off.
+
+The interesting part was the hand-off. serrun's binary never touches
+FAT16 -- it only ever exists in a RAM buffer -- so the existing
+dirent-based program-chaining mechanism didn't fit, and a direct CALL_D
+into the received program was wrong: it would leave serrun's own memory
+resident in RAM the whole time the new program ran. Added a second,
+parallel "direct exec" IPC path to the BIOS exec loop
+(80-run_system_ody.asm): a pending flag plus program-ptr/entry-ptr/flags
+fields that serrun populates and the exec loop picks up on its next
+iteration, after it has already freed serrun's own memory as part of its
+normal post-return cleanup. Documented in README-bios-exec.md alongside
+the existing dirent-based chaining.
+
+Two real hardware bugs surfaced during bring-up, neither obvious from
+just reading the code:
+
+- The BIOS boots with IRQ5 (UART data-ready) wired to :uart_clear_dr,
+  which reads and discards every incoming byte without buffering it --
+  uart_bufsize()/uart_readbuf() report empty forever regardless of what
+  actually arrives on the wire, until something installs the buffering
+  handler (:uart_irq_dr_buf) instead. Only `console` was doing that.
+  serrun now does the same on entry and restores the original vector on
+  every exit path.
+
+- A real C compiler codegen bug: visit_While/visit_DoWhile push A once
+  before the loop to preserve it across the per-iteration condition
+  check, and only pop it back at the loop's natural exit label. A
+  `return` from inside the loop body jumps straight to the function's
+  epilogue and skips that pop, leaking 2 bytes onto the hardware stack
+  every time. The leaked bytes desync the function's fixed
+  register-restore pop sequence, so the final RET pops garbage instead of
+  the real return address -- on this hardware that's a full reboot (RET
+  to 0x0000), not a wrong value. serrun's own receive loop (`while (1) {
+  if (...) return; ... }`) hits this shape constantly, which is how it
+  turned up. Found by hardware trace/HLT bisection, then confirmed by
+  hand-tracing the exact hardware-stack push/pop balance in the generated
+  assembly. Fixed by threading a pending-pop count through the same
+  kwargs mechanism continue_label/break_label already use; visit_Return
+  discards the correct number of leaked bytes with POP_TD before
+  returning. Reproduced with a hardware repro first (a rebooting cctest2
+  regression test), confirmed the fix with a clean PASS after -- the
+  whole cctest suite still passes, and a full os/ rebuild is unaffected
+  everywhere else, since the new code path is a no-op except for exactly
+  this while/do-while-plus-early-return shape.
+
+Also added uart_readbuf/uart_bufsize/uart_sendchar and kb_readbuf as
+proper C-callable BIOS primitives (special_functions.py + new uart.h/
+keyboard.h), instead of one-off wrappers local to serrun, since they're
+generically useful to any future C program that needs to touch the UART
+or keyboard directly.
+
+End to end on hardware: `make serial` from a program's build directory,
+`serrun` on the Odyssey, and the binary transfers, launches, and returns
+to the shell cleanly -- including argv forwarding (`serrun 100` correctly
+passed "100" through to a received RAND.ODY, which printed a random
+number in that range).
+
+
 2026-08-01: Docs/skills overhaul so Sonnet-class models can write Odyssey code (claude)
 =======================================================================================
 
