@@ -295,12 +295,16 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 del(kwargs['continue_label'])
             if 'break_label' in kwargs:
                 del(kwargs['break_label'])
+            # See the matching comment in visit_While: this loop also pushes
+            # A once and only pops it at done_label, so an early `return`
+            # from inside the body needs to know to unwind it itself.
+            pending_pop_pairs = kwargs.pop('pending_pop_pairs', 0) + 1
             with self._debug_block("DoWhile block"):
                 self.emit(f"ALUOP_PUSH %A%+%AH%", "Preserve A for dowhile loop condition")
                 self.emit(f"ALUOP_PUSH %A%+%AL%", "Preserve A for dowhile loop condition")
                 self.emit(f"{top_label}", f"DoWhile loop begin")
                 with self._debug_block("DoWhile body"):
-                    self.visit(node.stmt, mode='codegen', continue_label=cond_label, break_label=done_label, **kwargs)
+                    self.visit(node.stmt, mode='codegen', continue_label=cond_label, break_label=done_label, pending_pop_pairs=pending_pop_pairs, **kwargs)
                 with self._debug_block("DoWhile condition"):
                     self.emit(f"{cond_label}", "DoWhile condition")
                     cond_var = self.visit(node.cond, mode='generate_rvalue', dest_reg='A', **kwargs)
@@ -327,6 +331,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 del(kwargs['continue_label'])
             if 'break_label' in kwargs:
                 del(kwargs['break_label'])
+            # This loop pushes A once before the loop and only pops it back
+            # at done_label (the natural exit). An early `return` from
+            # inside the body skips that pop, so tell visit_Return (reached
+            # via the body visit below) how many of these are now pending,
+            # so it can unwind them itself. Threaded the same way
+            # continue_label/break_label are threaded.
+            pending_pop_pairs = kwargs.pop('pending_pop_pairs', 0) + 1
             with self._debug_block("While block"):
                 self.emit(f"ALUOP_PUSH %A%+%AH%", "Preserve A for while loop condition")
                 self.emit(f"ALUOP_PUSH %A%+%AL%", "Preserve A for while loop condition")
@@ -341,7 +352,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.emit(f"JMP {done_label}", f"Condition was false, end loop")
                 with self._debug_block("While body"):
                     self.emit(f"{true_label}", f"Begin while loop body")
-                    self.visit(node.stmt, mode='codegen', continue_label=top_label, break_label=done_label, **kwargs)
+                    self.visit(node.stmt, mode='codegen', continue_label=top_label, break_label=done_label, pending_pop_pairs=pending_pop_pairs, **kwargs)
                     self.emit(f"JMP {top_label}", f"Next While loop")
                 self.emit(f"{done_label}", "End while loop")
                 self.emit(f"POP_AL", "Restore A from while loop condition")
@@ -856,6 +867,22 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
     def visit_Return(self, node, mode, return_label, **kwargs):
         if mode == 'codegen':
+            # while/do-while push A once before the loop to preserve it
+            # across the per-iteration condition check, and only pop it
+            # back at the loop's own natural-exit label. A `return` from
+            # inside the loop body jumps straight here, past that pop, so
+            # we have to discard the pending push(es) ourselves -- one pair
+            # per enclosing while/do-while loop (see visit_While/
+            # visit_DoWhile, which thread the count through kwargs the same
+            # way continue_label/break_label are threaded). POP_TD discards
+            # without touching A, so this is safe to do around evaluating
+            # the return expression in either order.
+            pending_pop_pairs = kwargs.get('pending_pop_pairs', 0)
+            if pending_pop_pairs:
+                with self._debug_block(f"Unwind {pending_pop_pairs} pending while/do-while condition-preserve push(es) before early return"):
+                    for _ in range(pending_pop_pairs):
+                        self.emit("POP_TD", "Discard leaked loop-condition-preserve byte (early return from inside the loop)")
+                        self.emit("POP_TD", "Discard leaked loop-condition-preserve byte (early return from inside the loop)")
             self.visit(node.expr, mode='generate_rvalue', dest_reg='A')
             self.emit(f"JMP {return_label}")
         else:

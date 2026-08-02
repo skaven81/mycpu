@@ -377,6 +377,61 @@ void test_break_continue() {
 }
 
 // ============================================================================
+// TEST: CONTROL FLOW - EARLY RETURN FROM INSIDE A WHILE LOOP BODY
+//
+// Regression test for a codegen bug in visit_While (codegen.py): the
+// compiler pushes A once before a while loop to preserve it across the
+// per-iteration condition check, but the matching pop is only emitted at
+// the loop's natural exit label. A `return` from *inside* the loop body
+// jumps straight to the function's epilogue and skips that pop, leaking 2
+// bytes onto the hardware stack every time the function returns this way.
+// The leaked bytes shift the function's fixed register-restore pop
+// sequence, so the final RET ends up popping garbage instead of the real
+// return address -- in practice this manifests as the whole system
+// rebooting (RET to 0x0000) rather than a normal function return, not as
+// a wrong value. Found 2026-08 while debugging os/util/serrun
+// (read_byte_blocking/wait_byte_timeout, both `while` loops that return
+// from inside the body).
+// ============================================================================
+
+uint8_t find_in_range(uint8_t target) {
+    uint8_t i;
+    i = 0;
+    while (i < 10) {
+        if (i == target) {
+            return i;
+        }
+        i++;
+    }
+    return 0xFF;
+}
+
+void test_while_early_return() {
+    uint8_t result1;
+    uint8_t result2;
+    uint8_t result3;
+
+    // Early return from partway through the loop body.
+    result1 = find_in_range(3);
+    assert_equal_u8(result1, 3, "While early return: mid-loop");
+
+    // A second call with a different target -- each call leaks its own 2
+    // bytes if the bug is present, so a second call is where a corrupted
+    // stack is most likely to surface as a crash rather than a wrong value.
+    result2 = find_in_range(7);
+    assert_equal_u8(result2, 7, "While early return: second call");
+
+    // Loop runs to completion via the natural exit (no early return) --
+    // the control case, which should behave the same before and after a fix.
+    result3 = find_in_range(0xFF);
+    assert_equal_u8(result3, 0xFF, "While loop natural exit (no early return)");
+
+    // Reaching this line at all proves the calls above returned normally
+    // instead of crashing the system.
+    assert_equal_u8(1, 1, "Reached end of test_while_early_return (no reboot)");
+}
+
+// ============================================================================
 // TEST: FUNCTION CALLS (visit_FuncCall, visit_FuncDef)
 // ============================================================================
 
@@ -448,7 +503,8 @@ void main() {
     test_do_while();
     test_for();
     test_break_continue();
-    
+    test_while_early_return();
+
     uint16_t passed = total_tests - failed_tests;
     if (failed_tests == 0) {
         printf("cctest2: %U/%U PASS\n", total_tests, total_tests);
