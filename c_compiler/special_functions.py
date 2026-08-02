@@ -184,6 +184,66 @@ class SpecialFunctions():
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Print character directly in AL")
 
+    # ---- UART (register-based) ----
+
+    def custom_FuncCall_uart_readbuf(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: no inputs -> CALL :uart_readbuf -> AL=byte (0x00 if buffer empty);
+        #      AH is not touched by the routine itself.
+        # C: uint8_t uart_readbuf(void)
+        # Callers must use uart_bufsize() to tell an empty buffer apart from a
+        # genuine received 0x00 byte.  :uart_readbuf preserves B internally.
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by return value)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by return value)")
+        self.emit(f"CALL {func.asm_name()}", "Read one byte from the UART receive buffer")
+        self.emit("LDI_AH 0x00", "Clear AH (byte return)")
+        if dest_reg != 'A':
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
+
+    def custom_FuncCall_uart_bufsize(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: no inputs -> CALL :uart_bufsize -> AL=count (0-255);
+        #      AH is not touched by the routine itself.
+        # C: uint8_t uart_bufsize(void)
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by return value)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by return value)")
+        self.emit(f"CALL {func.asm_name()}", "Number of bytes in the UART receive buffer")
+        self.emit("LDI_AH 0x00", "Clear AH (byte return)")
+        if dest_reg != 'A':
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
+
+    def custom_FuncCall_uart_sendchar(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: AL=char -> CALL :uart_sendchar -> no return (blocks until sent)
+        # C: void uart_sendchar(uint8_t c)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL {func.asm_name()}", "Send character in AL, blocking until transmit completes")
+
+    # ---- Keyboard (register-based) ----
+
+    def custom_FuncCall_kb_readbuf(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: no inputs -> CALL :kb_readbuf -> A = flags:char (AH=key flags,
+        #      AL=char; 0x0000 if the keyboard buffer was empty).  Both bytes
+        #      are meaningfully set by the routine itself, unlike uart_readbuf.
+        # C: uint16_t kb_readbuf(void)
+        # The BREAK flag (0x01) in the high byte marks a key-release event.
+        # :kb_readbuf preserves B internally.
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by return value)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by return value)")
+        self.emit(f"CALL {func.asm_name()}", "Read one keyboard event into A (AH=flags, AL=char)")
+        if dest_reg != 'A':
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
+
     # ---- String functions (register-based) ----
 
     def custom_FuncCall_strcmp(self, node, mode, func, dest_reg='A', **kwargs):
@@ -776,3 +836,5 @@ class SpecialFunctions():
         self.emit(f"POP_AL", "Restore A after clear_screen")
         self.emit(f"POP_AH", "Restore A after clear_screen")
 
+    def custom_FuncCall_halt(self, node, mode, func, dest_reg='A', **kwargs):
+        self.emit(f"HLT", "halt() from C")

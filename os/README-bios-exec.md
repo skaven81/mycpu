@@ -129,6 +129,72 @@ return 0;
 
 ---
 
+## Requesting Execution of an Already-Loaded Program (Direct-Exec)
+
+The dirent-based mechanism above assumes the target binary lives on a FAT16
+volume the BIOS can re-read.  Some programs instead receive a binary through
+a transport that has no dirent at all (for example `serrun`,
+`os/util/serrun/`, which receives an `.ODY` file over a serial link) — the
+binary only ever exists in a RAM buffer the receiving program allocated and
+localized itself.  For this case, use the parallel `$exec_direct_*` IPC
+fields instead of `$exec_dirent_ptr`/`$exec_fsh_ptr`.  `$exec_argc`/
+`$exec_argv_ptr` are shared with the dirent-based path and used exactly the
+same way (Step 3 above).
+
+### Step 1 - Load and localize the binary yourself
+
+Allocate memory and fill it exactly as the BIOS would (see
+`os/bios/lib/fat16_odyexe.asm` for the header format), then call
+`fat16_localize_ody` to get the entry point:
+
+```asm
+# A = address of the loaded (but not yet localized) binary
+CALL :heap_push_A
+CALL :fat16_localize_ody
+CALL :heap_pop_A            # A = entry point address
+```
+
+### Step 2 - Write to the direct-exec IPC block
+
+```asm
+# Store the buffer address (0x0000 if you used extended memory - see below)
+ALUOP_ADDR %C%+%CH% $exec_direct_program_ptr
+ALUOP_ADDR %C%+%CL% $exec_direct_program_ptr+1
+
+# Store the localized entry point
+ALUOP_ADDR %A%+%AH% $exec_direct_entry_ptr
+ALUOP_ADDR %A%+%AL% $exec_direct_entry_ptr+1
+
+# Store the ODY flags byte (same encoding as the dirent path: bits 0-1
+# select main RAM / ext-D / ext-E / ext-D+E, used for post-exec cleanup)
+ST $exec_direct_flags 0x00  # example: main RAM
+
+# Mark the request pending
+ST $exec_direct_pending 0x01
+```
+
+`$exec_direct_program_ptr` follows the same convention as the dirent path's
+internal `$exec_loop_program_ptr`: for the extended-memory flag values
+(`0x01`/`0x02`/`0x03`), set it to `0x0000` — the BIOS frees the extended
+memory page(s) via the flags byte instead of freeing a main-RAM pointer.
+
+### Step 3 - Build the argv array (optional)
+
+Same as the dirent path (see above) — set `$exec_argv_ptr`/`$exec_argc`, or
+leave them at `0x0000`/`0x00` for no arguments.
+
+### Step 4 - Return
+
+Same as the dirent path: push your exit code and `RET`.  **Do not `CALL_D`
+the loaded program directly** — that would leave your own program's memory
+resident in RAM for the entire time the new program runs.  Returning
+normally lets the BIOS free your memory first (its usual post-return
+cleanup), and only then, on the next exec-loop iteration, does it see the
+pending direct-exec request and run the new program — guaranteeing you are
+fully unloaded first.
+
+---
+
 ## Receiving argc and argv
 
 **The BIOS always pushes `argc` and `argv` to the heap before executing any

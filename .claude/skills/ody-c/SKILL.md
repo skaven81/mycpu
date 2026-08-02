@@ -1,7 +1,7 @@
 ---
 name: ody-c
 description: Wire Wrap Odyssey C compiler reference. Use when writing C code for the Odyssey - covers which C constructs compile / fail / silently miscompile, the BIOS header inventory and include rules, build integration, compiler error diagnosis, and validated code size optimization techniques.
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Odyssey C Compiler Reference
@@ -70,9 +70,11 @@ warnings of any kind, so anything suspicious must be caught by reading.
   file first on the assembler command line; in multi-file programs, also
   name the entry file so it sorts first, e.g. `00-main.c`.)
 - **BIOS special functions dispatch on the `extern` storage class.** printf,
-  print, malloc_*, str*, fat16_*, ext*, halt, etc. get custom register-based
-  call sequences ONLY if declared `extern` (the BIOS headers do this -- so
-  always `#include` the header rather than hand-declaring).
+  print, malloc_*, str*, fat16_*, ext*, halt, uart_*, kb_readbuf, etc. get
+  custom register-based call sequences ONLY if declared `extern` (the BIOS
+  headers do this -- so always `#include` the header rather than
+  hand-declaring). This list grows over time -- see "BIOS headers" below
+  for when to extend it yourself rather than writing a local wrapper.
 - **Evaluation order is right-to-left** for binary operands and call
   arguments -- side effects in argument lists happen in reverse source order.
 - **`printf`/`print` format argument must be a simple expression**: a string
@@ -127,12 +129,47 @@ always** (`uint8_t/uint16_t/int8_t/int16_t`, `struct uint32 {hi,lo}`,
 | `shell_argv.h` | `shell_get_argv_n(uint8_t)` -> `char*` (SYSTEM.ODY built-ins ONLY) |
 | `trace.h` | `trace()`, `trace_begin/end()`, `trace_0()..trace_7()` |
 | `fat16_*.h` (8 files) | fs handles, dirent parsing, dirwalk, pathfind, readfile, cluster math -- most need `fat16_util.h` (+ `types.h`) first |
+| `uart.h` | `uart_readbuf()` -> byte (0x00 if empty), `uart_bufsize()` -> byte, `uart_sendchar(uint8_t)` (blocking) |
+| `keyboard.h` | `kb_readbuf()` -> word (AH=key flags, AL=char, 0x0000 if empty), `KB_KEYFLAG_BREAK` |
 
 **No header exists** for math.asm, memcpy.asm, memfill.asm, timer.asm,
-keyboard.asm, uart.asm, heap.asm, system.asm -- most do NOT follow the C
-calling convention; do not declare them `extern` yourself. Write a small
-.asm wrapper obeying the standard convention (pop args off heap, push
-result) and declare THAT `extern`.
+heap.asm, system.asm -- these do NOT follow the C calling convention and
+have no `custom_FuncCall_*` handler either; do not declare them `extern`
+yourself.
+
+**`c_compiler/special_functions.py` is meant to grow -- it is not a fixed
+list of "only these can be called from C".** When a register-convention
+BIOS routine (args/return in registers rather than the heap) is a good,
+reusable primitive -- not one-off logic specific to a single program --
+the preferred fix is to add a `custom_FuncCall_<name>` handler there plus a
+matching `os/bios/lib/<name>.h`, not a local per-program `.asm` wrapper.
+Dispatch is automatic: `c_compiler/codegen.py`'s `visit_FuncCall` looks up
+`custom_FuncCall_{func.name}` by name whenever the function is declared
+`extern`, so adding the two pieces (handler + header) is enough -- no other
+registration needed.
+
+The signal for "this belongs in special_functions.py, not a local wrapper":
+the function is a *pure calling-convention adapter* for an existing,
+already-proven BIOS routine -- same behavior, just needs its args/return
+value moved between registers and the heap. If it's genuinely new logic
+that happens to need assembly (bit-shift-based division, a custom loop),
+that's a different case and stays local as a hand-written `.asm` helper
+(see "Dividing work between C and assembly" below) -- e.g.
+`os/util/serrun/serrun_helpers.asm`'s `size_to_segments` (round-up +
+divide-by-shifting, since C has no `/`) and `copy_arg_string` (string
+duplication) are genuinely bespoke and correctly stayed local; that same
+program's *first* draft also had local wrappers for `uart_readbuf`/
+`uart_bufsize`/`uart_sendchar`/`kb_readbuf`, which were pure adapters for
+already-reusable primitives and got promoted into `special_functions.py` +
+`uart.h`/`keyboard.h` instead (2026-08-01).
+
+When adding a handler, study the existing ones in `special_functions.py`
+closely rather than guessing the pattern: which registers the underlying
+`:function` actually reads/writes (read the `.asm` source, not just its
+doc comment), whether it preserves the register NOT used for the return
+value (many routines internally push/pop `B` even when the doc comment
+doesn't mention it), and the `dest_reg != 'A'` save/restore branch for
+when the compiler wants the result somewhere other than `A`.
 
 printf format specifiers (lowercase = byte, UPPERCASE = word): `%%`, `%c`,
 `%2` binary, `%b` BCD digit, `%x`/`%X` hex, `%u`/`%U` unsigned dec,

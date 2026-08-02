@@ -27,6 +27,20 @@ VAR global byte $exec_argc          # argc for next program
 VAR global word $exec_argv_ptr      # malloc'd argv array; 0x0000 = no args
 
 ###
+# Direct-exec IPC fields - an alternative to the dirent-based path above,
+# for programs that already have a binary loaded and localized in a RAM
+# buffer (e.g. one received over a non-disk transport) with no FAT16
+# dirent to hand off.  Written by programs just before they exit, read and
+# cleared by the BIOS exec loop at the top of every iteration, same as the
+# dirent-based IPC block.  $exec_argc/$exec_argv_ptr above are reused for
+# this path too (they are generic "next program" fields, not dirent-only).
+###
+VAR global byte $exec_direct_pending      # 1 = a direct-exec request is pending
+VAR global word $exec_direct_program_ptr  # buffer to free on cleanup; 0x0000 for ext-mem targets (see $exec_loop_program_ptr convention below)
+VAR global word $exec_direct_entry_ptr    # already-localized entry point to CALL_D
+VAR global byte $exec_direct_flags        # ODY flags byte, for post-exec cleanup dispatch
+
+###
 # Exec loop locals - written by BIOS before CALL_D, must survive across
 # CALL_D since all registers are clobbered by the executed program.
 ###
@@ -53,6 +67,12 @@ ST $exec_fsh_ptr+1 0x00
 ST $exec_argc 0x00
 ST $exec_argv_ptr   0x00
 ST $exec_argv_ptr+1 0x00
+ST $exec_direct_pending 0x00
+ST $exec_direct_program_ptr   0x00
+ST $exec_direct_program_ptr+1 0x00
+ST $exec_direct_entry_ptr   0x00
+ST $exec_direct_entry_ptr+1 0x00
+ST $exec_direct_flags 0x00
 
 ###
 # Main exec loop - jump target for every loop iteration
@@ -63,6 +83,14 @@ ST $exec_argv_ptr+1 0x00
 UMASKINT
 # Reset the heap to a clean slate before anything else this iteration
 CALL :heap_init
+
+# Check for a pending direct-exec request (a program already loaded and
+# localized in a RAM buffer, with no FAT16 dirent) before considering the
+# dirent-based path below.
+LD_AL $exec_direct_pending
+ST $exec_direct_pending 0x00
+ALUOP_FLAGS %A%+%AL%
+JNZ .exec_direct_dispatch
 
 # Read and clear the IPC dirent pointer
 LD_AH $exec_dirent_ptr
@@ -94,21 +122,72 @@ ST $exec_fsh_ptr+1 0x00
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%               # C = fsh_ptr
 
-# Load, clear, and save IPC argc -> BH, then to local
+# Load, clear, and save IPC argc/argv_ptr -> exec_loop locals (shared with
+# the direct-exec path below)
+CALL .exec_load_ipc_argv
+
+# D = dirent_ptr, C = fsh_ptr; proceed to load
+JMP .exec_load_binary
+
+###
+# :exec_load_ipc_argv - reads and clears the IPC argc/argv_ptr fields and
+# saves them into the exec_loop locals used just before program execution.
+# Shared by the dirent-based path above and the direct-exec path below.
+#
+# No inputs.  Clobbers A, B.  C and D are not touched, so callers may hold
+# fsh_ptr/dirent_ptr in them across this call.  No return value.
+###
+.exec_load_ipc_argv
 LD_BH $exec_argc
 ST $exec_argc 0x00
 ALUOP_ADDR %B%+%BH% $exec_loop_argc
 
-# Load, clear, and save IPC argv_ptr -> exec_loop local
 LD_AH $exec_argv_ptr
 LD_AL $exec_argv_ptr+1
 ST $exec_argv_ptr   0x00
 ST $exec_argv_ptr+1 0x00
 ALUOP_ADDR %A%+%AH% $exec_loop_argv_ptr
 ALUOP_ADDR %A%+%AL% $exec_loop_argv_ptr+1
+RET
 
-# D = dirent_ptr, C = fsh_ptr; proceed to load
-JMP .exec_load_binary
+###
+# Direct-exec dispatch: a program (e.g. serrun) has already loaded and
+# localized a binary in a RAM buffer and requested it be run via the
+# $exec_direct_* IPC fields instead of a FAT16 dirent.  Copy those fields
+# into the same exec_loop locals the dirent path populates, then join the
+# shared execute+cleanup tail.
+###
+.exec_direct_dispatch
+LD_AH $exec_direct_program_ptr
+LD_AL $exec_direct_program_ptr+1
+ALUOP_ADDR %A%+%AH% $exec_loop_program_ptr
+ALUOP_ADDR %A%+%AL% $exec_loop_program_ptr+1
+ST $exec_direct_program_ptr   0x00
+ST $exec_direct_program_ptr+1 0x00
+
+LD_AH $exec_direct_entry_ptr
+LD_AL $exec_direct_entry_ptr+1
+ALUOP_ADDR %A%+%AH% $exec_loop_entry_ptr
+ALUOP_ADDR %A%+%AL% $exec_loop_entry_ptr+1
+ST $exec_direct_entry_ptr   0x00
+ST $exec_direct_entry_ptr+1 0x00
+
+LD_AL $exec_direct_flags
+ALUOP_ADDR %A%+%AL% $exec_loop_flags
+ST $exec_direct_flags 0x00
+
+# Defensively clear the dirent-based IPC fields too: this branch skips
+# the read-and-clear at the top of the dirent path above, so if a future
+# direct-exec caller (unlike serrun today) ever also left one of those
+# set, it would otherwise sit stale and get wrongly picked up several
+# iterations later instead of being cleared here and now.
+ST $exec_dirent_ptr   0x00
+ST $exec_dirent_ptr+1 0x00
+ST $exec_fsh_ptr   0x00
+ST $exec_fsh_ptr+1 0x00
+
+CALL .exec_load_ipc_argv
+JMP .exec_execute_program
 
 ###
 # Fallback: IPC dirent pointer is invalid.  Find and run /SYSTEM.ODY.
@@ -405,6 +484,17 @@ ALUOP_ADDR %A%+%AL% $exec_loop_entry_ptr+1
 MOV_DH_AH
 MOV_DL_AL
 CALL :free                      # free dirent (address in A)
+
+###
+# :exec_execute_program - shared tail: push argv/argc, CALL_D into the
+# entry point, and run flags-based post-exec cleanup.  Entered either by
+# falling through here (dirent-based path, immediately above) or by a JMP
+# from .exec_direct_dispatch.  Operates purely on the exec_loop locals
+# ($exec_loop_program_ptr/$exec_loop_entry_ptr/$exec_loop_flags/
+# $exec_loop_argc/$exec_loop_argv_ptr), which both paths populate
+# identically before arriving here.
+###
+.exec_execute_program
 
 ###
 # Execute the program
