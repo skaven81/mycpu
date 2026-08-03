@@ -45,8 +45,12 @@ def split_asm_line(line):
     substitution) must never touch the contents of double-quoted data
     strings, so callers transform only the is_quoted=False segments and
     rejoin.  A '#' outside quotes starts the comment, which is returned
-    verbatim (including the '#').  The assembler has no \\" escape, so a
-    bare quote-toggle scan is exact.
+    verbatim (including the '#').  A '"' preceded by a backslash inside a
+    quoted segment is an escaped quote (matching the data grammar's
+    esc_char='\\\\' below and the \\" -> " unescape in the data-emission
+    loop) and does not close the string -- every backslash is presumed to
+    start an escape sequence (there is no way to embed a literal
+    backslash), consistent with \\n/\\r/\\0 already working the same way.
     """
     segments = []
     cur = ''
@@ -55,7 +59,7 @@ def split_asm_line(line):
     for idx, ch in enumerate(line):
         if in_quote:
             cur += ch
-            if ch == '"':
+            if ch == '"' and not cur.endswith('\\"'):
                 segments.append((True, cur))
                 cur = ''
                 in_quote = False
@@ -208,7 +212,10 @@ word.set_name('word')
 # (e.g. a C string literal `"."`) -- keeping the surrounding quote marks
 # through to the processing loop below is what makes that unambiguous,
 # since a label token can never contain a literal '"' character.
-data = label + OneOrMore(QuotedString(quote_char='"', unquote_results=False) | byte | label)
+# esc_char='\' matches split_asm_line's escaped-quote handling above: a
+# quoted string can contain a literal '"' as \" (unescaped to a raw '"'
+# byte in the data-emission loop below), without ending the string early.
+data = label + OneOrMore(QuotedString(quote_char='"', unquote_results=False, esc_char='\\') | byte | label)
 data.set_name('data')
 # Opcodes are an opcode followed by some number of bytes and/or words
 #  OPCODE
@@ -434,6 +441,7 @@ for input_file, line_num, line in concat_source:
                 # without them is a label reference needing hi/lo resolution.
                 if len(data_item) >= 2 and data_item[0] == '"' and data_item[-1] == '"':
                     data_item = data_item[1:-1]
+                    data_item = data_item.replace('\\"', '"')
                     data_item = data_item.replace('\\n', '\n')
                     data_item = data_item.replace('\\r', '\t')
                     data_item = data_item.replace('\\0', '\0')

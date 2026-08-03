@@ -11,6 +11,19 @@ class Literal:
 
     def asm(self):
         if self.literal_type == 'string':
-            return '"' + ascii(self.content)[1:-1] + '\\0"'
+            # ascii() escapes non-printable/non-ASCII characters (e.g. a
+            # raw newline byte becomes the two-character sequence \n,
+            # which the assembler's data-emission loop un-escapes back to
+            # a real newline byte), but it only escapes a literal '"' when
+            # that happens to be the quote character *it* chose to wrap
+            # the repr in -- it prefers single quotes whenever content
+            # contains a double quote, so a double quote in content is
+            # otherwise left completely unescaped. Escaping it explicitly
+            # here is what lets the assembler's own \" escape (see
+            # assembler.py's split_asm_line/data grammar) receive it
+            # correctly instead of the embedded '"' being mistaken for
+            # the end of the assembler's quoted string.
+            escaped = ascii(self.content)[1:-1].replace('"', '\\"')
+            return '"' + escaped + '\\0"'
         else:
             return self.content

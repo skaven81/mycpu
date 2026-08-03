@@ -420,10 +420,9 @@ void test_dbl_ptr_index(void) {
 // ============================================================================
 void test_string_literal_leading_punct(void) {
     // fail() messages here deliberately avoid embedded double-quote
-    // characters -- this assembler's quoted-string syntax has no escape
-    // for a literal '"' at all (see split_asm_line's docstring), which is
-    // a separate, unrelated limitation from the leading-dot/colon bug
-    // this test targets.
+    // characters, keeping this test isolated to the leading-dot/colon bug
+    // specifically -- see test_string_literal_embedded_quote below for the
+    // separate embedded-'"' bug this one originally ran into by accident.
     total_tests++;
     if (strcmp(".", ".") != 0) { fail("leading_punct: single dot self-match"); }
     total_tests++;
@@ -443,6 +442,52 @@ void test_string_literal_leading_punct(void) {
 
     print(".");   // exercise print() directly too, matching the exact reported bug
     print("\n");
+}
+
+// ============================================================================
+// Test: string literals containing an embedded double quote (assembler +
+// C compiler regression).
+//
+// A C string literal like "say \"hi\"" produces a raw '"' byte in the
+// literal's content (the C-level \" escape is already resolved by the
+// time codegen sees it). c_compiler/literal.py's Literal.asm() used
+// Python's ascii()/repr() to escape the content for assembly, but
+// ascii() only escapes a '"' when double-quote happens to be the
+// delimiter *it* chooses to wrap the repr in -- it prefers single quotes
+// whenever content contains a double quote, so the '"' was emitted
+// completely raw. The assembler's own quoted-string scanner (both
+// split_asm_line's manual scan and the `data` grammar's QuotedString) had
+// no escape mechanism at all for a literal '"' either (this was a
+// documented, accepted limitation -- see the old split_asm_line
+// docstring), so the raw embedded '"' was always misread as the end of
+// the string, corrupting everything after it on the line.
+//
+// Fixed at both ends: Literal.asm() now explicitly escapes '"' as \" (in
+// addition to whatever ascii() already escaped), and the assembler now
+// recognizes \" as an escaped quote via esc_char='\\' (matching
+// split_asm_line's escaped-quote handling), unescaping it back to a raw
+// '"' byte in the data-emission loop alongside the existing \n/\r/\0
+// handling. If this file compiles and assembles at all, the regression
+// is fixed; the strcmp checks below additionally confirm the emitted
+// bytes are exactly right, not just non-crashing.
+// ============================================================================
+void test_string_literal_embedded_quote(void) {
+    total_tests++;
+    if (strcmp("say \"hi\"", "say \"hi\"") != 0) { fail("embedded_quote: basic self-match"); }
+    total_tests++;
+    if (strcmp("say \"hi\"", "say hi") == 0) { fail("embedded_quote: differs from unquoted version"); }
+    total_tests++;
+    if (strcmp("\"\"", "\"\"") != 0) { fail("embedded_quote: content of only two quote chars"); }
+    total_tests++;
+    if (strcmp("\"start", "\"start") != 0) { fail("embedded_quote: quote at content start"); }
+    total_tests++;
+    if (strcmp("end\"", "end\"") != 0) { fail("embedded_quote: quote at content end"); }
+    total_tests++;
+    if (strcmp(".foo \"bar\"", ".foo \"bar\"") != 0) { fail("embedded_quote: combined with leading dot"); }
+    total_tests++;
+    if (strcmp(":x \"y\" z", ":x \"y\" z") != 0) { fail("embedded_quote: combined with leading colon"); }
+
+    print("say \"hi\"\n");   // exercise print() directly too
 }
 
 // ============================================================================
@@ -471,6 +516,7 @@ void main(void) {
     test_nested_dowhile();
     test_dbl_ptr_index();
     test_string_literal_leading_punct();
+    test_string_literal_embedded_quote();
 
     uint16_t passed = total_tests - failed_tests;
     if (failed_tests == 0) {
