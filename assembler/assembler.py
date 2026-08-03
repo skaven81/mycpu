@@ -202,7 +202,13 @@ word.set_name('word')
 # Data can be represented as a label followed by a combination of double-quoted strings, series of bytes, or labels.
 #  .label "Hello World\0"
 #  .mapping "some_cmd" :cmd_label 0x00
-data = label + OneOrMore(QuotedString(quote_char='"', unquote_results=True) | byte | label)
+# unquote_results is deliberately False: once parsed, a quoted string and a
+# bare label are both plain Python strings with no other way to tell them
+# apart, and a quoted string's *content* can itself start with '.' or ':'
+# (e.g. a C string literal `"."`) -- keeping the surrounding quote marks
+# through to the processing loop below is what makes that unambiguous,
+# since a label token can never contain a literal '"' character.
+data = label + OneOrMore(QuotedString(quote_char='"', unquote_results=False) | byte | label)
 data.set_name('data')
 # Opcodes are an opcode followed by some number of bytes and/or words
 #  OPCODE
@@ -420,17 +426,22 @@ for input_file, line_num, line in concat_source:
             if idx == 0:
                 continue
             if type(data_item) is str:
-                if data_item[0] == '.' or data_item[0] == ':':
-                    assembly.append({"val": "hi>{}".format(data_item), "msg": "{} {} high".format(match['data'][0], data_item)})
-                    assembly.append({"val": "lo>{}".format(data_item), "msg": "{} {} low".format(match['data'][0], data_item)})
-                else:
-                    data_item = data_item.replace('\\.', '.') # allow corner case of a data string that looks like a label
-                    data_item = data_item.replace('\\:', ':') # allow corner case of a data string that looks like a label
+                # Quoted string data keeps its surrounding '"' marks (see
+                # the `data` grammar rule above) -- that's the unambiguous
+                # signal that this is literal string content, regardless
+                # of what character it starts with. A bare label token
+                # (.foo / :foo) never contains a literal '"', so anything
+                # without them is a label reference needing hi/lo resolution.
+                if len(data_item) >= 2 and data_item[0] == '"' and data_item[-1] == '"':
+                    data_item = data_item[1:-1]
                     data_item = data_item.replace('\\n', '\n')
                     data_item = data_item.replace('\\r', '\t')
                     data_item = data_item.replace('\\0', '\0')
                     for i in data_item:
                         assembly.append({"val": ord(i), "msg": "{} {}".format(match['data'][0], i if ord(i) >= 32 else "\\{:02x}".format(ord(i))) })
+                else:
+                    assembly.append({"val": "hi>{}".format(data_item), "msg": "{} {} high".format(match['data'][0], data_item)})
+                    assembly.append({"val": "lo>{}".format(data_item), "msg": "{} {} low".format(match['data'][0], data_item)})
             elif type(data_item) is int:
                 assert 0x00 <= data_item <= 0xff
                 assembly.append({"val": data_item, "msg": "{} 0x{:02x}".format(match['data'][0], data_item) })

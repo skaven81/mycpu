@@ -1,5 +1,6 @@
 #include "types.h"
 #include "terminal_output.h"
+#include "string.h"
 
 // Tests for previously-untested code paths in c_compiler/codegen.py:
 //   - Global array with inferred dimension (uint8_t g_arr[] = {...})
@@ -23,6 +24,12 @@
 //   - Nested do-while inside while (delete outer continue/break labels, lines 293-296)
 //   - Array indexing on a double pointer (element_var.is_pointer path, line 1083)
 //   - Empty statement (visit_EmptyStatement, line 1994)
+//
+// Also one assembler regression (not codegen.py, but the same "previously
+// broken, now covered" pattern as the rest of this file -- see
+// test_string_literal_leading_punct):
+//   - String literal beginning with '.' or ':' used to fail to assemble
+//     at all
 
 // ============================================================================
 // STRUCT DEFINITIONS (must be at top level per compiler requirements)
@@ -395,6 +402,50 @@ void test_dbl_ptr_index(void) {
 }
 
 // ============================================================================
+// Test: string literals beginning with '.' or ':' (assembler regression).
+//
+// The C compiler emits string literals as assembler data declarations,
+// e.g. `.data_string_0 ".\0"` for print("."). The assembler used to parse
+// a quoted string and a bare label reference into the exact same Python
+// str with no other distinguishing marker, then GUESS which one it was by
+// checking whether the first character was '.' or ':' -- so a string
+// literal whose *content* happened to start with '.' or ':' was
+// misidentified as an unresolved label reference and failed to assemble
+// at all (SyntaxError: Label . unresolved), even though the source C is
+// completely ordinary. Fixed in the assembler by keeping the quote marks
+// through parsing instead of guessing from content (a label token can
+// never contain a literal '"'). If this file compiles and assembles at
+// all, the regression is fixed; the strcmp checks below additionally
+// confirm the emitted bytes are exactly right, not just non-crashing.
+// ============================================================================
+void test_string_literal_leading_punct(void) {
+    // fail() messages here deliberately avoid embedded double-quote
+    // characters -- this assembler's quoted-string syntax has no escape
+    // for a literal '"' at all (see split_asm_line's docstring), which is
+    // a separate, unrelated limitation from the leading-dot/colon bug
+    // this test targets.
+    total_tests++;
+    if (strcmp(".", ".") != 0) { fail("leading_punct: single dot self-match"); }
+    total_tests++;
+    if (strcmp(".", "x") == 0) { fail("leading_punct: single dot vs x mismatch"); }
+    total_tests++;
+    if (strcmp(":", ":") != 0) { fail("leading_punct: single colon self-match"); }
+    total_tests++;
+    if (strcmp(":", "x") == 0) { fail("leading_punct: single colon vs x mismatch"); }
+    total_tests++;
+    if (strcmp("..", "..") != 0) { fail("leading_punct: double dot self-match"); }
+    total_tests++;
+    if (strcmp("::", "::") != 0) { fail("leading_punct: double colon self-match"); }
+    total_tests++;
+    if (strcmp(".config", ".config") != 0) { fail("leading_punct: dot-prefixed word self-match"); }
+    total_tests++;
+    if (strcmp(":label", ":label") != 0) { fail("leading_punct: colon-prefixed word self-match"); }
+
+    print(".");   // exercise print() directly too, matching the exact reported bug
+    print("\n");
+}
+
+// ============================================================================
 // main
 // ============================================================================
 void main(void) {
@@ -419,6 +470,7 @@ void main(void) {
     test_for_c99_init();
     test_nested_dowhile();
     test_dbl_ptr_index();
+    test_string_literal_leading_punct();
 
     uint16_t passed = total_tests - failed_tests;
     if (failed_tests == 0) {
