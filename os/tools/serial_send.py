@@ -3,56 +3,35 @@
 
 Companion to os/util/serrun/ (the Odyssey-side receiver): invoked via
 `make serial` from any program's build directory instead of `make sdcard`.
-Waits for the Odyssey to announce itself, sends a small header (8.3
-filename + size), streams the file, and waits for a completion marker.
 
-The Odyssey is the active side (it "connects out" by sending SERODY
-repeatedly); this script is passive from the moment it starts, so it
-works whichever side the user starts first -- if `serrun` was already
-running and retrying, the very next retry is picked up as soon as this
-script opens the port.
+This is a thin client of the Odyssey Console control socket
+(odyssey_console/control_server.py) -- the SERODY protocol itself is
+implemented exactly once, in odyssey_console/serrun_send.py, not
+reimplemented here. If no Odyssey Console instance (GUI or headless) is
+already running, one is started headless automatically and left running,
+so the next `make serial` reuses it instead of paying startup cost again.
 
-Requires: pip install pyserial click
-Defaults to 115200,n,8,1 with RTS/CTS hardware flow control -- make sure
-the Odyssey's current UART speed (set via the `setserial` utility) matches
---baud, since serrun does not change the baud rate itself.
+Requires: nothing beyond the Python 3 standard library. Starting the
+headless server (if needed) requires `uv` on PATH, same as running
+odyssey_console.py directly.
 """
 
 import argparse
-import fcntl
+import json
 import os
-import struct
+import socket
+import subprocess
 import sys
-import termios
+import tempfile
 import threading
 import time
 
-try:
-    import serial
-except ImportError:
-    sys.exit("serial_send: this script requires pyserial: pip install pyserial")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ODYSSEY_CONSOLE_DIR = os.path.join(REPO_ROOT, "odyssey_console")
+ODYSSEY_CONSOLE_ENTRY = os.path.join(ODYSSEY_CONSOLE_DIR, "odyssey_console.py")
 
-try:
-    import click
-except ImportError:
-    sys.exit("serial_send: this script requires click: pip install click")
-
-# Wire protocol tokens -- see os/README-bios-exec.md's direct-exec section
-# and os/util/serrun/main.c for the Odyssey-side half of this protocol.
-SERODY_TOKEN = b"SERODY"
-OK_TOKEN = b"OK"
-DONE_TOKEN = b"DONE"
-FAIL_TOKEN = b"FAIL"
-
-# Chunk size for TX. Small enough that Ctrl+C is responsive even when
-# write() is blocked waiting for CTS (matches os/util/rtstst/serpipe.py).
-TX_CHUNK = 256
-
-# How long to wait for SERODY, and for DONE after the last byte, before
-# giving up. These are wall-clock timeouts (unlike serrun's spin-count
-# retry loop, the PC side has a real clock available).
-RENDEZVOUS_TIMEOUT = None  # wait forever for the Odyssey by default
-COMPLETION_TIMEOUT = 5.0
+STARTUP_TIMEOUT = 15.0
+STATUS_POLL_INTERVAL = 1.0
 
 
 def parse_args():
@@ -66,145 +45,116 @@ def parse_args():
     return p.parse_args()
 
 
-def read_modem_bits(fd):
-    """Return the raw TIOCM modem-control bitmask for the given fd."""
-    packed = fcntl.ioctl(fd, termios.TIOCMGET, struct.pack("I", 0))
-    return struct.unpack("I", packed)[0]
+def default_socket_path():
+    override = os.environ.get("ODYSSEY_CONSOLE_SOCKET")
+    if override:
+        return override
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime_dir:
+        return os.path.join(runtime_dir, "odyssey-console.sock")
+    return f"/tmp/odyssey-console-{os.getuid()}.sock"
 
 
-def to_8_3_field(filename):
-    """Encode a filename as the 12-byte wire name field: 8-byte
-    space-padded name + 3-byte space-padded extension + 1 reserved byte.
+def call(sock_path, cmd, args=None, timeout=10):
+    """One newline-delimited JSON request/response -- same wire protocol
+    as odyctl and mcp_server.py. Raises on any failure, including the
+    socket not existing at all.
     """
-    base = os.path.basename(filename)
-    name, ext = os.path.splitext(base)
-    ext = ext.lstrip(".")
-    if len(name) > 8 or len(ext) > 3:
-        sys.exit(f"serial_send: {filename!r} is not a valid 8.3 filename")
-    name_bytes = name.upper().encode("ascii").ljust(8)
-    ext_bytes = ext.upper().encode("ascii").ljust(3)
-    return name_bytes + ext_bytes + b"\x00"
-
-
-def scan_for_token(buf, token):
-    """Return True and trim buf up to and including token if token is
-    present; buf is capped so it can't grow unboundedly while waiting.
-    """
-    idx = buf.find(token)
-    if idx == -1:
-        if len(buf) > 64:
-            del buf[:-32]
-        return False
-    del buf[:idx + len(token)]
-    return True
-
-
-def wait_for_token(ser, token, timeout, label):
-    """Poll for `token` to appear in the incoming stream. Returns True on
-    success, False on timeout (only meaningful when timeout is not None).
-    """
-    buf = bytearray()
-    start = time.time()
-    while True:
-        chunk = ser.read(256)
-        if chunk:
-            buf.extend(chunk)
-            if scan_for_token(buf, token):
-                return True
-        if timeout is not None and (time.time() - start) > timeout:
-            return False
-        time.sleep(0.02)
-
-
-def rendezvous(ser):
-    click.echo("Waiting for Odyssey (serrun)...")
-    if not wait_for_token(ser, SERODY_TOKEN, RENDEZVOUS_TIMEOUT, "SERODY"):
-        sys.exit("serial_send: timed out waiting for SERODY")
-    ser.write(OK_TOKEN)
-    click.echo("Odyssey connected.")
-
-
-def tx_worker(ser, data, state, stop_event):
-    pos = 0
-    total = len(data)
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    s.connect(sock_path)
     try:
-        while pos < total and not stop_event.is_set():
-            chunk = data[pos:pos + TX_CHUNK]
-            ser.write(chunk)
-            pos += len(chunk)
-            state["sent"] = pos
+        f = s.makefile("rwb")
+        f.write((json.dumps({"cmd": cmd, "args": args or {}}) + "\n").encode("utf-8"))
+        f.flush()
+        line = f.readline()
     finally:
-        state["done"] = True
+        s.close()
+    if not line:
+        raise RuntimeError("connection closed with no response")
+    resp = json.loads(line)
+    if not resp.get("ok"):
+        raise RuntimeError(resp.get("error", "unknown error"))
+    return resp
 
 
-def send_file(ser, fd, path):
-    with open(path, "rb") as f:
-        data = f.read()
-    size = len(data)
-    if size > 0xFFFF:
-        sys.exit(f"serial_send: {path} is too large ({size} bytes, max 65535)")
+def is_server_running(sock_path):
+    try:
+        call(sock_path, "status", timeout=2)
+        return True
+    except OSError:
+        return False
 
-    name_field = to_8_3_field(path)
-    header = name_field + struct.pack(">H", size)
-    ser.write(header)
 
-    display_name = (name_field[:8].rstrip(b" ") + b"." + name_field[8:11].rstrip(b" ")).decode("ascii")
-
-    state = {"sent": 0, "done": False, "paused": False}
-    stop_event = threading.Event()
-    start_time = time.time()
-
-    with click.progressbar(length=size, label=display_name,
-                            item_show_func=lambda x: x or "") as bar:
-        t = threading.Thread(target=tx_worker, args=(ser, data, state, stop_event), daemon=True)
-        t.start()
-        last_sent = 0
-        try:
-            while not state["done"]:
-                bits = read_modem_bits(fd)
-                cts_on = bool(bits & termios.TIOCM_CTS)
-                sent = state["sent"]
-                elapsed = max(time.time() - start_time, 0.001)
-                rate_kb = (sent / 1024.0) / elapsed
-                status = f"{rate_kb:.1f} KB/s"
-                if not cts_on:
-                    status += "  [PAUSE]"
-                if sent > last_sent:
-                    bar.update(sent - last_sent, current_item=status)
-                    last_sent = sent
-                else:
-                    bar.update(0, current_item=status)
-                time.sleep(0.05)
-        except KeyboardInterrupt:
-            stop_event.set()
-            t.join()
-            sys.exit("serial_send: interrupted")
-        t.join()
-        sent = state["sent"]
-        if sent > last_sent:
-            bar.update(sent - last_sent)
-
-    elapsed = max(time.time() - start_time, 0.001)
-    rate_kb = (size / 1024.0) / elapsed
-    click.echo(f"Sent {size} bytes in {elapsed:.1f}s ({rate_kb:.1f} KB/s)")
-
-    buf = bytearray()
-    start = time.time()
-    while True:
-        chunk = ser.read(256)
-        if chunk:
-            buf.extend(chunk)
-            if scan_for_token(buf, FAIL_TOKEN):
-                sys.exit("serial_send: Odyssey reported an invalid ODY file")
-            if scan_for_token(buf, DONE_TOKEN):
-                click.echo("Odyssey confirmed receipt; program is starting.")
-                return
-        if (time.time() - start) > COMPLETION_TIMEOUT:
-            click.echo("serial_send: warning: no confirmation from Odyssey "
-                       "within timeout (transfer may still have succeeded)",
-                       err=True)
+def start_headless_server(sock_path):
+    print("serial_send: no Odyssey Console running -- starting one headless...")
+    log_path = os.path.join(tempfile.gettempdir(), f"odyssey-console-headless-{os.getuid()}.log")
+    env = os.environ.copy()
+    env["ODYSSEY_CONSOLE_SOCKET"] = sock_path
+    with open(log_path, "ab") as log:
+        proc = subprocess.Popen(
+            [ODYSSEY_CONSOLE_ENTRY, "--headless"],
+            cwd=ODYSSEY_CONSOLE_DIR, env=env,
+            stdout=log, stderr=subprocess.STDOUT,
+            start_new_session=True,  # survives this script's own process exiting
+        )
+    deadline = time.time() + STARTUP_TIMEOUT
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            sys.exit(f"serial_send: headless Odyssey Console exited immediately "
+                      f"(code {proc.returncode}) -- see {log_path}")
+        if is_server_running(sock_path):
+            print("serial_send: headless Odyssey Console is up.")
             return
-        time.sleep(0.02)
+        time.sleep(0.3)
+    sys.exit(f"serial_send: timed out waiting for the headless Odyssey Console to "
+              f"start -- see {log_path}")
+
+
+def ensure_connected(sock_path, port, baud):
+    status = call(sock_path, "status")
+    if status["connected"] and status["port"] == port and status["baud"] == baud:
+        return
+    if status["connected"]:
+        call(sock_path, "disconnect")
+    call(sock_path, "connect", {"port": port, "baud": baud})
+    print(f"serial_send: connected to {port} @ {baud}")
+
+
+def send_file(sock_path, path):
+    """Runs send_file (which blocks server-side until the Odyssey
+    responds) on a background thread so this script can poll status in
+    the meantime and give some sign of life -- the wait for the Odyssey
+    to show up is unbounded, same as the old serial_send.py's rendezvous.
+    """
+    outcome = {}
+
+    def worker():
+        try:
+            outcome["result"] = call(sock_path, "send_file", {"path": path}, timeout=None)
+        except Exception as e:
+            outcome["error"] = e
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+
+    print("serial_send: waiting for Odyssey (serrun)...")
+    announced_sending = False
+    while t.is_alive():
+        t.join(timeout=STATUS_POLL_INTERVAL)
+        if not t.is_alive():
+            break
+        try:
+            st = call(sock_path, "status", timeout=5)
+        except OSError:
+            continue
+        if st.get("transfer_active") and not announced_sending:
+            print("serial_send: Odyssey connected; sending...")
+            announced_sending = True
+
+    if "error" in outcome:
+        sys.exit(f"serial_send: {outcome['error']}")
+    return outcome["result"]
 
 
 def main():
@@ -213,23 +163,13 @@ def main():
     if not os.path.isfile(args.file):
         sys.exit(f"serial_send: {args.file}: no such file")
 
-    ser = serial.Serial(
-        port=args.port,
-        baudrate=args.baud,
-        bytesize=serial.EIGHTBITS,
-        parity=serial.PARITY_NONE,
-        stopbits=serial.STOPBITS_ONE,
-        rtscts=True,
-        timeout=0,      # non-blocking reads
-    )
-    fd = ser.fileno()
-    ser.rts = True
+    sock_path = default_socket_path()
+    if not is_server_running(sock_path):
+        start_headless_server(sock_path)
 
-    try:
-        rendezvous(ser)
-        send_file(ser, fd, args.file)
-    finally:
-        ser.close()
+    ensure_connected(sock_path, args.port, args.baud)
+    result = send_file(sock_path, os.path.abspath(args.file))
+    print(f"serial_send: sent {result['sent']} bytes; Odyssey confirmed receipt.")
 
 
 if __name__ == "__main__":

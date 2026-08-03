@@ -84,6 +84,11 @@ sdcard: $(FILENAME)
 # port, instead of copying it to the SD card.  Run from the directory of
 # the program you're actively developing (not fanned out across every
 # util -- only one program can be received/run at a time).
+#
+# Talks to the Odyssey Console control socket (odyssey_console/), starting
+# a headless instance automatically if none is already running (GUI or
+# headless) and leaving it running for next time; reuses one that's
+# already up rather than opening a second connection to the adapter.
 serial: $(FILENAME)
 	$(Q)$(SERIAL_SEND) --port $(SERIAL_PORT) --baud $(SERIAL_BAUD) $(FILENAME)
 

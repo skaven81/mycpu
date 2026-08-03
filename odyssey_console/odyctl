@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""odyctl -- command-line client for the Odyssey Console control socket.
+
+Talks the same newline-delimited JSON protocol as mcp_server.py, against
+whichever running OdysseyConsole app already holds the port and capture
+device open. Every subcommand mirrors something a human can do at the
+window, and this is also the tool to debug the socket (or the MCP server
+built on it) with, since it involves no MCP framework of its own.
+
+Requires: nothing beyond the Python 3 standard library.
+"""
+
+import argparse
+import base64
+import json
+import os
+import socket
+import sys
+import time
+
+SHUTDOWN_CONFIRM_TIMEOUT = 10.0
+
+
+def default_socket_path():
+    override = os.environ.get("ODYSSEY_CONSOLE_SOCKET")
+    if override:
+        return override
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime_dir:
+        return os.path.join(runtime_dir, "odyssey-console.sock")
+    return f"/tmp/odyssey-console-{os.getuid()}.sock"
+
+
+def send_command(sock_path, cmd, args):
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.connect(sock_path)
+    except OSError as e:
+        sys.exit(f"odyctl: cannot reach Odyssey Console at {sock_path}: {e}\n"
+                 f"Is it running? Start it with ./odyssey_console.py")
+    f = sock.makefile("rwb")
+    f.write((json.dumps({"cmd": cmd, "args": args}) + "\n").encode("utf-8"))
+    f.flush()
+    line = f.readline()
+    sock.close()
+    if not line:
+        sys.exit("odyctl: connection closed with no response")
+    return json.loads(line)
+
+
+def emit(resp):
+    if not resp.get("ok"):
+        sys.exit(f"odyctl: {resp.get('error', 'unknown error')}")
+    body = {k: v for k, v in resp.items() if k != "ok"}
+    if body:
+        print(json.dumps(body, indent=2))
+
+
+def cmd_status(a):
+    emit(send_command(a.socket, "status", {}))
+
+
+def cmd_list_ports(a):
+    emit(send_command(a.socket, "list_ports", {}))
+
+
+def cmd_connect(a):
+    emit(send_command(a.socket, "connect", {"port": a.port, "baud": a.baud}))
+
+
+def cmd_disconnect(a):
+    emit(send_command(a.socket, "disconnect", {}))
+
+
+def cmd_set_baud(a):
+    emit(send_command(a.socket, "set_baud", {"baud": a.baud}))
+
+
+def cmd_set_rts(a):
+    emit(send_command(a.socket, "set_rts", {"value": a.value == "on"}))
+
+
+def cmd_retry_capture(a):
+    emit(send_command(a.socket, "retry_capture", {}))
+
+
+def cmd_shutdown(a):
+    # Not fire-and-forget: without confirming the socket actually goes
+    # away, "did it work?" is exactly the kind of question that used to
+    # require PID/ss forensics to answer (see the socket-takeover bug this
+    # command exists to make unnecessary).
+    send_command(a.socket, "shutdown", {})
+    deadline = time.time() + SHUTDOWN_CONFIRM_TIMEOUT
+    while time.time() < deadline:
+        time.sleep(0.3)
+        probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        probe.settimeout(1)
+        try:
+            probe.connect(a.socket)
+            probe.close()
+        except OSError:
+            print("Odyssey Console stopped.")
+            return
+    sys.exit(f"odyctl: shutdown requested, but {a.socket} is still reachable "
+             f"after {SHUTDOWN_CONFIRM_TIMEOUT:.0f}s")
+
+
+def cmd_send(a):
+    payload = {"hex": a.data} if a.hex else {"text": a.data}
+    if a.expect is not None:
+        payload["expect"] = a.expect
+        payload["timeout"] = a.timeout
+    emit(send_command(a.socket, "serial_send", payload))
+
+
+def cmd_read(a):
+    payload = {}
+    if a.since is not None:
+        payload["since"] = a.since
+    emit(send_command(a.socket, "serial_read", payload))
+
+
+def cmd_expect(a):
+    payload = {"pattern": a.pattern, "timeout": a.timeout}
+    if a.since is not None:
+        payload["since"] = a.since
+    emit(send_command(a.socket, "serial_expect", payload))
+
+
+def cmd_send_file(a):
+    emit(send_command(a.socket, "send_file", {"path": os.path.abspath(a.path)}))
+
+
+def cmd_screencap(a):
+    resp = send_command(a.socket, "screencap", {})
+    if not resp.get("ok"):
+        sys.exit(f"odyctl: {resp.get('error', 'unknown error')}")
+    png = base64.b64decode(resp["png_base64"])
+    with open(a.output, "wb") as f:
+        f.write(png)
+    print(f"wrote {len(png)} bytes to {a.output}")
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--socket", default=default_socket_path(),
+                    help="control socket path (default: $XDG_RUNTIME_DIR/odyssey-console.sock)")
+    sub = p.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("status", help="connection, capture and transfer status").set_defaults(func=cmd_status)
+    sub.add_parser("list-ports", help="list /dev/ttyUSB* devices").set_defaults(func=cmd_list_ports)
+
+    sp = sub.add_parser("connect", help="open the serial port")
+    sp.add_argument("--port", default=None, help="default: first /dev/ttyUSB* found")
+    sp.add_argument("--baud", type=int, default=None, help="default: 9600")
+    sp.set_defaults(func=cmd_connect)
+
+    sub.add_parser("disconnect", help="close the serial port").set_defaults(func=cmd_disconnect)
+
+    sp = sub.add_parser("set-baud", help="reopen the port at a new baud rate")
+    sp.add_argument("baud", type=int)
+    sp.set_defaults(func=cmd_set_baud)
+
+    sp = sub.add_parser("set-rts", help="drive RTS (may be overridden by rtscts flow control)")
+    sp.add_argument("value", choices=["on", "off"])
+    sp.set_defaults(func=cmd_set_rts)
+
+    sub.add_parser("retry-capture", help="retry video capture after a busy-device error").set_defaults(func=cmd_retry_capture)
+
+    sub.add_parser("shutdown", help="stop the running Odyssey Console (GUI or headless)").set_defaults(func=cmd_shutdown)
+
+    sp = sub.add_parser("send", help="send bytes, optionally waiting for a reply")
+    sp.add_argument("data", help="text to send, or hex bytes with --hex")
+    sp.add_argument("--hex", action="store_true", help="interpret data as hex (e.g. '4f4b')")
+    sp.add_argument("--expect", default=None, help="wait for this substring in the reply")
+    sp.add_argument("--timeout", type=float, default=5.0)
+    sp.set_defaults(func=cmd_send)
+
+    sp = sub.add_parser("read", help="read bytes received since a cursor")
+    sp.add_argument("--since", type=int, default=None, help="default: since this client's last read")
+    sp.set_defaults(func=cmd_read)
+
+    sp = sub.add_parser("expect", help="block until a substring appears, or time out")
+    sp.add_argument("pattern")
+    sp.add_argument("--since", type=int, default=None)
+    sp.add_argument("--timeout", type=float, default=5.0)
+    sp.set_defaults(func=cmd_expect)
+
+    sp = sub.add_parser("send-file", help="run the SERODY transfer to a waiting serrun")
+    sp.add_argument("path")
+    sp.set_defaults(func=cmd_send_file)
+
+    sp = sub.add_parser("screencap", help="save the latest video frame as a PNG")
+    sp.add_argument("output")
+    sp.set_defaults(func=cmd_screencap)
+
+    args = p.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
