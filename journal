@@ -1,3 +1,46 @@
+2026-08-02: Odyssey Console: video + serial GUI with an agent control surface (claude)
+=======================================================================================
+
+Built odyssey_console/, a PySide6 app replacing two broken lab-PC tools:
+/raid/odyssey-video.sh (ffplay freezes on any keypress -- it binds space/p
+to pause/seek) and GTKterm (mishandles RTS/CTS with the USB-to-RS232
+adapter). One window: a live v4l2 video pane and a raw serial console
+with true CR/LF terminal semantics -- CR alone enters overwrite mode, so
+in-place progress output from the Odyssey renders correctly instead of
+smearing down the log.
+
+OdysseyCore (core.py) owns capture, serial, and the SERODY file-transfer
+protocol; the Qt window is just one client of it. A Unix-socket control
+server exposes the same capability surface to odyctl (a stdlib CLI) and
+an MCP server (odyssey_* tools, including screencap as an inline image)
+-- the explicit goal was letting an agent do anything a human can do at
+the window: watch the screen, drive the console, push a build, change
+baud, all without a second implementation of any of it.
+
+Folded make serial into this rather than leaving it a separate utility:
+os/tools/serial_send.py is now a thin control-socket client instead of
+its own SERODY implementation, auto-starting a headless instance
+(--headless -- no window, no Qt event loop needed at all) if none is
+running and reusing one that already is.
+
+Verified against real hardware on the lab PC: capture, busy-device
+recovery, real (not pty-simulated) CTS/RTS line state, and a full serrun
+transfer of a live-built .ODY -- once through the GUI, once through
+make serial at the Odyssey's actual 9600 baud.
+
+Found and fixed a real bug during that verification: ControlServer.start()
+used to unconditionally steal its socket path from any existing bind,
+silently orphaning a still-running instance -- still holding the
+hardware, now unreachable by any client, exactly the failure mode the
+control socket exists to prevent. start() now probes for a live listener
+first and refuses instead of stealing it; added `odyctl shutdown` (and a
+matching MCP tool) that confirms the process actually exited, so
+recovering from a stuck instance no longer means finding a PID by hand.
+
+Pinned a launcher (~/.local/share/applications/odyssey-console.desktop)
+next to the old odyssey-video one on the dock.
+
+
 2026-08-02: Serial program deployment: make serial + serrun (claude)
 =====================================================================
 
