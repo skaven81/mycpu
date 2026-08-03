@@ -25,7 +25,13 @@ OK_TOKEN = b"OK"
 DONE_TOKEN = b"DONE"
 FAIL_TOKEN = b"FAIL"
 
-COMPLETION_TIMEOUT = 5.0
+COMPLETION_TIMEOUT = 5.0  # max gap with zero activity, not a single fixed
+                          # deadline from when the payload was queued -- a
+                          # deadline set at queue time fires while a large
+                          # payload is still legitimately being transmitted
+                          # (e.g. ~17KB at 115200 baud plus any CTS pauses
+                          # can outrun a flat 5s window even though the
+                          # transfer is proceeding normally)
 
 STATE_IDLE = "idle"
 STATE_WAIT_SERODY = "wait_serody"
@@ -82,7 +88,7 @@ class SerrunTransfer:
         self._buf = bytearray()
         self._data = b""
         self._header = b""
-        self._complete_deadline = None
+        self._last_activity = None
 
     @property
     def active(self):
@@ -118,15 +124,16 @@ class SerrunTransfer:
         if self.state == STATE_WAIT_SERODY:
             self._buf.extend(chunk)
             if scan_for_token(self._buf, SERODY_TOKEN):
+                self._last_activity = time.time()
                 self._send(OK_TOKEN)
                 self._send(self._header)
                 self._send(self._data, on_progress=self._on_progress)
                 self._buf.clear()
                 self.state = STATE_WAIT_COMPLETE
-                self._complete_deadline = time.time() + COMPLETION_TIMEOUT
             return True
         if self.state == STATE_WAIT_COMPLETE:
             self._buf.extend(chunk)
+            self._last_activity = time.time()
             if scan_for_token(self._buf, FAIL_TOKEN):
                 self.state = STATE_FAILED
                 self.error = "Odyssey reported an invalid ODY file"
@@ -138,13 +145,17 @@ class SerrunTransfer:
     def poll(self):
         """Call on a timer independent of incoming data -- if the Odyssey
         never replies, no more feed_data() calls will ever arrive to
-        notice the deadline has passed.
+        notice the deadline has passed. Bytes going out (_on_progress)
+        count as activity too, same as bytes coming back, so a transfer
+        that's still legitimately mid-flight -- large payload, or paused
+        on CTS -- never times out while it's actually making progress.
         """
         if (self.state == STATE_WAIT_COMPLETE and
-                time.time() > self._complete_deadline):
+                time.time() - self._last_activity > COMPLETION_TIMEOUT):
             self.state = STATE_FAILED
             self.error = ("no confirmation from Odyssey within timeout "
                            "(transfer may still have succeeded)")
 
     def _on_progress(self, sent, total):
         self.sent = sent
+        self._last_activity = time.time()
