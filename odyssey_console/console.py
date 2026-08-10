@@ -12,7 +12,12 @@ from PySide6.QtWidgets import QPlainTextEdit
 
 FLUSH_INTERVAL_MS = 30  # coalesces incoming chunks; per-byte repaints would thrash at 115200
 MAX_SCROLLBACK_BLOCKS = 5000
-ENTER_BYTE = b"\r"  # module constant -- one line to change if the Odyssey ever wants LF
+
+LINE_ENDING_MODES = ("LF", "CR", "CRLF")
+ENTER_ENCODE = {"LF": b"\n", "CR": b"\r", "CRLF": b"\r\n"}
+DEFAULT_ENTER_MODE = "CR"  # matches the Odyssey BIOS's expected line ending
+DEFAULT_RX_LF_MODE = "LF"  # 0x0A -> new line, same as before this was configurable
+DEFAULT_RX_CR_MODE = "CR"  # 0x0D -> column 0 + overwrite, same as before this was configurable
 
 BG = "#000000"
 FG_DEVICE = "#dddddd"
@@ -42,6 +47,9 @@ class ConsoleView(QPlainTextEdit):
         self.setMaximumBlockCount(MAX_SCROLLBACK_BLOCKS)
         self._apply_style()
         self.echo_enabled = False
+        self.enter_mode = DEFAULT_ENTER_MODE
+        self.rx_lf_mode = DEFAULT_RX_LF_MODE
+        self.rx_cr_mode = DEFAULT_RX_CR_MODE
         self._overwrite = False
         self._pending = []
         # A detached cursor, deliberately never synced to self.textCursor():
@@ -103,13 +111,10 @@ class ConsoleView(QPlainTextEdit):
         fmt.setForeground(QColor(_STYLE_COLOR[kind]))
         cursor.setCharFormat(fmt)
         for b in data:
-            if b == 0x0A:  # LF -- new line
-                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
-                cursor.insertBlock()
-                self._overwrite = False
-            elif b == 0x0D:  # CR -- column 0, enter overwrite mode
-                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                self._overwrite = True
+            if b == 0x0A:  # LF received -- action per self.rx_lf_mode
+                self._apply_rx_mode(cursor, self.rx_lf_mode)
+            elif b == 0x0D:  # CR received -- action per self.rx_cr_mode
+                self._apply_rx_mode(cursor, self.rx_cr_mode)
             elif b == 0x08:  # backspace
                 if cursor.positionInBlock() > 0:
                     cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter,
@@ -124,6 +129,19 @@ class ConsoleView(QPlainTextEdit):
                 cursor.setCharFormat(dim)
                 cursor.insertText(f"⟨{b:02X}⟩")
                 cursor.setCharFormat(fmt)
+
+    def _apply_rx_mode(self, cursor, mode):
+        """Runs the CR and/or LF action(s) a received control byte was
+        remapped to. CR always runs before LF so a CRLF mapping ends up
+        column-0-then-new-block -- identical to a real \\r\\n pair.
+        """
+        if mode in ("CR", "CRLF"):
+            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            self._overwrite = True
+        if mode in ("LF", "CRLF"):
+            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            cursor.insertBlock()
+            self._overwrite = False
 
     def _put_char(self, cursor, ch):
         if self._overwrite:
@@ -161,7 +179,7 @@ class ConsoleView(QPlainTextEdit):
                 return text.encode("utf-8", "ignore") if text else None
 
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            return ENTER_BYTE
+            return ENTER_ENCODE[self.enter_mode]
         if key == Qt.Key.Key_Backspace:
             return b"\x08"
         if key == Qt.Key.Key_Tab:

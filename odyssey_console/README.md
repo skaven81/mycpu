@@ -43,15 +43,17 @@ time. If the capture device is busy (e.g. something else still has it
 open), a **Retry** button appears.
 
 **Serial console.** Type into it like a real terminal — every keystroke is
-sent immediately (not line-buffered), Enter sends CR. `Ctrl+A`–`Ctrl+Z`
-send `0x01`–`0x1A`. `Ctrl+Shift+C` copies your selection and `Ctrl+Shift+V`
-pastes-and-sends, which leaves plain `Ctrl+C`/`Ctrl+V` free to send
-`0x03`/`0x16` like a real terminal would.
+sent immediately (not line-buffered), Enter sends CR by default (see
+**Enter sends** below). `Ctrl+A`–`Ctrl+Z` send `0x01`–`0x1A`.
+`Ctrl+Shift+C` copies your selection and `Ctrl+Shift+V` pastes-and-sends,
+which leaves plain `Ctrl+C`/`Ctrl+V` free to send `0x03`/`0x16` like a real
+terminal would.
 
-It renders true CR/LF semantics, not a normalized version: LF starts a new
-line, and CR alone returns to column 0 and starts overwriting — this is
-what makes in-place progress output from the Odyssey render correctly
-instead of smearing down the log.
+It renders true CR/LF semantics by default, not a normalized version: LF
+starts a new line, and CR alone returns to column 0 and starts overwriting
+— this is what makes in-place progress output from the Odyssey render
+correctly instead of smearing down the log. The **Received LF**/**Received
+CR** dropdowns let you remap that if the far end's line endings differ.
 
 - **CTS**/**RTS** LEDs show live modem-control line state (a real ioctl
   read-back, not a cached value — `pyserial`'s own RTS property is
@@ -60,8 +62,20 @@ instead of smearing down the log.
   enabled (the default), the kernel driver also manages RTS on its own, so
   a manual toggle may be overridden or only transient — this is expected,
   not a bug, and only fully deterministic with `rtscts` off.
-- **Echo** renders your own keystrokes locally as you type them.
 - **Clear** empties the console.
+- **Echo** renders your own keystrokes locally as you type them.
+- **Enter sends** chooses what Enter transmits: LF, CR (default — matches
+  the Odyssey BIOS), or CRLF.
+- **Received LF**/**Received CR** choose how an incoming `0x0A`/`0x0D` byte
+  is rendered: as LF (new line), CR (default for `0x0D` — column 0 +
+  overwrite), or CRLF (both). Defaults match the console's original
+  unconfigurable behavior.
+- The **◀** button next to the port dropdown collapses the console pane so
+  the video gets the full window width; **▶** in the video pane's top row
+  brings it back at its previous width. Collapsed state persists across
+  restarts.
+
+All of these persist across restarts.
 - **Send File…** runs the SERODY handshake with a waiting `serrun` on the
   Odyssey (the same protocol as `os/tools/serial_send.py` / `make serial`),
   showing a progress bar. It's passive — it works whether you start it
