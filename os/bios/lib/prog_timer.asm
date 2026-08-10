@@ -7,25 +7,25 @@
 ###########
 # Initialize the programmable timer on boot
 :ptmr_init
-VAR global word $ptmr_t0_handler
 VAR global word $ptmr_t1_handler
 VAR global word $ptmr_t2_handler
-ST16 $ptmr_t0_handler :ptmr_noop_handler   # seed with no-op so the dispatcher
-ST16 $ptmr_t1_handler :ptmr_noop_handler   # can CALL_D unconditionally
-ST16 $ptmr_t2_handler :ptmr_noop_handler
+VAR global word $ptmr_t3_handler
+ST16 $ptmr_t1_handler :ptmr_noop_handler   # seed with no-op so the dispatcher
+ST16 $ptmr_t2_handler :ptmr_noop_handler   # can CALL_D unconditionally
+ST16 $ptmr_t3_handler :ptmr_noop_handler
 
 # Set the clock select register to 1.000MHz
 # for all three timers by default
 VAR global byte $ptmr_clk_select
-ST $ptmr_clk_select %ptmr_clk_tmr0_10M%|%ptmr_clk_tmr1_10M%|%ptmr_clk_tmr2_10M%
-ST %ptmr_clk_sel%   %ptmr_clk_tmr0_10M%|%ptmr_clk_tmr1_10M%|%ptmr_clk_tmr2_10M%
+ST $ptmr_clk_select %ptmr_clk_tmr1_10M%|%ptmr_clk_tmr2_10M%|%ptmr_clk_tmr3_10M%
+ST %ptmr_clk_sel%   %ptmr_clk_tmr1_10M%|%ptmr_clk_tmr2_10M%|%ptmr_clk_tmr3_10M%
 
 # Set all three timers to idle state so they don't trigger interrupts.
 # Writing a control word but then refraining from writing start counts makes
 # the timer stop asserting the OUT signal and thus won't trigger IRQs
-ST %ptmr_ctrl_write% %ptmr_cw_t0_mode0%
 ST %ptmr_ctrl_write% %ptmr_cw_t1_mode0%
 ST %ptmr_ctrl_write% %ptmr_cw_t2_mode0%
+ST %ptmr_ctrl_write% %ptmr_cw_t3_mode0%
 
 # Clear all three IRQ latches
 ST %ptmr_clr_all_irq% 0x00
@@ -34,8 +34,8 @@ RET
 ###########
 # Standard ISR for IRQ2.  Snapshots which timer(s) fired by
 # reading %ptmr_irqlatch% once into AL, then walks the three
-# timer bits (D7=t2, D6=t1, D5=t0) by shifting left and
-# testing the overflow flag (which captures the bit shifted
+# timer bits (D7=timer3, D6=timer2, D5=timer1) by shifting left
+# and testing the overflow flag (which captures the bit shifted
 # out).  For each fired timer, clears its IRQ latch and
 # dispatches its handler via CALL_D.
 #
@@ -68,30 +68,30 @@ ALUOP_PUSH %A%+%AL%
 
 LD_AL %ptmr_irqlatch%          # snapshot all three latches
 
-# Test t2.  Shift sets O = original bit 7 (the t2 latch bit).
+# Test timer3.  Shift sets O = original bit 7 (the timer3 latch bit).
+ALUOP_AL %A<<1%+%AL%
+JNO .ptmr_isr_check_t2
+LD_TD %ptmr_clr_t3_irq%        # clear timer3 latch (TD value discarded)
+LD_DH $ptmr_t3_handler
+LD_DL $ptmr_t3_handler+1
+CALL_D
+
+.ptmr_isr_check_t2
+# Test timer2.  Shift sets O = original bit 6 (the timer2 latch bit).
 ALUOP_AL %A<<1%+%AL%
 JNO .ptmr_isr_check_t1
-LD_TD %ptmr_clr_t2_irq%        # clear t2 latch (TD value discarded)
+LD_TD %ptmr_clr_t2_irq%
 LD_DH $ptmr_t2_handler
 LD_DL $ptmr_t2_handler+1
 CALL_D
 
 .ptmr_isr_check_t1
-# Test t1.  Shift sets O = original bit 6 (the t1 latch bit).
+# Test timer1.  Shift sets O = original bit 5 (the timer1 latch bit).
 ALUOP_AL %A<<1%+%AL%
-JNO .ptmr_isr_check_t0
+JNO .ptmr_isr_done
 LD_TD %ptmr_clr_t1_irq%
 LD_DH $ptmr_t1_handler
 LD_DL $ptmr_t1_handler+1
-CALL_D
-
-.ptmr_isr_check_t0
-# Test t0.  Shift sets O = original bit 5 (the t0 latch bit).
-ALUOP_AL %A<<1%+%AL%
-JNO .ptmr_isr_done
-LD_TD %ptmr_clr_t0_irq%
-LD_DH $ptmr_t0_handler
-LD_DL $ptmr_t0_handler+1
 CALL_D
 
 .ptmr_isr_done
@@ -123,7 +123,7 @@ RETI
 #      * 1 = 32.768kHz
 #      * 2 = 1.000MHz
 #      * 3 = system clock
-#   2. Push byte to heap: timer select (0, 1, 2)
+#   2. Push byte to heap: timer select (1, 2, 3)
 #   3. Call function
 :ptmr_clk_set
 ALUOP_PUSH %A%+%AL%
@@ -132,13 +132,14 @@ ALUOP_PUSH %B%+%BL%
 ALUOP_PUSH %B%+%BH%
 
 # Set up our field mask into AH
-#  0b00000011 timer0
-#  0b00001100 timer1
-#  0b00110000 timer2
+#  0b00000011 timer1
+#  0b00001100 timer2
+#  0b00110000 timer3
 # And shift the clock select as well
 CALL :heap_pop_BL               # timer select in BL
+ALUOP_BL %B-1%+%BL%             # convert 1-based timer select to 0-based field index
 CALL :heap_pop_AL               # clock speed select in AL
-LDI_AH 0b00000011               # AH = field mask, set to timer0 field by default
+LDI_AH 0b00000011               # AH = field mask, set to timer1 field by default
 .clk_set_field_shift_loop
 ALUOP_FLAGS %B%+%BL%            # do we need to shift the field mask?
 JZ .clk_set_field_shift_done    # if timer select is exhausted, we're done

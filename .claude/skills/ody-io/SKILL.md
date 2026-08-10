@@ -41,7 +41,7 @@ register and bit mask -- always use them instead of hex literals:
 | Keyboard | `%kb_key%`, `%kb_keyflags%`, `%kb_keyflag_{BREAK,CTRL,ALT,FUNCTION,SHIFT,NUMLOCK,CAPSLOCK,SCROLLLOCK}%` |
 | RTC/timer | `%tmr_clk_{sec,min,hr,day,date,month,year}%`, `%tmr_alarm_*%`, `%tmr_wdog_*%`, `%tmr_ctrl_{a,b,c}%`, `%tmr_sram_*%`, masks |
 | UART | `%uart_{tbr,rbr,ucr,usr,mcr,brsr,msr}%` + bit masks (`%uart_usr_DR%`, `%uart_ucr_8n1%`, `%uart_brsr_9600%`, ...) |
-| Prog. timer | `%ptmr_base%`, `%ptmr_counter{0,1,2}%`, `%ptmr_clr_*%`, `%ptmr_ctrl_*%` (82C54) |
+| Prog. timer | `%ptmr_base%`, `%ptmr_counter{1,2,3}%`, `%ptmr_clr_*%`, `%ptmr_ctrl_*%`, `%ptmr_tone_{off,t1,t2,t3}%` (82C54; timer1/2/3, tone/speaker select) |
 | Ext. memory | `%d_page%` (0xC200), `%e_page%` (0xC201) |
 | ATA | `%ata_{data,err,numsec,lba0..lba3,cmd_stat,lowreg}%`, `%ata_cmd_*%`, `%ata_err_*%` |
 
@@ -76,7 +76,7 @@ macros with per-bit comments).
 | Address | Peripheral |
 |---------|------------|
 | 0xC000-0xC001 | PS/2 Keyboard (0xC000=key, 0xC001=flags) |
-| 0xC080-0xC0FF | RTC/Timer DS1511Y (BCD-encoded values) |
+| 0xC080-0xC0FF | RTC/Timer DS1511Y, "timer0" (BCD-encoded values) |
 | 0xC100-0xC1FF | UART 82C52 (data, ctrl/status, modem ctrl, baud/modem status) |
 | 0xC200-0xC2FF | Extended RAM page registers (even=D-page, odd=E-page) |
 | 0xC300-0xC30F | ATA CS0/CS1 registers |
@@ -89,8 +89,8 @@ macros with per-bit comments).
 | IRQ | Vector | Source |
 |-----|--------|--------|
 | 1 | 0x5F02 | Keyboard |
-| 2 | 0x5F04 | Programmable timer (82C54, all three counters) |
-| 3 | 0x5F06 | RTC timer (DS1511Y) |
+| 2 | 0x5F04 | Programmable timer (82C54, timer1/2/3) |
+| 3 | 0x5F06 | RTC timer (DS1511Y, timer0) |
 | 4 | 0x5F08 | UART modem status |
 | 5 | 0x5F0A | UART data ready |
 
