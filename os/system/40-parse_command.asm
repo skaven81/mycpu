@@ -286,7 +286,7 @@ RET
 # .sys_path string is 1:/SYS/FILENAME.ODY (8+3 filename) which makes
 # 20 characters, plus a trailing newline. We allocate 24 bytes just in case.
 .sys_path "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-.ody_suffix "\.ODY\0"
+.ody_suffix ".ODY\0"
 .cmd_unknown_str "Unrecognized command\n\0"
 .cmd_help_header "The following built-in commands are available:\n\0"
 .cmd_help_header2 "Also, any .ODY files are executable by typing their name.\n\0"
