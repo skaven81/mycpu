@@ -491,6 +491,24 @@ void test_string_literal_embedded_quote(void) {
 }
 
 // ============================================================================
+// Assembler regression: \r escape in a quoted data string used to unescape
+// to a tab byte (0x09) instead of a carriage return (0x0d) -- a typo present
+// in assembler.py's data-emission loop since the assembler's first commit.
+// putchar (terminal_output.asm) explicitly special-cases 0x0d as "return to
+// column 0"; it has no special handling for 0x09, so a \r embedded in a C
+// string literal (e.g. vidplay's progress line) never actually returned the
+// cursor to column 0, and the display just filled up with text instead of
+// overwriting the current line. strcmp can't catch this: both sides of a
+// self-comparison go through the same (buggy or fixed) substitution, so this
+// checks the actual byte value instead.
+// ============================================================================
+void test_string_literal_carriage_return(void) {
+    char *s = "a\rb";
+    total_tests++;
+    if (s[1] != 13) { fail("carriage_return: \\r must produce byte 0x0d, not tab (0x09)"); }
+}
+
+// ============================================================================
 // main
 // ============================================================================
 void main(void) {
@@ -517,6 +535,7 @@ void main(void) {
     test_dbl_ptr_index();
     test_string_literal_leading_punct();
     test_string_literal_embedded_quote();
+    test_string_literal_carriage_return();
 
     uint16_t passed = total_tests - failed_tests;
     if (failed_tests == 0) {
