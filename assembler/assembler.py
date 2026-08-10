@@ -443,7 +443,7 @@ for input_file, line_num, line in concat_source:
                     data_item = data_item[1:-1]
                     data_item = data_item.replace('\\"', '"')
                     data_item = data_item.replace('\\n', '\n')
-                    data_item = data_item.replace('\\r', '\t')
+                    data_item = data_item.replace('\\r', '\r')
                     data_item = data_item.replace('\\0', '\0')
                     for i in data_item:
                         assembly.append({"val": ord(i), "msg": "{} {}".format(match['data'][0], i if ord(i) >= 32 else "\\{:02x}".format(ord(i))) })
