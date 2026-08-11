@@ -109,7 +109,7 @@ _ACC_SEMITONES = {"^^": 2, "^": 1, "__": -2, "_": -1, "=": 0}
 _NOTE_TOKEN_RE = re.compile(
     r'(?P<comment>%.*)'
     r'|(?P<chord>"[^"]*")'
-    r'|(?P<rej_chord>\[)'
+    r'|(?P<rej_chord>\[(?!\|))'
     r'|(?P<rej_grace>\{)'
     r'|(?P<rej_tuplet>\(\d)'
     r'|(?P<rej_broken>[><])'

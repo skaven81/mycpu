@@ -111,6 +111,11 @@ def test_tokenize_body_line_skips_comment_and_chord_annotation():
     assert tokens == [("note", "C"), ("note", "D")]
 
 
+def test_tokenize_body_line_accepts_open_repeat_bar():
+    tokens = _tokenize_body_line("[|", line=1)
+    assert tokens == [("bar", None)]
+
+
 def test_tokenize_body_line_rejects_chord():
     with pytest.raises(ParseError, match=r"line 2"):
         _tokenize_body_line("[CEG]", line=2)
