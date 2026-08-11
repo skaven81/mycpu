@@ -2,8 +2,10 @@ import struct
 import pytest
 
 from mkmus import detect_and_parse, build_records, main, MkmusError
-from notes import Note
-from mus_writer import TERMINATOR
+from notes import Note, note_to_divisor, note_to_duration_ticks
+from mus_writer import TERMINATOR, encode_record
+from bespoke import parse_bespoke
+from abcnotation import parse_abc
 
 
 def test_detect_and_parse_bespoke():
@@ -127,3 +129,39 @@ def test_main_conversion_error_writes_no_partial_file(tmp_path):
     rc = main(["-o", str(out), str(src)])
     assert rc != 0
     assert not out.exists()
+
+
+def _expected_bytes(parsed_notes, tone_freq, beat_freq, tempo):
+    out = b""
+    for note in parsed_notes:
+        divisor = note_to_divisor(note.freq, tone_freq, note.line)
+        duration = note_to_duration_ticks(note.beats, tempo, beat_freq, note.line)
+        out += encode_record(divisor, duration, note.comment, note.line)
+    return out + TERMINATOR
+
+
+def test_end_to_end_bespoke_exact_bytes(tmp_path):
+    text = "A4 /4 hello\nz /8\nC4 /4 world\n"
+    src = tmp_path / "tune.txt"
+    src.write_text(text)
+    out = tmp_path / "tune.MUS"
+
+    rc = main(["-o", str(out), str(src)])
+    assert rc == 0
+
+    expected = _expected_bytes(parse_bespoke(text), 1843200.0, 32768.0, 120.0)
+    assert out.read_bytes() == expected
+
+
+def test_end_to_end_abc_exact_bytes(tmp_path):
+    text = "X:1\nT:Tune\nK:C\nL:1/8\nQ:1/4=100\nCDEF|GABc\nw:do re mi fa sol la ti do\n"
+    src = tmp_path / "tune.abc"
+    src.write_text(text)
+    out = tmp_path / "tune.MUS"
+
+    rc = main(["-o", str(out), str(src)])
+    assert rc == 0
+
+    tune = parse_abc(text)[0]
+    expected = _expected_bytes(tune.notes, 1843200.0, 32768.0, tune.tempo_bpm)
+    assert out.read_bytes() == expected
