@@ -21,7 +21,7 @@ def encode_record(divisor: int, duration: int, comment: str, line: int, warn=Non
     return struct.pack(">HH12s", divisor, duration, comment_field)
 
 
-def write_mus(path, records: list) -> None:
+def write_mus(path, records: list[bytes]) -> None:
     """Write a .MUS file: each 16-byte record in order, followed by the
     all-zero terminator record."""
     with open(path, "wb") as f:

@@ -267,6 +267,23 @@ def test_parse_abc_lyrics_skip_rests():
     assert comments[3] == "three" # F
 
 
+def test_parse_abc_multiple_w_lines_do_not_clobber_each_other():
+    # Standard real-world ABC layout: one w: line per music line. Each w:
+    # line should only apply to the notes since the previous w: line, not
+    # re-scan (and overwrite) all notes seen so far in the tune.
+    text = (
+        "X:1\nT:t\nK:C\n"
+        "CDEF|\n"
+        "w:one two three four\n"
+        "GABc|\n"
+        "w:five six sev eight\n"
+    )
+    tunes = parse_abc(text)
+    comments = [n.comment for n in tunes[0].notes]
+    assert comments == ["one", "two", "three", "four",
+                         "five", "six", "sev", "eight"]
+
+
 def test_parse_abc_voice_header_rejected():
     text = "X:1\nT:Voices\nK:C\nV:1\nCDEF\n"
     with pytest.raises(ParseError, match=r"line 4"):

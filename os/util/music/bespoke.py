@@ -33,6 +33,9 @@ def parse_bespoke(text: str) -> list:
             raise ParseError(f"line {lineno}: malformed note line {raw!r}")
         pitch_tok = m.group("pitch")
         denom = int(m.group("denom"))
+        if denom <= 0:
+            raise ParseError(f"line {lineno}: duration denominator must be a "
+                              f"positive integer, got /{denom}")
         comment = m.group("comment") or ""
         if pitch_tok in ("z", "Z"):
             note_freq = None

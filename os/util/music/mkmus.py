@@ -124,6 +124,10 @@ def main(argv=None) -> int:
     else:
         tempo = 120.0
 
+    if tempo <= 0:
+        print(f"mkmus.py: tempo must be positive, got {tempo}", file=sys.stderr)
+        return 1
+
     warnings = []
     try:
         records = build_records(notes, tone_freq, beat_freq, tempo, warnings)
@@ -147,7 +151,11 @@ def main(argv=None) -> int:
         stem = os.path.splitext(os.path.basename(args.input))[0]
         out_path = stem.upper() + ".MUS"
 
-    write_mus(out_path, records)
+    try:
+        write_mus(out_path, records)
+    except OSError as e:
+        print(f"mkmus.py: cannot write {out_path}: {e}", file=sys.stderr)
+        return 1
     return 0
 
 

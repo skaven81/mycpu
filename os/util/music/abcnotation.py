@@ -8,8 +8,9 @@ for both direct execution and tests, so 'abc.py' here would shadow it.
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from fractions import Fraction
+from typing import Optional
 
 from notes import Note
 from freq import midi_to_freq
@@ -86,7 +87,10 @@ def parse_unit_length(field: str, line: int) -> Fraction:
     m = re.match(r"^\s*(\d+)/(\d+)\s*$", field)
     if not m:
         raise ParseError(f"line {line}: invalid L: field {field!r}")
-    return Fraction(int(m.group(1)), int(m.group(2)))
+    denom = int(m.group(2))
+    if denom <= 0:
+        raise ParseError(f"line {line}: invalid L: field {field!r}: zero denominator")
+    return Fraction(int(m.group(1)), denom)
 
 
 def parse_tempo(field: str, line: int) -> float:
@@ -169,6 +173,8 @@ def _parse_note_length_frac(token: str, line: int) -> Fraction:
     if not slashes:
         return Fraction(numer, 1)
     denom = int(denom_s) if denom_s else 2 ** len(slashes)
+    if denom <= 0:
+        raise ParseError(f"line {line}: invalid note length {token!r}: zero denominator")
     return Fraction(numer, denom)
 
 
@@ -253,7 +259,7 @@ class AbcTune:
     number: int
     title: str
     notes: list
-    tempo_bpm: float = None
+    tempo_bpm: Optional[float] = None
 
 
 _HEADER_RE = re.compile(r"^([A-Za-z]):\s?(.*)$")
@@ -305,6 +311,9 @@ def parse_abc(text: str) -> list:
         body_notes = []
         bar_accidentals = {}
         pending_tie = [None]
+        lyric_cursor = 0  # count of "sounding" notes already consumed by a
+        # previous w: line in this tune; each new w: line only zips against
+        # sounding notes added since this cursor position.
         while i < n:
             stripped = lines[i].strip()
             if re.match(r"^X:\s*\d+", stripped):
@@ -317,8 +326,12 @@ def parse_abc(text: str) -> list:
             if wm:
                 syllables = wm.group(1).split()
                 sounding = [nn for nn in body_notes if nn.freq is not None]
-                for note, syll in zip(sounding, syllables):
+                remaining = sounding[lyric_cursor:]
+                consumed = 0
+                for note, syll in zip(remaining, syllables):
                     note.comment = syll.rstrip("-")
+                    consumed += 1
+                lyric_cursor += consumed
                 continue
             hm = _HEADER_RE.match(stripped)
             if hm and hm.group(1) in "TKLQV":

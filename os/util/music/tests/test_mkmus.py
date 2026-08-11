@@ -153,6 +153,61 @@ def test_end_to_end_bespoke_exact_bytes(tmp_path):
     assert out.read_bytes() == expected
 
 
+def test_main_bespoke_zero_denominator_clean_error(tmp_path, capsys):
+    src = tmp_path / "song.txt"
+    src.write_text("C4 /0 boom\n")
+    out = tmp_path / "song.MUS"
+    rc = main(["-o", str(out), str(src)])
+    assert rc != 0
+    captured = capsys.readouterr()
+    assert "line 1" in captured.err
+    assert not out.exists()
+
+
+def test_main_abc_zero_note_length_denominator_clean_error(tmp_path, capsys):
+    src = tmp_path / "song.abc"
+    src.write_text("X:1\nT:t\nK:C\nC1/0\n")
+    out = tmp_path / "song.MUS"
+    rc = main(["-o", str(out), str(src)])
+    assert rc != 0
+    captured = capsys.readouterr()
+    assert "line" in captured.err
+    assert not out.exists()
+
+
+def test_main_abc_zero_unit_length_clean_error(tmp_path, capsys):
+    src = tmp_path / "song.abc"
+    src.write_text("X:1\nT:t\nK:C\nL:1/0\nCDEF\n")
+    out = tmp_path / "song.MUS"
+    rc = main(["-o", str(out), str(src)])
+    assert rc != 0
+    captured = capsys.readouterr()
+    assert "line" in captured.err
+    assert not out.exists()
+
+
+def test_main_zero_tempo_clean_error(tmp_path, capsys):
+    src = tmp_path / "song.txt"
+    src.write_text("A4 /4 hi\n")
+    out = tmp_path / "song.MUS"
+    rc = main(["--tempo", "0", "-o", str(out), str(src)])
+    assert rc != 0
+    captured = capsys.readouterr()
+    assert "tempo" in captured.err
+    assert not out.exists()
+
+
+def test_main_bad_output_dir_clean_error(tmp_path, capsys):
+    src = tmp_path / "song.txt"
+    src.write_text("A4 /4 hi\n")
+    bad_out = tmp_path / "nonexistentdir" / "x.MUS"
+    rc = main(["-o", str(bad_out), str(src)])
+    assert rc != 0
+    captured = capsys.readouterr()
+    assert "cannot write" in captured.err
+    assert not bad_out.exists()
+
+
 def test_end_to_end_abc_exact_bytes(tmp_path):
     text = "X:1\nT:Tune\nK:C\nL:1/8\nQ:1/4=100\nCDEF|GABc\nw:do re mi fa sol la ti do\n"
     src = tmp_path / "tune.abc"
