@@ -211,3 +211,77 @@ def test_tokens_to_notes_tie_merges_same_pitch():
     notes = _tokens_to_notes(tokens, Fraction(1, 4), {}, line=1)
     assert len(notes) == 1
     assert notes[0].beats == pytest.approx(2.0)
+
+
+from abcnotation import AbcTune, parse_abc
+
+
+_SIMPLE_TUNE = """X:1
+T:Test Tune
+K:C
+L:1/8
+Q:1/4=100
+CDEF|GABc
+"""
+
+
+def test_parse_abc_single_tune_basics():
+    tunes = parse_abc(_SIMPLE_TUNE)
+    assert len(tunes) == 1
+    tune = tunes[0]
+    assert isinstance(tune, AbcTune)
+    assert tune.number == 1
+    assert tune.title == "Test Tune"
+    assert tune.tempo_bpm == 100.0
+    assert len(tune.notes) == 8
+    assert tune.notes[0].freq == midi_to_freq(60)  # C
+    assert tune.notes[-1].freq == midi_to_freq(72)  # c
+
+
+def test_parse_abc_multiple_tunes():
+    text = _SIMPLE_TUNE + "\nX:2\nT:Second\nK:G\nGABc\n"
+    tunes = parse_abc(text)
+    assert [t.number for t in tunes] == [1, 2]
+    assert tunes[1].title == "Second"
+
+
+def test_parse_abc_no_tempo_field_leaves_none():
+    text = "X:1\nT:No Tempo\nK:C\nCDEF\n"
+    tunes = parse_abc(text)
+    assert tunes[0].tempo_bpm is None
+
+
+def test_parse_abc_lyrics_line_maps_to_comments():
+    text = "X:1\nT:Lyrics\nK:C\nCDEF\nw:one two three four\n"
+    tunes = parse_abc(text)
+    assert [n.comment for n in tunes[0].notes] == ["one", "two", "three", "four"]
+
+
+def test_parse_abc_lyrics_skip_rests():
+    text = "X:1\nT:Lyrics\nK:C\nCzDF\nw:one two three\n"
+    tunes = parse_abc(text)
+    comments = [n.comment for n in tunes[0].notes]
+    assert comments[0] == "one"   # C
+    assert comments[1] == ""      # z (rest, no lyric)
+    assert comments[2] == "two"   # D
+    assert comments[3] == "three" # F
+
+
+def test_parse_abc_voice_header_rejected():
+    text = "X:1\nT:Voices\nK:C\nV:1\nCDEF\n"
+    with pytest.raises(ParseError, match=r"line 4"):
+        parse_abc(text)
+
+
+def test_parse_abc_no_tunes_raises():
+    with pytest.raises(ParseError):
+        parse_abc("this is not an ABC file at all\n")
+
+
+def test_parse_abc_multibar_line_spans_lines_reset_by_bar_not_newline():
+    text = "X:1\nT:Multi\nK:C\n^C C\nC\n"
+    tunes = parse_abc(text)
+    # accidental carries within the (unbarred) tune across the newline,
+    # since only bar lines reset it
+    freqs = [n.freq for n in tunes[0].notes]
+    assert freqs == [midi_to_freq(61), midi_to_freq(61), midi_to_freq(61)]

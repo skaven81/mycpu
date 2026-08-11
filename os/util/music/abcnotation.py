@@ -172,15 +172,15 @@ def _parse_note_length_frac(token: str, line: int) -> Fraction:
     return Fraction(numer, denom)
 
 
-def _tokens_to_notes(tokens: list, unit_length: Fraction, key_accidentals: dict, line: int) -> list:
-    """Convert one line's tokens into Note objects, tracking bar-scoped
-    accidentals (reset at each bar-line token) and merging tied notes."""
+def _resolve_tokens(tokens, unit_length, key_accidentals, bar_accidentals, pending_tie, line):
+    """The one place note/rest/accidental/tie resolution logic lives.
+    bar_accidentals and pending_tie (a 1-element list used as a mutable
+    box) are owned by the caller, so state can be threaded across
+    multiple calls -- e.g. across a tune's several body lines."""
     notes = []
-    bar_accidentals = {}
-    pending_tie = None
     for kind, value in tokens:
         if kind == "bar":
-            bar_accidentals = {}
+            bar_accidentals.clear()
             continue
         m = _NOTE_DECOMP_RE.match(value)
         if not m:
@@ -210,22 +210,141 @@ def _tokens_to_notes(tokens: list, unit_length: Fraction, key_accidentals: dict,
                 semitone_adj = key_accidentals.get(letter.upper(), 0)
             note_freq = midi_to_freq(base + semitone_adj)
 
-        if pending_tie is not None:
-            if note_freq is not None and pending_tie.freq == note_freq:
-                pending_tie.beats += beats
+        if pending_tie[0] is not None:
+            prev = pending_tie[0]
+            if note_freq is not None and prev.freq == note_freq:
+                prev.beats += beats
                 if tie:
                     continue
-                notes.append(pending_tie)
-                pending_tie = None
+                notes.append(prev)
+                pending_tie[0] = None
                 continue
-            notes.append(pending_tie)
-            pending_tie = None
+            notes.append(prev)
+            pending_tie[0] = None
 
         new_note = Note(freq=note_freq, beats=beats, comment="", line=line)
         if tie:
-            pending_tie = new_note
+            pending_tie[0] = new_note
         else:
             notes.append(new_note)
-    if pending_tie is not None:
-        notes.append(pending_tie)
     return notes
+
+
+def _tokens_to_notes(tokens: list, unit_length: Fraction, key_accidentals: dict, line: int) -> list:
+    """Single-line convenience wrapper (what Task 7's tests call directly):
+    fresh bar-accidental and tie state for this one call only."""
+    bar_accidentals = {}
+    pending_tie = [None]
+    notes = _resolve_tokens(tokens, unit_length, key_accidentals, bar_accidentals, pending_tie, line)
+    if pending_tie[0] is not None:
+        notes.append(pending_tie[0])
+    return notes
+
+
+def _parse_body_line_notes(text, unit_length, key_accidentals, bar_accidentals, pending_tie, line):
+    """Multi-line entry point used by parse_abc: tokenizes one body line
+    and resolves it against caller-owned, cross-line accidental/tie state."""
+    tokens = _tokenize_body_line(text, line)
+    return _resolve_tokens(tokens, unit_length, key_accidentals, bar_accidentals, pending_tie, line)
+
+
+@dataclass
+class AbcTune:
+    number: int
+    title: str
+    notes: list
+    tempo_bpm: float = None
+
+
+_HEADER_RE = re.compile(r"^([A-Za-z]):\s?(.*)$")
+
+
+def parse_abc(text: str) -> list:
+    """Parse an ABC file into one AbcTune per X: header found."""
+    lines = text.splitlines()
+    tunes = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        m = re.match(r"^X:\s*(\d+)", lines[i].strip())
+        if not m:
+            i += 1
+            continue
+        tune_number = int(m.group(1))
+        title = ""
+        unit_length = Fraction(1, 8)
+        key_accidentals = {}
+        tempo_bpm = None
+        i += 1
+
+        # Header block: X:, T:, K:, L:, Q: (and other unrecognized header
+        # letters, silently ignored) up to and including K:.
+        saw_key = False
+        while i < n and not saw_key:
+            stripped = lines[i].strip()
+            if not stripped:
+                i += 1
+                continue
+            hm = _HEADER_RE.match(stripped)
+            if not hm or hm.group(1) == "X":
+                break
+            letter, value = hm.group(1), hm.group(2)
+            if letter == "T":
+                title = value.strip()
+            elif letter == "K":
+                key_accidentals = key_signature_accidentals(value, i + 1)
+                saw_key = True
+            elif letter == "L":
+                unit_length = parse_unit_length(value, i + 1)
+            elif letter == "Q":
+                tempo_bpm = parse_tempo(value, i + 1)
+            elif letter == "V":
+                raise ParseError(f"line {i + 1}: multiple voices ('V:') are not supported")
+            i += 1
+
+        body_notes = []
+        bar_accidentals = {}
+        pending_tie = [None]
+        while i < n:
+            stripped = lines[i].strip()
+            if re.match(r"^X:\s*\d+", stripped):
+                break
+            lineno = i + 1
+            i += 1
+            if not stripped:
+                continue
+            wm = re.match(r"^w:\s?(.*)$", stripped)
+            if wm:
+                syllables = wm.group(1).split()
+                sounding = [nn for nn in body_notes if nn.freq is not None]
+                for note, syll in zip(sounding, syllables):
+                    note.comment = syll.rstrip("-")
+                continue
+            hm = _HEADER_RE.match(stripped)
+            if hm and hm.group(1) in "TKLQV":
+                letter, value = hm.group(1), hm.group(2)
+                if letter == "V":
+                    raise ParseError(f"line {lineno}: multiple voices ('V:') are not supported")
+                if letter == "T":
+                    continue
+                if letter == "K":
+                    key_accidentals = key_signature_accidentals(value, lineno)
+                    continue
+                if letter == "L":
+                    unit_length = parse_unit_length(value, lineno)
+                    continue
+                if letter == "Q":
+                    tempo_bpm = parse_tempo(value, lineno)
+                    continue
+            body_notes.extend(
+                _parse_body_line_notes(stripped, unit_length, key_accidentals,
+                                        bar_accidentals, pending_tie, lineno)
+            )
+        if pending_tie[0] is not None:
+            body_notes.append(pending_tie[0])
+
+        tunes.append(AbcTune(number=tune_number, title=title, notes=body_notes,
+                              tempo_bpm=tempo_bpm))
+    if not tunes:
+        raise ParseError("no X: tune header found in ABC file")
+    return tunes
