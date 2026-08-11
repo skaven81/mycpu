@@ -1027,7 +1027,7 @@ _ACC_SEMITONES = {"^^": 2, "^": 1, "__": -2, "_": -1, "=": 0}
 _NOTE_TOKEN_RE = re.compile(
     r'(?P<comment>%.*)'
     r'|(?P<chord>"[^"]*")'
-    r'|(?P<rej_chord>\[)'
+    r'|(?P<rej_chord>\[(?!\|))'
     r'|(?P<rej_grace>\{)'
     r'|(?P<rej_tuplet>\(\d)'
     r'|(?P<rej_broken>[><])'
@@ -1597,14 +1597,14 @@ def test_main_tempo_flag_overrides_abc_q_field(tmp_path):
 
 def test_main_conversion_error_writes_no_partial_file(tmp_path):
     src = tmp_path / "song.txt"
-    src.write_text("C4 /65536 hi\n")  # absurd duration -> out of range
+    src.write_text("C4 /1000000 hi\n")  # absurd duration -> out of range
     out = tmp_path / "song.MUS"
     rc = main(["-o", str(out), str(src)])
     assert rc != 0
     assert not out.exists()
 ```
 
-Note: `test_main_conversion_error_writes_no_partial_file` relies on `/65536` being an invalid bespoke duration denominator producing a tiny fraction whose duration-ticks rounds to 0 (out of range) — `4.0/65536` beats at 120 BPM/32768Hz rounds to 0 ticks, which `note_to_duration_ticks` rejects.
+Note: `test_main_conversion_error_writes_no_partial_file` relies on `/1000000` being an invalid bespoke duration denominator producing a tiny fraction whose duration-ticks rounds to 0 (out of range) — `4.0/1000000` beats at 120 BPM/32768Hz rounds to 0 ticks, which `note_to_duration_ticks` rejects. (An earlier draft of this test used `/65536`, which actually rounds to 1 tick — a valid, in-range value — and would not have exercised the error path at all; caught during Task 9's implementation and corrected here.)
 
 - [ ] **Step 2: Run to verify failure**
 
