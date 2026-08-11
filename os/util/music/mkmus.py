@@ -17,7 +17,7 @@ import abcnotation
 import bespoke
 from freq import parse_frequency
 from mus_writer import encode_record, write_mus
-from notes import ConversionError, note_to_divisor, note_to_duration_ticks
+from notes import ConversionError, Note, note_to_divisor, note_to_duration_ticks
 
 
 class MkmusError(Exception):
@@ -58,6 +58,27 @@ def detect_and_parse(text: str, tune_arg):
             raise MkmusError(str(e)) from e
 
 
+def insert_repeat_gaps(notes: list, gap_percent: float) -> list:
+    """Insert a short Note(freq=None) rest between two consecutive notes
+    that share the same pitch, so back-to-back repeats of one note are
+    audibly distinct instead of sounding like a single held tone.
+    gap_percent is a percentage of one quarter-note beat at the tempo in
+    effect, so the inserted gap's real-world length is the same
+    regardless of the surrounding notes' own durations. gap_percent == 0
+    returns notes unchanged (no gaps inserted, matching pre-flag
+    behavior)."""
+    if gap_percent == 0:
+        return notes
+    if not notes:
+        return notes
+    result = [notes[0]]
+    for prev, cur in zip(notes, notes[1:]):
+        if prev.freq is not None and cur.freq is not None and prev.freq == cur.freq:
+            result.append(Note(freq=None, beats=gap_percent / 100.0, comment="", line=cur.line))
+        result.append(cur)
+    return result
+
+
 def build_records(notes: list, tone_freq: float, beat_freq: float, tempo: float, warnings: list) -> list:
     """Convert each Note into an encoded 16-byte record, in order."""
     records = []
@@ -90,6 +111,13 @@ def main(argv=None) -> int:
                               "ABC file's own Q: field if present)")
     parser.add_argument("--tune", type=int, default=None,
                          help="select tune N from a multi-tune ABC file")
+    parser.add_argument("--repeat-gap", type=float, default=10.0,
+                         help="percent of one quarter-note beat (at the "
+                              "given tempo) to insert as silence between "
+                              "two consecutive notes of the same pitch, "
+                              "so repeats are audibly distinct instead of "
+                              "sounding like one held note (default 10, "
+                              "~50ms at 120 BPM; 0 disables)")
     parser.add_argument("-o", "--output", default=None,
                          help="output .MUS path (default: INPUT stem, "
                               "uppercased, + .MUS)")
@@ -127,6 +155,13 @@ def main(argv=None) -> int:
     if tempo <= 0:
         print(f"mkmus.py: tempo must be positive, got {tempo}", file=sys.stderr)
         return 1
+
+    if args.repeat_gap < 0:
+        print(f"mkmus.py: repeat-gap must be non-negative, got {args.repeat_gap}",
+              file=sys.stderr)
+        return 1
+
+    notes = insert_repeat_gaps(notes, args.repeat_gap)
 
     warnings = []
     try:

@@ -1,7 +1,7 @@
 import struct
 import pytest
 
-from mkmus import detect_and_parse, build_records, main, MkmusError
+from mkmus import detect_and_parse, build_records, insert_repeat_gaps, main, MkmusError
 from notes import Note, note_to_divisor, note_to_duration_ticks
 from mus_writer import TERMINATOR, encode_record
 from bespoke import parse_bespoke
@@ -128,6 +128,85 @@ def test_main_conversion_error_writes_no_partial_file(tmp_path):
     out = tmp_path / "song.MUS"
     rc = main(["-o", str(out), str(src)])
     assert rc != 0
+    assert not out.exists()
+
+
+def test_insert_repeat_gaps_adds_silence_between_same_pitch_notes():
+    notes = [Note(freq=440.0, beats=1.0, comment="a", line=1),
+             Note(freq=440.0, beats=1.0, comment="b", line=2)]
+    result = insert_repeat_gaps(notes, 10.0)
+    assert len(result) == 3
+    assert result[0] is notes[0]
+    assert result[1].freq is None
+    assert result[1].beats == pytest.approx(0.10)
+    assert result[1].line == 2
+    assert result[2] is notes[1]
+
+
+def test_insert_repeat_gaps_zero_percent_is_a_no_op():
+    notes = [Note(freq=440.0, beats=1.0, comment="a", line=1),
+             Note(freq=440.0, beats=1.0, comment="b", line=2)]
+    result = insert_repeat_gaps(notes, 0.0)
+    assert result == notes
+
+
+def test_insert_repeat_gaps_different_pitch_no_gap():
+    notes = [Note(freq=440.0, beats=1.0, comment="a", line=1),
+             Note(freq=493.88, beats=1.0, comment="b", line=2)]
+    result = insert_repeat_gaps(notes, 10.0)
+    assert len(result) == 2
+
+
+def test_insert_repeat_gaps_skips_consecutive_rests():
+    notes = [Note(freq=None, beats=1.0, comment="", line=1),
+             Note(freq=None, beats=1.0, comment="", line=2)]
+    result = insert_repeat_gaps(notes, 10.0)
+    assert len(result) == 2
+
+
+def test_insert_repeat_gaps_three_same_pitch_notes_gets_two_gaps():
+    notes = [Note(freq=440.0, beats=1.0, comment="a", line=1),
+             Note(freq=440.0, beats=1.0, comment="b", line=2),
+             Note(freq=440.0, beats=1.0, comment="c", line=3)]
+    result = insert_repeat_gaps(notes, 10.0)
+    assert len(result) == 5
+    assert [n.freq for n in result] == [440.0, None, 440.0, None, 440.0]
+
+
+def test_main_default_repeat_gap_inserts_silence_record(tmp_path):
+    text = "A4 /4 one\nA4 /4 two\n"
+    src = tmp_path / "song.txt"
+    src.write_text(text)
+    out = tmp_path / "song.MUS"
+    rc = main(["-o", str(out), str(src)])
+    assert rc == 0
+    data = out.read_bytes()
+    assert len(data) == 3 * 16 + 16  # 2 real notes + 1 gap + terminator
+    divisor, duration, comment = struct.unpack(">HH12s", data[16:32])
+    # default --repeat-gap 10 -> round(0.10 * (60/120) * 32768) = 1638
+    assert divisor == 0
+    assert duration == 1638
+
+
+def test_main_repeat_gap_zero_matches_prior_no_gap_behavior(tmp_path):
+    text = "A4 /4 one\nA4 /4 two\n"
+    src = tmp_path / "song.txt"
+    src.write_text(text)
+    out = tmp_path / "song.MUS"
+    rc = main(["--repeat-gap", "0", "-o", str(out), str(src)])
+    assert rc == 0
+    data = out.read_bytes()
+    assert len(data) == 2 * 16 + 16
+
+
+def test_main_negative_repeat_gap_clean_error(tmp_path, capsys):
+    src = tmp_path / "song.txt"
+    src.write_text("A4 /4 hi\n")
+    out = tmp_path / "song.MUS"
+    rc = main(["--repeat-gap", "-5", "-o", str(out), str(src)])
+    assert rc != 0
+    captured = capsys.readouterr()
+    assert "repeat-gap" in captured.err
     assert not out.exists()
 
 

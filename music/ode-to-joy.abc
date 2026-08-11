@@ -1,0 +1,14 @@
+% Ode to Joy (Beethoven / Schiller), adapted from:
+% https://abcnotation.com/tunePage?a=trillian.mit.edu%2F%7Ejc%2Fmusic%2Fabc%2Fsong%2FOde_To_Joy%2F0000
+% Broken-rhythm markers (B>A, A>G) rewritten as explicit note-length
+% fractions (B3/2 A/2) -- mkmus.py's bounded ABC subset rejects '>'.
+X: 1
+T: Ode to Joy
+C: Ludwig van Beethoven (Schiller)
+M: 4/4
+L: 1/4
+K: G
+| B B c d | d c B A | G G A B | B3/2A/2 A2 |
+| B B c d | d c B A | G G A B | A3/2G/2 G2 |
+| A A B G | A B/c/ B G | A B/c/ B A | G A D2 |
+| B B c d | d c B A | G G A B | A3/2G/2 G2 |]

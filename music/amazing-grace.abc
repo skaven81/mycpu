@@ -1,0 +1,15 @@
+% Amazing Grace, adapted from abcnotation.com (trillian.mit.edu hymn mirror).
+% Trailing '\' line-continuation markers removed (unsupported by mkmus.py).
+X: 1
+T: Amazing Grace
+C: Words: John Newton (1725-1807)
+N: Early 18th-C. American
+M: 3/4
+L: 1/8
+K: G
+D2
+| "G"G4 BG | B4 "G7"A2 | "C"G2 E2 | "G"D4 "D7"D2
+| "G"G4 BG | B2 A2 | "D7"d6- | d2 z2 ||
+B2
+| "G"d3 B dB | G4 D2 | "C"E3G GE | "G"D4 D2
+| "Em"G4 BG | "D7"B2 A2 | "G(C)"G6- | "G"G2 z2 |]
