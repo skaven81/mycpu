@@ -102,3 +102,130 @@ def parse_tempo(field: str, line: int) -> float:
     if m:
         return float(m.group(1))
     raise ParseError(f"line {line}: invalid Q: field {field!r}")
+
+
+_ACC_SEMITONES = {"^^": 2, "^": 1, "__": -2, "_": -1, "=": 0}
+
+_NOTE_TOKEN_RE = re.compile(
+    r'(?P<comment>%.*)'
+    r'|(?P<chord>"[^"]*")'
+    r'|(?P<rej_chord>\[)'
+    r'|(?P<rej_grace>\{)'
+    r'|(?P<rej_tuplet>\(\d)'
+    r'|(?P<rej_broken>[><])'
+    r'|(?P<bar>\|\]|\[\||\|\||:\||\|:|\|)'
+    r"|(?P<note>(?:\^\^|\^|__|_|=)?[A-Ga-gzZ][,']*[0-9]*/*[0-9]*-?)"
+    r'|(?P<ws>\s+)'
+)
+
+_NOTE_DECOMP_RE = re.compile(
+    r"^(?P<acc>\^\^|\^|__|_|=)?"
+    r"(?P<letter>[A-Ga-gzZ])"
+    r"(?P<marks>[,']*)"
+    r"(?P<len>[0-9]*/*[0-9]*)"
+    r"(?P<tie>-)?$"
+)
+
+_SEMITONE = {"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}
+
+
+def _tokenize_body_line(text: str, line: int) -> list:
+    """Split one already-header-stripped ABC body line into ('bar', None)
+    and ('note', raw_token) tuples. Chord annotations and %-comments are
+    dropped; chords, grace notes, tuplets, and broken rhythm are hard
+    parse errors naming the line."""
+    pos = 0
+    tokens = []
+    while pos < len(text):
+        m = _NOTE_TOKEN_RE.match(text, pos)
+        if not m:
+            raise ParseError(f"line {line}: unrecognized ABC syntax near {text[pos:pos+10]!r}")
+        kind = m.lastgroup
+        if kind == "rej_chord":
+            raise ParseError(f"line {line}: chords ('[...]') are not supported")
+        if kind == "rej_grace":
+            raise ParseError(f"line {line}: grace notes ('{{...}}') are not supported")
+        if kind == "rej_tuplet":
+            raise ParseError(f"line {line}: tuplets ('(3' etc.) are not supported")
+        if kind == "rej_broken":
+            raise ParseError(f"line {line}: broken rhythm ('>' / '<') is not supported")
+        if kind in ("comment", "chord", "ws"):
+            pos = m.end()
+            continue
+        if kind == "bar":
+            tokens.append(("bar", None))
+        elif kind == "note":
+            tokens.append(("note", m.group("note")))
+        pos = m.end()
+    return tokens
+
+
+def _parse_note_length_frac(token: str, line: int) -> Fraction:
+    m = re.match(r"^(\d+)?(/+)?(\d+)?$", token)
+    if not m:
+        raise ParseError(f"line {line}: invalid note length {token!r}")
+    numer_s, slashes, denom_s = m.groups()
+    numer = int(numer_s) if numer_s else 1
+    if not slashes:
+        return Fraction(numer, 1)
+    denom = int(denom_s) if denom_s else 2 ** len(slashes)
+    return Fraction(numer, denom)
+
+
+def _tokens_to_notes(tokens: list, unit_length: Fraction, key_accidentals: dict, line: int) -> list:
+    """Convert one line's tokens into Note objects, tracking bar-scoped
+    accidentals (reset at each bar-line token) and merging tied notes."""
+    notes = []
+    bar_accidentals = {}
+    pending_tie = None
+    for kind, value in tokens:
+        if kind == "bar":
+            bar_accidentals = {}
+            continue
+        m = _NOTE_DECOMP_RE.match(value)
+        if not m:
+            raise ParseError(f"line {line}: invalid note token {value!r}")
+        acc = m.group("acc")
+        letter = m.group("letter")
+        marks = m.group("marks")
+        length_tok = m.group("len")
+        tie = m.group("tie") is not None
+        length_frac = _parse_note_length_frac(length_tok, line) * unit_length
+        beats = float(length_frac) * 4.0
+
+        if letter in ("z", "Z"):
+            note_freq = None
+        else:
+            is_lower = letter.islower()
+            base = 72 if is_lower else 60
+            base += _SEMITONE[letter.lower()]
+            base += 12 * marks.count("'") - 12 * marks.count(",")
+            acc_key = (letter.upper(), base)
+            if acc is not None:
+                semitone_adj = _ACC_SEMITONES[acc]
+                bar_accidentals[acc_key] = semitone_adj
+            elif acc_key in bar_accidentals:
+                semitone_adj = bar_accidentals[acc_key]
+            else:
+                semitone_adj = key_accidentals.get(letter.upper(), 0)
+            note_freq = midi_to_freq(base + semitone_adj)
+
+        if pending_tie is not None:
+            if note_freq is not None and pending_tie.freq == note_freq:
+                pending_tie.beats += beats
+                if tie:
+                    continue
+                notes.append(pending_tie)
+                pending_tie = None
+                continue
+            notes.append(pending_tie)
+            pending_tie = None
+
+        new_note = Note(freq=note_freq, beats=beats, comment="", line=line)
+        if tie:
+            pending_tie = new_note
+        else:
+            notes.append(new_note)
+    if pending_tie is not None:
+        notes.append(pending_tie)
+    return notes
