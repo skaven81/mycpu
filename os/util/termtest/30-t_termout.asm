@@ -27,10 +27,11 @@
 #    .cursor_advance derives the color address from the chars address
 #    with one OR instead of a second 16-bit increment.
 #
-# :t_ansi_feed and :t_ansi_flush are temporary stubs so this file (and
-# its ANSI hook in :t_putchar/:t_print) can be built and tested in
-# isolation. Task 3 (35-t_ansi.asm) replaces them with the real state
-# machine and removes the stub bodies and :t_ansi_state from this file.
+# :t_ansi_feed/:t_ansi_flush/:t_ansi_reset and the :t_ansi_* state live in
+# 35-t_ansi.asm (Task 3). The only ANSI-related code that stays here is
+# the ESC-detection in :t_putchar's slow path, since it's cheap enough to
+# inline and keeps the common (non-ANSI) slow-path characters from paying
+# for a CALL into the parser file.
 
 ######
 # Print a single character from AL at the current cursor location, then
@@ -133,6 +134,8 @@ ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .putchar_slow_write              # not ESC, not mid-sequence
 
 ST :t_ansi_state 0x01                # start a new escape sequence
+ST :t_ansi_seq_buf 0x1b              # record it for error-recovery flush
+ST :t_ansi_seq_len 0x01
 JMP .putchar_done
 
 .putchar_slow_ansi_feed
@@ -584,20 +587,6 @@ POP_BH
 POP_AL
 POP_AH
 RET
-
-######
-# Temporary stub for the ANSI escape-sequence state machine. Task 3
-# (35-t_ansi.asm) replaces this and removes :t_ansi_state from this
-# file. Left as a no-op so :t_putchar's ANSI hook builds and can be
-# exercised (staying permanently in state 0) before Task 3 lands.
-:t_ansi_feed
-RET
-
-:t_ansi_flush
-ST :t_ansi_state 0x00
-RET
-
-:t_ansi_state "\0"
 
 :t_term_flags "\0"
 :t_term_render_color "\0"
