@@ -2,7 +2,7 @@
 
 # Prototype of the new terminal output library (TERMINAL_REFACTOR.md 2.2).
 # Differences from the current os/bios/lib/terminal_output.asm:
-#  - Unified :t_term_flags byte (2.2.1) replaces the four separate
+#  - Unified $t_term_flags byte (2.2.1) replaces the four separate
 #    control variables. 0x00 is the fast/default case.
 #  - :t_putchar has a genuine fast path (flags==0) and a slow path
 #    (raw/ANSI-hook/edge-behavior). The fast path is tuned for minimum
@@ -13,7 +13,7 @@
 #    .cursor_move_real -> cursor_goto_addr chain (2.3.1).
 #  - No @-code parsing in :t_print -- color comes from ANSI (via the
 #    :t_ansi_feed hook, stubbed here until Task 3) or from setting
-#    :t_term_render_color/:t_term_current_color directly (2.2.4).
+#    $t_term_render_color/$t_term_current_color directly (2.2.4).
 #  - :t_putchar_raw replaces :putchar_direct; :t_print_raw is new and
 #    keeps its whole working set in registers across the loop.
 #
@@ -32,10 +32,17 @@
 # the ESC-detection in :t_putchar's slow path, since it's cheap enough to
 # inline and keeps the common (non-ANSI) slow-path characters from paying
 # for a CALL into the parser file.
+#
+# State is VAR global (not a label data segment) since this file moves
+# into os/bios/lib/ eventually, where label data would be read-only ROM.
+VAR global byte $t_term_flags
+VAR global byte $t_term_render_color
+VAR global byte $t_term_current_color
+VAR global 128 $t_printf_buf
 
 ######
 # Print a single character from AL at the current cursor location, then
-# advance the cursor. Honors :t_term_flags (2.2.1/2.2.2).
+# advance the cursor. Honors $t_term_flags (2.2.1/2.2.2).
 #
 # Inputs:
 #  AL - character to print
@@ -43,11 +50,11 @@
 :t_putchar
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %B%+%BL%
-LD_BL :t_term_flags
+LD_BL $t_term_flags
 ALUOP_FLAGS %B%+%BL%
 JNZ .putchar_slow
 
-# --- fast path: :t_term_flags == 0x00 ---
+# --- fast path: $t_term_flags == 0x00 ---
 # Two-test screen instead of four ctrl-char compares: everything below
 # 0x20 goes to the (cold) .putchar_lowctrl dispatcher, and 0x7f is the
 # only ctrl char above it. 0x80-0xff are printable CP437 glyphs and
@@ -62,18 +69,18 @@ JEQ .putchar_delete
 .putchar_write
 PUSH_DH
 PUSH_DL
-LD_DH :t_crsr_addr_chars
-LD_DL :t_crsr_addr_chars+1
+LD_DH $t_crsr_addr_chars
+LD_DL $t_crsr_addr_chars+1
 ALUOP_ADDR_D %A%+%AL%                # write the character
-LD_BL :t_term_render_color
+LD_BL $t_term_render_color
 ALUOP_FLAGS %B%+%BL%
 JZ .putchar_fast_adv
-LD_DH :t_crsr_addr_color
-LD_DL :t_crsr_addr_color+1
-LD_BL :t_term_current_color
+LD_DH $t_crsr_addr_color
+LD_DL $t_crsr_addr_color+1
+LD_BL $t_term_current_color
 ALUOP_ADDR_D %B%+%BL%                # write the color byte
-LD_DH :t_crsr_addr_chars
-LD_DL :t_crsr_addr_chars+1           # restore D=chars for .cursor_advance
+LD_DH $t_crsr_addr_chars
+LD_DL $t_crsr_addr_chars+1           # restore D=chars for .cursor_advance
 .putchar_fast_adv
 CALL .cursor_advance                 # D contract: addr just written
 POP_DL
@@ -98,7 +105,7 @@ ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .putchar_newline
 JMP .putchar_write
 
-# --- slow path: :t_term_flags != 0x00 ---
+# --- slow path: $t_term_flags != 0x00 ---
 # The flags byte lives in AH for the whole dispatch (BL is the compare
 # scratch). BH is never touched, so it doesn't need saving.
 .putchar_slow
@@ -125,7 +132,7 @@ LDI_BL 0x02                          # bit 1: ANSI mode (AH still flags)
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JZ .putchar_slow_write               # ANSI off: plain write
 
-LD_BL :t_ansi_state
+LD_BL $t_ansi_state
 ALUOP_FLAGS %B%+%BL%
 JNZ .putchar_slow_ansi_feed          # mid-sequence: always feed, even ESC
 
@@ -133,9 +140,9 @@ LDI_BL 0x1b                          # ESC
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .putchar_slow_write              # not ESC, not mid-sequence
 
-ST :t_ansi_state 0x01                # start a new escape sequence
-ST :t_ansi_seq_buf 0x1b              # record it for error-recovery flush
-ST :t_ansi_seq_len 0x01
+ST $t_ansi_state 0x01                # start a new escape sequence
+ST $t_ansi_seq_buf 0x1b              # record it for error-recovery flush
+ST $t_ansi_seq_len 0x01
 JMP .putchar_done
 
 .putchar_slow_ansi_feed
@@ -148,18 +155,18 @@ JMP .putchar_done
 .putchar_slow_write
 PUSH_DH
 PUSH_DL
-LD_DH :t_crsr_addr_chars
-LD_DL :t_crsr_addr_chars+1
+LD_DH $t_crsr_addr_chars
+LD_DL $t_crsr_addr_chars+1
 ALUOP_ADDR_D %A%+%AL%
-LD_BL :t_term_render_color
+LD_BL $t_term_render_color
 ALUOP_FLAGS %B%+%BL%
 JZ .putchar_slow_adv
-LD_DH :t_crsr_addr_color
-LD_DL :t_crsr_addr_color+1
-LD_BL :t_term_current_color
+LD_DH $t_crsr_addr_color
+LD_DL $t_crsr_addr_color+1
+LD_BL $t_term_current_color
 ALUOP_ADDR_D %B%+%BL%
-LD_DH :t_crsr_addr_chars
-LD_DL :t_crsr_addr_chars+1
+LD_DH $t_crsr_addr_chars
+LD_DL $t_crsr_addr_chars+1
 .putchar_slow_adv
 CALL .cursor_advance_edge            # D contract: addr just written
 POP_DL
@@ -175,16 +182,16 @@ PUSH_CH
 PUSH_CL
 PUSH_DH
 PUSH_DL
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 CALL :t_cursor_left
-LD_BL :t_crsr_col
+LD_BL $t_crsr_col
 ALUOP_FLAGS %AxB%+%AL%+%BL%      # col unchanged means cursor was at 0,0
 JEQ .putchar_bs_done
-LD_CH :t_crsr_addr_chars
-LD_CL :t_crsr_addr_chars+1       # cursor location (post-move) in C
+LD_CH $t_crsr_addr_chars
+LD_CL $t_crsr_addr_chars+1       # cursor location (post-move) in C
 INCR_C                           # one step right of the new position
-LD_DH :t_crsr_addr_chars
-LD_DL :t_crsr_addr_chars+1       # cursor location in D
+LD_DH $t_crsr_addr_chars
+LD_DL $t_crsr_addr_chars+1       # cursor location in D
 CALL .term_strcpy                # shift everything right of cursor left
 .putchar_bs_done
 POP_DL
@@ -199,11 +206,11 @@ PUSH_CH
 PUSH_CL
 PUSH_DH
 PUSH_DL
-LD_CH :t_crsr_addr_chars
-LD_CL :t_crsr_addr_chars+1
+LD_CH $t_crsr_addr_chars
+LD_CL $t_crsr_addr_chars+1
 INCR_C
-LD_DH :t_crsr_addr_chars
-LD_DL :t_crsr_addr_chars+1
+LD_DH $t_crsr_addr_chars
+LD_DL $t_crsr_addr_chars+1
 CALL .term_strcpy
 POP_DL
 POP_DH
@@ -213,7 +220,7 @@ JMP .putchar_done
 
 .putchar_cr
 ALUOP_PUSH %A%+%AL%
-LD_AH :t_crsr_row
+LD_AH $t_crsr_row
 LDI_AL 0x00
 CALL :t_cursor_goto_rowcol
 POP_AL
@@ -221,7 +228,7 @@ JMP .putchar_done
 
 .putchar_newline
 ALUOP_PUSH %A%+%AL%
-LD_AH :t_crsr_row
+LD_AH $t_crsr_row
 CALL .row_advance_bottomedge     # AH in, AH out (new row)
 LDI_AL 0x00
 CALL :t_cursor_goto_rowcol
@@ -241,8 +248,8 @@ ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %B%+%BL%
 PUSH_DH
 PUSH_DL
-LD_DH :t_crsr_addr_chars
-LD_DL :t_crsr_addr_chars+1
+LD_DH $t_crsr_addr_chars
+LD_DL $t_crsr_addr_chars+1
 ALUOP_ADDR_D %A%+%AL%
 CALL .cursor_advance                 # D contract: addr just written
 POP_DL
@@ -270,7 +277,7 @@ CALL :t_putchar
 INCR_C
 JMP .print_loop
 .print_done
-LD_AL :t_ansi_state
+LD_AL $t_ansi_state
 ALUOP_FLAGS %A%+%AL%
 JZ .print_no_flush
 CALL :t_ansi_flush
@@ -298,9 +305,9 @@ PUSH_CH
 PUSH_CL
 PUSH_DH
 PUSH_DL
-LD_DH :t_crsr_addr_chars
-LD_DL :t_crsr_addr_chars+1
-LD_BL :t_crsr_col
+LD_DH $t_crsr_addr_chars
+LD_DL $t_crsr_addr_chars+1
+LD_BL $t_crsr_col
 LDI_AH 0x40                          # right-edge comparand, hoisted
 .prraw_loop
 LDA_C_AL
@@ -316,24 +323,24 @@ JMP .prraw_loop                      # 9 instructions per character
 
 .prraw_wrap                          # cold: once per 64 characters
 ALUOP_BL %B-1%+%BL%
-ALUOP_ADDR %B%+%BL% :t_crsr_col      # sync col=63 so .cursor_advance
+ALUOP_ADDR %B%+%BL% $t_crsr_col      # sync col=63 so .cursor_advance
 CALL .cursor_advance                 # re-increments it (D = written addr)
-LD_DH :t_crsr_addr_chars             # resync locals: advance may have
-LD_DL :t_crsr_addr_chars+1           # wrapped a row or scrolled
-LD_BL :t_crsr_col
+LD_DH $t_crsr_addr_chars             # resync locals: advance may have
+LD_DL $t_crsr_addr_chars+1           # wrapped a row or scrolled
+LD_BL $t_crsr_col
 LDI_AH 0x40                          # (clobbered by .cursor_advance)
 JMP .prraw_loop
 
 .prraw_done                          # write registers back to cursor state
-ALUOP_ADDR %B%+%BL% :t_crsr_col
+ALUOP_ADDR %B%+%BL% $t_crsr_col
 MOV_DL_BL
-ALUOP_ADDR %B%+%BL% :t_crsr_addr_chars+1
-ALUOP_ADDR %B%+%BL% :t_crsr_addr_color+1
+ALUOP_ADDR %B%+%BL% $t_crsr_addr_chars+1
+ALUOP_ADDR %B%+%BL% $t_crsr_addr_color+1
 MOV_DH_AH
-ALUOP_ADDR %A%+%AH% :t_crsr_addr_chars
+ALUOP_ADDR %A%+%AH% $t_crsr_addr_chars
 LDI_BL 0x10
 ALUOP_AH %A|B%+%AH%+%BL%             # color addr = chars addr | 0x1000
-ALUOP_ADDR %A%+%AH% :t_crsr_addr_color
+ALUOP_ADDR %A%+%AH% $t_crsr_addr_color
 POP_DL
 POP_DH
 POP_CL
@@ -355,9 +362,9 @@ PUSH_DH
 PUSH_DL
 PUSH_CH
 PUSH_CL
-LDI_D :t_printf_buf
+LDI_D $t_printf_buf
 CALL :sprintf
-LDI_C :t_printf_buf
+LDI_C $t_printf_buf
 CALL :t_print
 POP_CL
 POP_CH
@@ -406,7 +413,7 @@ RET
 #
 # Inputs:
 #  D - address of the character cell just written (== the current
-#      :t_crsr_addr_chars). Both callers have D loaded already, which
+#      $t_crsr_addr_chars). Both callers have D loaded already, which
 #      is what lets this routine advance with a single INCR_D instead
 #      of two load/increment/store sequences on the cached addresses.
 # Clobbers: AH, BL, D, flags. Callers must save these.
@@ -414,16 +421,16 @@ RET
 .cursor_advance
 INCR_D
 MOV_DH_AH
-ALUOP_ADDR %A%+%AH% :t_crsr_addr_chars
+ALUOP_ADDR %A%+%AH% $t_crsr_addr_chars
 LDI_BL 0x10
 ALUOP_AH %A|B%+%AH%+%BL%             # color addr = chars addr | 0x1000
-ALUOP_ADDR %A%+%AH% :t_crsr_addr_color
+ALUOP_ADDR %A%+%AH% $t_crsr_addr_color
 MOV_DL_BL
-ALUOP_ADDR %B%+%BL% :t_crsr_addr_chars+1
-ALUOP_ADDR %B%+%BL% :t_crsr_addr_color+1
-LD_BL :t_crsr_col
+ALUOP_ADDR %B%+%BL% $t_crsr_addr_chars+1
+ALUOP_ADDR %B%+%BL% $t_crsr_addr_color+1
+LD_BL $t_crsr_col
 ALUOP_BL %B+1%+%BL%
-ALUOP_ADDR %B%+%BL% :t_crsr_col      # transient 64 fixed on the edge path
+ALUOP_ADDR %B%+%BL% $t_crsr_col      # transient 64 fixed on the edge path
 LDI_AH 0x40
 ALUOP_FLAGS %AxB%+%AH%+%BL%          # col == 64?
 JEQ .cadv_rightedge
@@ -431,16 +438,16 @@ RET                                  # common case: 15 instructions + RET
 
 .cadv_rightedge                      # cold: once per 64 characters
 ALUOP_PUSH %A%+%AL%
-LD_AH :t_crsr_row
+LD_AH $t_crsr_row
 ALUOP_AH %A+1%+%AH%
 LDI_BL 0x3c
 ALUOP_FLAGS %AxB%+%AH%+%BL%          # walked off the bottom?
 JEQ .cadv_bottom
 # mid-screen wrap: the linearly-incremented addresses are already
 # correct for (row+1, col 0) -- only row/col need fixing up
-ALUOP_ADDR %A%+%AH% :t_crsr_row
+ALUOP_ADDR %A%+%AH% $t_crsr_row
 LDI_AL 0x00
-ALUOP_ADDR %A%+%AL% :t_crsr_col
+ALUOP_ADDR %A%+%AL% $t_crsr_col
 POP_AL
 RET
 .cadv_bottom
@@ -452,7 +459,7 @@ POP_AL
 RET
 
 ######
-# Flag-driven cursor advance for the slow path: honors :t_term_flags
+# Flag-driven cursor advance for the slow path: honors $t_term_flags
 # bits 2-5 for right-edge and bottom-edge behavior (2.2.1). Away from
 # the right edge every advance is identical to the default one, so this
 # just delegates -- slow-path characters cost only three instructions
@@ -463,7 +470,7 @@ RET
 #      .cursor_advance; only the delegation path uses it)
 # Clobbers: AH, BL, D, flags. AL preserved.
 .cursor_advance_edge
-LD_BL :t_crsr_col
+LD_BL $t_crsr_col
 LDI_AH 0x3f
 ALUOP_FLAGS %AxB%+%AH%+%BL%          # at col 63?
 JNE .cursor_advance                  # no: default advance (tail call)
@@ -473,7 +480,7 @@ JNE .cursor_advance                  # no: default advance (tail call)
 # derive the addresses. Flags stay latched across LD/LDI, which lets
 # the result of each bit test be preloaded before its branch.
 ALUOP_PUSH %A%+%AL%
-LD_AH :t_term_flags
+LD_AH $t_term_flags
 LDI_BL 0x04                          # bit 2: no-wrap
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 LDI_AL 0x3f                          # preload: stay at col 63
@@ -482,7 +489,7 @@ LDI_AL 0x00                          # wrap to col 0
 .cae_col_done
 LDI_BL 0x08                          # bit 3: no-newline (AH still flags)
 ALUOP_FLAGS %A&B%+%AH%+%BL%
-LD_AH :t_crsr_row
+LD_AH $t_crsr_row
 JNZ .cae_apply                       # no-newline: row unchanged
 CALL .row_advance_bottomedge         # AH in, AH out
 .cae_apply
@@ -493,7 +500,7 @@ RET
 ######
 # Given the current row in AH, computes the row after a "move to next
 # row" event (newline, or a right-edge wrap that advances rows),
-# honoring :t_term_flags bits 4-5 for bottom-edge behavior and calling
+# honoring $t_term_flags bits 4-5 for bottom-edge behavior and calling
 # :t_term_scroll when scrolling is wanted. Shared by
 # .cursor_advance_edge and .putchar_newline.
 #
@@ -511,7 +518,7 @@ JNE .rab_done
 
 # row 60 never survives -- every branch below overwrites AH, so it can
 # hold the flags byte for the bit tests in the meantime
-LD_AH :t_term_flags
+LD_AH $t_term_flags
 LDI_BL 0x10                          # bit 4: no-scroll
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JNZ .rab_noscroll
@@ -587,8 +594,3 @@ POP_BH
 POP_AL
 POP_AH
 RET
-
-:t_term_flags "\0"
-:t_term_render_color "\0"
-:t_term_current_color "\0"
-:t_printf_buf "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"

@@ -16,19 +16,19 @@
 :tests_history_run
 LDI_C .suite_name
 CALL :tt_suite
-ST :t_term_flags 0x00
+ST $t_term_flags 0x00
 
 LDI_AL 0x01                          # 1 segment = 128 bytes (>= 4*16)
 CALL :malloc_segments
-ALUOP_ADDR %A%+%AH% :t_rl_history_buf
-ALUOP_ADDR %A%+%AL% :t_rl_history_buf+1
-ST :t_rl_history_capacity 0x04
-ST :t_rl_history_entry_sz 0x10       # 16 bytes/entry, matches .h_buf below
+ALUOP_ADDR %A%+%AH% $t_rl_history_buf
+ALUOP_ADDR %A%+%AL% $t_rl_history_buf+1
+ST $t_rl_history_capacity 0x04
+ST $t_rl_history_entry_sz 0x10       # 16 bytes/entry, matches .h_buf below
 
 # --- Enter "one"; new call: Up+Enter -> "one" ---
 
-ST :t_rl_history_count 0x00
-ST :t_rl_history_write_idx 0x00
+ST $t_rl_history_count 0x00
+ST $t_rl_history_write_idx 0x00
 
 CALL :t_cursor_init
 LDI_C .seq_pop_one
@@ -68,8 +68,8 @@ CALL :tt_assert_eq
 
 # --- Enter "one","two"; Up,Up+Enter -> "one" ---
 
-ST :t_rl_history_count 0x00
-ST :t_rl_history_write_idx 0x00
+ST $t_rl_history_count 0x00
+ST $t_rl_history_write_idx 0x00
 
 CALL :t_cursor_init
 LDI_C .seq_pop_one
@@ -118,8 +118,8 @@ CALL :tt_assert_eq
 
 # --- Same precondition; Up,Up,Down+Enter -> "two" ---
 
-ST :t_rl_history_count 0x00
-ST :t_rl_history_write_idx 0x00
+ST $t_rl_history_count 0x00
+ST $t_rl_history_write_idx 0x00
 
 CALL :t_cursor_init
 LDI_C .seq_pop_one
@@ -168,8 +168,8 @@ CALL :tt_assert_eq
 
 # --- Same precondition; Up,Down+Enter -> "" (back to the fresh line) ---
 
-ST :t_rl_history_count 0x00
-ST :t_rl_history_write_idx 0x00
+ST $t_rl_history_count 0x00
+ST $t_rl_history_write_idx 0x00
 
 CALL :t_cursor_init
 LDI_C .seq_pop_one
@@ -211,8 +211,8 @@ CALL :tt_assert_eq
 # --- Recall then edit: Up, BS, "X", Enter -> "twX" (recalled text is
 #     editable, and the edited result becomes its own history entry) ---
 
-ST :t_rl_history_count 0x00
-ST :t_rl_history_write_idx 0x00
+ST $t_rl_history_count 0x00
+ST $t_rl_history_write_idx 0x00
 
 CALL :t_cursor_init
 LDI_C .seq_pop_one
@@ -265,8 +265,8 @@ CALL :tt_assert_eq
 #     append and corrupt the next check's browse depth; the recalled text
 #     is verified on screen, since Ctrl+C always returns an empty buffer. ---
 
-ST :t_rl_history_count 0x00
-ST :t_rl_history_write_idx 0x00
+ST $t_rl_history_count 0x00
+ST $t_rl_history_write_idx 0x00
 
 CALL :t_cursor_init
 LDI_C .seq_pop_one
@@ -429,8 +429,8 @@ CALL :tt_assert_eq
 
 # --- Empty Enter is not recorded (count unchanged) ---
 
-ST :t_rl_history_count 0x00
-ST :t_rl_history_write_idx 0x00
+ST $t_rl_history_count 0x00
+ST $t_rl_history_write_idx 0x00
 
 CALL :t_cursor_init
 LDI_C .seq_empty_enter
@@ -442,19 +442,19 @@ LDI_AH 0x01
 CALL :t_readline
 
 LDI_AH 0x00
-LD_AL :t_rl_history_count
+LD_AL $t_rl_history_count
 LDI_C .tn_empty_count
 CALL :tt_assert_eq
 
-# --- Disabled (:t_rl_history_buf == 0): Up/Down are no-ops; typed text is
+# --- Disabled ($t_rl_history_buf == 0): Up/Down are no-ops; typed text is
 #     unaffected on both the buffer and the screen ---
 
-LD_AH :t_rl_history_buf
-LD_AL :t_rl_history_buf+1
+LD_AH $t_rl_history_buf
+LD_AL $t_rl_history_buf+1
 ALUOP_ADDR %A%+%AH% .saved_hist_buf
 ALUOP_ADDR %A%+%AL% .saved_hist_buf+1
-ST :t_rl_history_buf 0x00
-ST :t_rl_history_buf+1 0x00
+ST $t_rl_history_buf 0x00
+ST $t_rl_history_buf+1 0x00
 
 CALL :t_cursor_init
 LDI_C .seq_hi_up_down_enter
@@ -489,13 +489,13 @@ CALL :tt_assert_eq
 
 LD_AH .saved_hist_buf
 LD_AL .saved_hist_buf+1
-ALUOP_ADDR %A%+%AH% :t_rl_history_buf
-ALUOP_ADDR %A%+%AL% :t_rl_history_buf+1
+ALUOP_ADDR %A%+%AH% $t_rl_history_buf
+ALUOP_ADDR %A%+%AL% $t_rl_history_buf+1
 
 # --- Teardown: free the history allocation ---
 
-LD_AH :t_rl_history_buf
-LD_AL :t_rl_history_buf+1
+LD_AH $t_rl_history_buf
+LD_AL $t_rl_history_buf+1
 CALL :free
 
 CALL :tt_result

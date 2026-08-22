@@ -5,14 +5,14 @@
 # Every test enables ANSI mode, resets the cursor to (0,0), sends an escape
 # sequence immediately followed by 'X' through :t_print, and checks the
 # character/color bytes at the framebuffer origin. Tests that need a known
-# starting color set :t_term_render_color/:t_term_current_color directly
+# starting color set $t_term_render_color/$t_term_current_color directly
 # first (2.2.4's documented direct-write pattern).
 
 :tests_sgr_run
 LDI_C .suite_name
 CALL :tt_suite
 
-ST :t_term_flags 0x02                # ANSI on, raw off
+ST $t_term_flags 0x02                # ANSI on, raw off
 
 # --- all 16 base foreground colors (SGR 30-37, 90-97) ---
 
@@ -147,8 +147,8 @@ CALL :tt_assert_eq
 # --- attributes: reset, bold upgrade, normal downgrade, blink on/off ---
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x00
-ST :t_term_current_color 0x15        # garbage baseline, distinct from 0x3f
+ST $t_term_render_color 0x00
+ST $t_term_current_color 0x15        # garbage baseline, distinct from 0x3f
 LDI_C .seq_reset
 CALL :t_print
 LD_AL %display_color%
@@ -165,8 +165,8 @@ LDI_C .tn_bold_red
 CALL :tt_assert_eq
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0x30        # light red (shade-3 red)
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0x30        # light red (shade-3 red)
 LDI_C .seq_normal
 CALL :t_print
 LD_AL %display_color%
@@ -175,8 +175,8 @@ LDI_C .tn_normal
 CALL :tt_assert_eq
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0x2a        # white, no blink
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0x2a        # white, no blink
 LDI_C .seq_blink_on
 CALL :t_print
 LD_AL %display_color%
@@ -185,8 +185,8 @@ LDI_C .tn_blink_on
 CALL :tt_assert_eq
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0xaa        # white, blinking
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0xaa        # white, blinking
 LDI_C .seq_blink_off
 CALL :t_print
 LD_AL %display_color%
@@ -197,8 +197,8 @@ CALL :tt_assert_eq
 # --- ignored codes leave the color untouched ---
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0x2a
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0x2a
 LDI_C .seq_ignored_reverse           # ESC[7m
 CALL :t_print
 LD_AL %display_color%
@@ -207,8 +207,8 @@ LDI_C .tn_ignored_reverse
 CALL :tt_assert_eq
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0x2a
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0x2a
 LDI_C .seq_ignored_bg                # ESC[44m
 CALL :t_print
 LD_AL %display_color%
@@ -217,8 +217,8 @@ LDI_C .tn_ignored_bg
 CALL :tt_assert_eq
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0x2a
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0x2a
 LDI_C .seq_ignored_defbg             # ESC[49m
 CALL :t_print
 LD_AL %display_color%
@@ -311,8 +311,8 @@ CALL :tt_assert_eq
 # --- 48;5;n (256-color background): parsed, no color change ---
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0x2a
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0x2a
 LDI_C .seq_256_bg
 CALL :t_print
 LD_AL %display_color%
@@ -324,7 +324,7 @@ LDI_AH 'X'
 LDI_C .tn_256_bg_char
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_ansi_state
+LD_AL $t_ansi_state
 LDI_C .tn_256_bg_state
 CALL :tt_assert_eq
 
@@ -341,8 +341,8 @@ CALL :tt_assert_eq
 # --- 38;2 truecolor: silently discarded, color unchanged ---
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0x2a
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0x2a
 LDI_C .seq_truecolor
 CALL :t_print
 LD_AL %display_color%
@@ -354,27 +354,27 @@ LDI_AH 'X'
 LDI_C .tn_truecolor_char
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_ansi_state
+LD_AL $t_ansi_state
 LDI_C .tn_truecolor_state
 CALL :tt_assert_eq
 
 # --- 6-param overflow (38;5;n;48;5;n): flushed raw, color unchanged ---
 
 CALL :t_cursor_init
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0x2a
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0x2a
 LDI_C .seq_overflow6
 CALL :t_print
 LD_AL %display_chars%
 LDI_AH 0x1b
 LDI_C .tn_overflow6_esc
 CALL :tt_assert_eq
-LD_AL :t_term_current_color
+LD_AL $t_term_current_color
 LDI_AH 0x2a
 LDI_C .tn_overflow6_color
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_ansi_state
+LD_AL $t_ansi_state
 LDI_C .tn_overflow6_state
 CALL :tt_assert_eq
 

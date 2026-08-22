@@ -8,7 +8,7 @@
 :tests_readline_run
 LDI_C .suite_name
 CALL :tt_suite
-ST :t_term_flags 0x00                # fast path, ctrl chars on, echo via putchar
+ST $t_term_flags 0x00                # fast path, ctrl chars on, echo via putchar
 
 # --- "hi" + Enter ---
 
@@ -324,11 +324,11 @@ LD_AL %display_chars%
 LDI_C .tn_noecho_screen
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_noecho_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_noecho_col
 CALL :tt_assert_eq
 

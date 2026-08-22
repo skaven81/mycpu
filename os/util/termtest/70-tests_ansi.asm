@@ -1,7 +1,7 @@
 # vim: syntax=asm-mycpu
 
 # Tests for 35-t_ansi.asm (TERMINAL_REFACTOR.md 2.2.3, non-SGR sequences).
-# Every test enables ANSI mode (:t_term_flags bit 1) and drives the parser
+# Every test enables ANSI mode ($t_term_flags bit 1) and drives the parser
 # through :t_print so the string-end flush path gets exercised too.
 
 :tests_ansi_run
@@ -11,48 +11,48 @@ CALL :tt_suite
 # --- basic movement, defaults, clamping ---
 
 CALL :t_cursor_init
-ST :t_term_flags 0x02                # ANSI on, raw off
+ST $t_term_flags 0x02                # ANSI on, raw off
 LDI_C .seq_5c
 CALL :t_print                        # ESC[5C from (0,0) -> (0,5)
 LDI_AH 0x00
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_5c_row
 CALL :tt_assert_eq
 LDI_AH 0x05
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_5c_col
 CALL :tt_assert_eq
 
 LDI_C .seq_b_default
 CALL :t_print                        # ESC[B default n=1 -> (1,5)
 LDI_AH 0x01
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_b_row
 CALL :tt_assert_eq
 LDI_AH 0x05
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_b_col
 CALL :tt_assert_eq
 
 LDI_C .seq_gotorc
 CALL :t_print                        # ESC[10;20H -> row 9, col 19
 LDI_AH 0x09
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_gotorc_row
 CALL :tt_assert_eq
 LDI_AH 0x13
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_gotorc_col
 CALL :tt_assert_eq
 
 LDI_C .seq_h_default
 CALL :t_print                        # ESC[H -> (0,0)
 LDI_AH 0x00
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_h_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_h_col
 CALL :tt_assert_eq
 
@@ -63,7 +63,7 @@ CALL :t_cursor_goto_rowcol
 LDI_C .seq_99a
 CALL :t_print                        # ESC[99A from row 3 -> clamp to row 0
 LDI_AH 0x00
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_clamp_row
 CALL :tt_assert_eq
 
@@ -81,11 +81,11 @@ CALL :t_cursor_goto_rowcol
 LDI_C .seq_restore
 CALL :t_print
 LDI_AH 0x08
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_restore_row
 CALL :tt_assert_eq
 LDI_AH 0x08
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_restore_col
 CALL :tt_assert_eq
 
@@ -143,7 +143,7 @@ ST %display_color% 0x00
 LDI_C .seq_hide
 CALL :t_print
 LDI_AH 0x00
-LD_AL :t_crsr_on
+LD_AL $t_crsr_on
 LDI_C .tn_hide_flag
 CALL :tt_assert_eq
 LD_AL %display_color%
@@ -154,7 +154,7 @@ CALL :tt_assert_eq
 LDI_C .seq_show
 CALL :t_print
 LDI_AH 0x01
-LD_AL :t_crsr_on
+LD_AL $t_crsr_on
 LDI_C .tn_show_flag
 CALL :tt_assert_eq
 LD_AL %display_color%
@@ -191,7 +191,7 @@ LDI_AH 'B'
 LDI_C .tn_inv_b
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_ansi_state
+LD_AL $t_ansi_state
 LDI_C .tn_inv_state
 CALL :tt_assert_eq
 
@@ -209,7 +209,7 @@ LDI_AH 0x00
 LDI_C .tn_devstatus_nothing
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_ansi_state
+LD_AL $t_ansi_state
 LDI_C .tn_devstatus_state
 CALL :tt_assert_eq
 
@@ -223,7 +223,7 @@ LDI_AH 0x1b
 LDI_C .tn_overflow_esc
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_ansi_state
+LD_AL $t_ansi_state
 LDI_C .tn_overflow_state
 CALL :tt_assert_eq
 
@@ -253,7 +253,7 @@ LDI_AH '3'
 LDI_C .tn_mid_three
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_ansi_state
+LD_AL $t_ansi_state
 LDI_C .tn_mid_state
 CALL :tt_assert_eq
 

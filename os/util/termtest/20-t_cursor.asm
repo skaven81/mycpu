@@ -12,28 +12,39 @@
 #  - cursor_save/cursor_restore (2.3.3) replace the marks-based save
 #    mechanism, for ANSI ESC[s / ESC[u support.
 #
-# All symbols here are t_-prefixed and use label data segments (never
-# VAR) so this file can coexist with the ROM's own cursor.asm, which
-# already owns the un-prefixed names in bios.sym.
+# All state here is t_-prefixed VAR global so this file can coexist with
+# the ROM's own cursor.asm, which already owns the un-prefixed $crsr_*
+# names in bios.sym. VAR (not a label data segment) because this code is
+# destined for os/bios/lib/ -- label data compiled into ROM would be
+# read-only there, so runtime state has to live in a real RAM variable
+# even here in Phase 1. Only the Phase 2 transfer strips the t_ prefix;
+# no other code changes are expected.
+VAR global byte $t_crsr_row
+VAR global byte $t_crsr_col
+VAR global byte $t_crsr_on
+VAR global word $t_crsr_addr_chars
+VAR global word $t_crsr_addr_color
+VAR global byte $t_crsr_saved_row
+VAR global byte $t_crsr_saved_col
 
 :t_cursor_init
-ST :t_crsr_row 0x00
-ST :t_crsr_col 0x00
-ST :t_crsr_on 0x01
-ST16 :t_crsr_addr_chars %display_chars%
-ST16 :t_crsr_addr_color %display_color%
-ST :t_crsr_saved_row 0x00
-ST :t_crsr_saved_col 0x00
+ST $t_crsr_row 0x00
+ST $t_crsr_col 0x00
+ST $t_crsr_on 0x01
+ST16 $t_crsr_addr_chars %display_chars%
+ST16 $t_crsr_addr_color %display_color%
+ST $t_crsr_saved_row 0x00
+ST $t_crsr_saved_col 0x00
 RET
 
 ######
 # Saves the current row/col for a later :t_cursor_restore.
 :t_cursor_save
 ALUOP_PUSH %A%+%AL%
-LD_AL :t_crsr_row
-ALUOP_ADDR %A%+%AL% :t_crsr_saved_row
-LD_AL :t_crsr_col
-ALUOP_ADDR %A%+%AL% :t_crsr_saved_col
+LD_AL $t_crsr_row
+ALUOP_ADDR %A%+%AL% $t_crsr_saved_row
+LD_AL $t_crsr_col
+ALUOP_ADDR %A%+%AL% $t_crsr_saved_col
 POP_AL
 RET
 
@@ -43,8 +54,8 @@ RET
 :t_cursor_restore
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
-LD_AH :t_crsr_saved_row
-LD_AL :t_crsr_saved_col
+LD_AH $t_crsr_saved_row
+LD_AL $t_crsr_saved_col
 CALL :t_cursor_goto_rowcol
 POP_AL
 POP_AH
@@ -55,11 +66,11 @@ RET
 # Unlike goto/movement, these are explicit visibility requests, so they
 # still sync immediately.
 :t_cursor_off
-ST :t_crsr_on 0x00
+ST $t_crsr_on 0x00
 JMP :t_cursor_display_sync
 
 :t_cursor_on
-ST :t_crsr_on 0x01
+ST $t_crsr_on 0x01
 JMP :t_cursor_display_sync
 
 ######
@@ -72,10 +83,10 @@ PUSH_DL
 PUSH_DH
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
-LD_DH :t_crsr_addr_color
-LD_DL :t_crsr_addr_color+1
+LD_DH $t_crsr_addr_color
+LD_DL $t_crsr_addr_color+1
 LDA_D_AH                    # Load the color data at the cursor into AH
-LD_AL :t_crsr_on
+LD_AL $t_crsr_on
 ALUOP_FLAGS %A%+%AL%
 JZ .cs_off
 ALUOP_PUSH %B%+%BL%
@@ -223,7 +234,7 @@ ALUOP_FLAGS %A&B%+%AL%+%BL%
 JZ .cmr_1                   # if AL was positive, continue.
 LDI_AH 0xff                 # otherwise, ensure A is negative
 .cmr_1
-LD16_B :t_crsr_addr_chars
+LD16_B $t_crsr_addr_chars
 ALUOP16O_B %ALU16_A+B%            # B now contains the new cursor addr
 ALUOP_CH %B%+%BH%
 ALUOP_CL %B%+%BL%           # save new cursor addr in C
@@ -277,23 +288,23 @@ ALUOP_PUSH %A%+%AL%
 LDI_BH 0x0f
 ALUOP_AH %A&B%+%AH%+%BH%
 
-# add %display_chars% to the offset and store in :t_crsr_addr_chars
+# add %display_chars% to the offset and store in $t_crsr_addr_chars
 LDI_B %display_chars%
 ALUOP16O_B %ALU16_A+B%
-ALUOP_ADDR %B%+%BH% :t_crsr_addr_chars
-ALUOP_ADDR %B%+%BL% :t_crsr_addr_chars+1
+ALUOP_ADDR %B%+%BH% $t_crsr_addr_chars
+ALUOP_ADDR %B%+%BL% $t_crsr_addr_chars+1
 
-# add %display_color% to the offset and store in :t_crsr_addr_color
+# add %display_color% to the offset and store in $t_crsr_addr_color
 LDI_B %display_color%
 ALUOP16O_B %ALU16_A+B%
-ALUOP_ADDR %B%+%BH% :t_crsr_addr_color
-ALUOP_ADDR %B%+%BL% :t_crsr_addr_color+1
+ALUOP_ADDR %B%+%BH% $t_crsr_addr_color
+ALUOP_ADDR %B%+%BL% $t_crsr_addr_color+1
 
 # turn offset into row,col in A (A still holds the masked offset -- the
 # two blocks above only ever wrote to B)
 CALL :t_cursor_conv_addr
-ALUOP_ADDR %A%+%AL% :t_crsr_col
-ALUOP_ADDR %A%+%AH% :t_crsr_row
+ALUOP_ADDR %A%+%AL% $t_crsr_col
+ALUOP_ADDR %A%+%AH% $t_crsr_row
 
 POP_AL
 POP_AH
@@ -315,34 +326,26 @@ ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
 
 # Store the new row and column into our state
-ALUOP_ADDR %A%+%AL% :t_crsr_col
-ALUOP_ADDR %A%+%AH% :t_crsr_row
+ALUOP_ADDR %A%+%AL% $t_crsr_col
+ALUOP_ADDR %A%+%AH% $t_crsr_row
 
 # turn row,col into an offset stored in A
 CALL :t_cursor_conv_rowcol
 
-# add %display_chars% to the offset and store in :t_crsr_addr_chars
+# add %display_chars% to the offset and store in $t_crsr_addr_chars
 LDI_B %display_chars%
 ALUOP16O_B %ALU16_A+B%
-ALUOP_ADDR %B%+%BH% :t_crsr_addr_chars
-ALUOP_ADDR %B%+%BL% :t_crsr_addr_chars+1
+ALUOP_ADDR %B%+%BH% $t_crsr_addr_chars
+ALUOP_ADDR %B%+%BL% $t_crsr_addr_chars+1
 
-# add %display_color% to the offset and store in :t_crsr_addr_color
+# add %display_color% to the offset and store in $t_crsr_addr_color
 LDI_B %display_color%
 ALUOP16O_B %ALU16_A+B%
-ALUOP_ADDR %B%+%BH% :t_crsr_addr_color
-ALUOP_ADDR %B%+%BL% :t_crsr_addr_color+1
+ALUOP_ADDR %B%+%BH% $t_crsr_addr_color
+ALUOP_ADDR %B%+%BL% $t_crsr_addr_color+1
 
 POP_AL
 POP_AH
 POP_BL
 POP_BH
 RET
-
-:t_crsr_row "\0"
-:t_crsr_col "\0"
-:t_crsr_on "\0"
-:t_crsr_addr_chars "\0\0"
-:t_crsr_addr_color "\0\0"
-:t_crsr_saved_row "\0"
-:t_crsr_saved_col "\0"

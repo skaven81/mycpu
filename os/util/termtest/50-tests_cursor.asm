@@ -138,32 +138,32 @@ LDI_AL 0x0a
 CALL :t_cursor_goto_rowcol
 
 LDI_AH 0x05
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_goto_row
 CALL :tt_assert_eq
 
 LDI_AH 0x0a
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_goto_col
 CALL :tt_assert_eq
 
 LDI_AH 0x41
-LD_AL :t_crsr_addr_chars
+LD_AL $t_crsr_addr_chars
 LDI_C .tn_goto_ach_hi
 CALL :tt_assert_eq
 
 LDI_AH 0x4a
-LD_AL :t_crsr_addr_chars+1
+LD_AL $t_crsr_addr_chars+1
 LDI_C .tn_goto_ach_lo
 CALL :tt_assert_eq
 
 LDI_AH 0x51
-LD_AL :t_crsr_addr_color
+LD_AL $t_crsr_addr_color
 LDI_C .tn_goto_acl_hi
 CALL :tt_assert_eq
 
 LDI_AH 0x4a
-LD_AL :t_crsr_addr_color+1
+LD_AL $t_crsr_addr_color+1
 LDI_C .tn_goto_acl_lo
 CALL :tt_assert_eq
 
@@ -183,7 +183,7 @@ LDI_AH 0x40
 LDI_C .tn_goto_no_color_touch
 CALL :tt_assert_eq
 
-# --- :t_cursor_display_sync sets/clears the cursor bit per :t_crsr_on ---
+# --- :t_cursor_display_sync sets/clears the cursor bit per $t_crsr_on ---
 
 CALL :t_cursor_init
 ST %display_color% 0x00
@@ -208,11 +208,11 @@ LDI_AL 0x3f
 CALL :t_cursor_goto_rowcol
 CALL :t_cursor_right
 LDI_AH 0x03
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_right_wrap_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_right_wrap_col
 CALL :tt_assert_eq
 
@@ -220,11 +220,11 @@ CALL :tt_assert_eq
 CALL :t_cursor_init
 CALL :t_cursor_left
 LDI_AH 0x00
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_left_edge_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_left_edge_col
 CALL :tt_assert_eq
 
@@ -235,7 +235,7 @@ LDI_AL 0x00
 CALL :t_cursor_goto_rowcol
 CALL :t_cursor_down
 LDI_AH 0x3b
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_down_edge_row
 CALL :tt_assert_eq
 
@@ -243,7 +243,7 @@ CALL :tt_assert_eq
 CALL :t_cursor_init
 CALL :t_cursor_up
 LDI_AH 0x00
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_up_edge_row
 CALL :tt_assert_eq
 
@@ -259,11 +259,11 @@ LDI_AL 0x00
 CALL :t_cursor_goto_rowcol
 CALL :t_cursor_restore
 LDI_AH 0x0a
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_saverestore_row
 CALL :tt_assert_eq
 LDI_AH 0x14
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_saverestore_col
 CALL :tt_assert_eq
 

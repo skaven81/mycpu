@@ -6,8 +6,8 @@
 LDI_C .suite_name
 CALL :tt_suite
 
-ST :t_term_flags 0x00
-ST :t_term_render_color 0x00
+ST $t_term_flags 0x00
+ST $t_term_render_color 0x00
 
 # --- basic putchar: write + advance, flags=0x00, render_color=0 ---
 CALL :t_cursor_init
@@ -19,11 +19,11 @@ LDI_AH 'A'
 LDI_C .tn_putchar_char
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_putchar_row
 CALL :tt_assert_eq
 LDI_AH 0x01
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_putchar_col
 CALL :tt_assert_eq
 
@@ -33,15 +33,15 @@ LDI_AH 0x01
 LDI_AL 0x00
 CALL :t_cursor_goto_rowcol
 ST %display_color%+64 0x00
-ST :t_term_render_color 0x01
-ST :t_term_current_color 0x2a
+ST $t_term_render_color 0x01
+ST $t_term_current_color 0x2a
 LDI_AL 'Z'
 CALL :t_putchar
 LD_AL %display_color%+64
 LDI_AH 0x2a
 LDI_C .tn_color_written
 CALL :tt_assert_eq
-ST :t_term_render_color 0x00
+ST $t_term_render_color 0x00
 
 # --- putchar_raw: no ctrl-char handling, just writes + advances ---
 CALL :t_cursor_init
@@ -56,11 +56,11 @@ LDI_AH 0x0a
 LDI_C .tn_raw_char
 CALL :tt_assert_eq
 LDI_AH 0x02
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_raw_row
 CALL :tt_assert_eq
 LDI_AH 0x01
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_raw_col
 CALL :tt_assert_eq
 
@@ -72,11 +72,11 @@ CALL :t_cursor_goto_rowcol
 LDI_AL 0x0d
 CALL :t_putchar
 LDI_AH 0x03
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_cr_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_cr_col
 CALL :tt_assert_eq
 
@@ -88,11 +88,11 @@ CALL :t_cursor_goto_rowcol
 LDI_AL 0x0a
 CALL :t_putchar
 LDI_AH 0x05
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_lf_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_lf_col
 CALL :tt_assert_eq
 
@@ -121,7 +121,7 @@ LDI_AH 0x03
 LDI_C .tn_bs_color385
 CALL :tt_assert_eq
 LDI_AH 0x01
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_bs_col
 CALL :tt_assert_eq
 
@@ -146,7 +146,7 @@ LDI_AH 0x02
 LDI_C .tn_del_color448
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_del_col
 CALL :tt_assert_eq
 
@@ -157,15 +157,15 @@ CALL :t_cursor_init
 LDI_AH 0x0a
 LDI_AL 0x3f
 CALL :t_cursor_goto_rowcol
-ST :t_term_flags 0x00
+ST $t_term_flags 0x00
 LDI_AL 'Q'
 CALL :t_putchar
 LDI_AH 0x0b
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_edge00_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_edge00_col
 CALL :tt_assert_eq
 
@@ -174,15 +174,15 @@ CALL :t_cursor_init
 LDI_AH 0x0a
 LDI_AL 0x3f
 CALL :t_cursor_goto_rowcol
-ST :t_term_flags 0x08
+ST $t_term_flags 0x08
 LDI_AL 'Q'
 CALL :t_putchar
 LDI_AH 0x0a
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_edge01_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_edge01_col
 CALL :tt_assert_eq
 
@@ -191,15 +191,15 @@ CALL :t_cursor_init
 LDI_AH 0x0a
 LDI_AL 0x3f
 CALL :t_cursor_goto_rowcol
-ST :t_term_flags 0x04
+ST $t_term_flags 0x04
 LDI_AL 'Q'
 CALL :t_putchar
 LDI_AH 0x0b
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_edge10_row
 CALL :tt_assert_eq
 LDI_AH 0x3f
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_edge10_col
 CALL :tt_assert_eq
 
@@ -208,19 +208,19 @@ CALL :t_cursor_init
 LDI_AH 0x0a
 LDI_AL 0x3f
 CALL :t_cursor_goto_rowcol
-ST :t_term_flags 0x0c
+ST $t_term_flags 0x0c
 LDI_AL 'Q'
 CALL :t_putchar
 LDI_AH 0x0a
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_edge11_row
 CALL :tt_assert_eq
 LDI_AH 0x3f
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_edge11_col
 CALL :tt_assert_eq
 
-ST :t_term_flags 0x00
+ST $t_term_flags 0x00
 
 # --- bottom-edge behavior matrix (2.2.1 bits 4-5), from (59,63) ---
 
@@ -231,7 +231,7 @@ ST %display_color%+64 0x2a
 LDI_AH 0x3b
 LDI_AL 0x3f
 CALL :t_cursor_goto_rowcol
-ST :t_term_flags 0x00
+ST $t_term_flags 0x00
 LDI_AL 'Q'
 CALL :t_putchar
 LD_AL %display_chars%
@@ -239,11 +239,11 @@ LDI_AH 'S'
 LDI_C .tn_bottom_default_scrolled
 CALL :tt_assert_eq
 LDI_AH 0x3b
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_bottom_default_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_bottom_default_col
 CALL :tt_assert_eq
 
@@ -252,15 +252,15 @@ CALL :t_cursor_init
 LDI_AH 0x3b
 LDI_AL 0x3f
 CALL :t_cursor_goto_rowcol
-ST :t_term_flags 0x10
+ST $t_term_flags 0x10
 LDI_AL 'Q'
 CALL :t_putchar
 LDI_AH 0x3b
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_bottom_noscroll_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_bottom_noscroll_col
 CALL :tt_assert_eq
 
@@ -269,19 +269,19 @@ CALL :t_cursor_init
 LDI_AH 0x3b
 LDI_AL 0x3f
 CALL :t_cursor_goto_rowcol
-ST :t_term_flags 0x30
+ST $t_term_flags 0x30
 LDI_AL 'Q'
 CALL :t_putchar
 LDI_AH 0x00
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_bottom_wraptop_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_bottom_wraptop_col
 CALL :tt_assert_eq
 
-ST :t_term_flags 0x00
+ST $t_term_flags 0x00
 
 # --- :t_term_scroll directly: rows shift, last row cleared ---
 CALL :t_cursor_init
@@ -318,11 +318,11 @@ LDI_AH 'i'
 LDI_C .tn_print_i
 CALL :tt_assert_eq
 LDI_AH 0x01
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_print_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_print_col
 CALL :tt_assert_eq
 
@@ -339,11 +339,11 @@ LDI_AH 'A'
 LDI_C .tn_print_esc_char2
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL :t_crsr_row
+LD_AL $t_crsr_row
 LDI_C .tn_print_esc_row
 CALL :tt_assert_eq
 LDI_AH 0x02
-LD_AL :t_crsr_col
+LD_AL $t_crsr_col
 LDI_C .tn_print_esc_col
 CALL :tt_assert_eq
 
