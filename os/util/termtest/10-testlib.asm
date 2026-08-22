@@ -227,6 +227,23 @@ POP_AL
 RET
 
 ######
+# Compares two bytes and records the result: :tt_pass if equal, :tt_fail
+# (same AH/AL) if not. Shared by every test suite's assertion points.
+#
+# Inputs:
+#  C - address of test name string
+#  AH - expected byte value
+#  AL - actual (got) byte value
+:tt_assert_eq
+ALUOP_FLAGS %AxB%+%AH%+%AL%
+JEQ .tt_assert_pass
+CALL :tt_fail
+RET
+.tt_assert_pass
+CALL :tt_pass
+RET
+
+######
 # Injects synthetic keystrokes into the keyboard ring buffer, exactly as
 # :kb_irq_buf would from a real keypress. Lets tests drive :t_readline
 # without a physical keyboard. Must not race a real keystroke, so the
