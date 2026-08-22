@@ -1,8 +1,7 @@
 # vim: syntax=asm-mycpu
 
 # Prototype of the ANSI escape-sequence state machine (TERMINAL_REFACTOR.md
-# 2.2.3). Non-SGR sequences only -- Task 4 extends the 'm' dispatch with
-# SGR + 256-color.
+# 2.2.3), including SGR and the 256-color palette quantization (2.2.3.1).
 #
 # :t_putchar (30-t_termout.asm) already does the ESC-detection and calls
 # :t_ansi_feed for every character while :t_ansi_state != 0. This file
@@ -108,42 +107,45 @@ LD_BL .ansi_discard
 ALUOP_FLAGS %B%+%BL%
 JNZ .ansi_semicolon_discarding
 
-# Truecolor lookahead (2.2.3.1): if this ';' terminates the SECOND
-# parameter (index 1) and the first was 38/48 and this one is exactly
-# 2, it's ESC[38;2;r;g;bm / ESC[48;2;r;g;bm -- 5 params total, which
-# would overflow the 4-param buffer below. Stop storing params for the
-# rest of this sequence instead; the final-byte handler treats it as
-# valid-but-unsupported (silent) once :ansi_discard is set.
+# Truecolor lookahead (2.2.3.1): a parameter of exactly 2 whose
+# PREVIOUS parameter was 38 or 48 marks the ..38;2;r;g;b.. truecolor
+# form -- valid grammar, unimplemented, and its r;g;b tail would
+# overflow the 4-param buffer. Stop storing params for the rest of the
+# sequence; the final byte then drops the whole thing silently
+# (valid-but-unsupported) instead of flushing it as an error.
+LD_BL :t_ansi_accum+1                # this param's value (hi byte is
+LDI_AH 2                              # always 0 here -- >255 already
+ALUOP_FLAGS %AxB%+%AH%+%BL%           # flushed by the digit path)
+JNE .semicolon_store
 LD_BL :t_ansi_param_count
-LDI_AH 1
-ALUOP_FLAGS %AxB%+%AH%+%BL%
-JNE .semicolon_no_discard_check
-LD_BL :t_ansi_param_buf+1
-LDI_AH 38
-ALUOP_FLAGS %AxB%+%AH%+%BL%
-JEQ .semicolon_check_2
-LDI_AH 48
-ALUOP_FLAGS %AxB%+%AH%+%BL%
-JNE .semicolon_no_discard_check
-.semicolon_check_2
-LD_BL :t_ansi_accum+1
-LDI_AH 2
-ALUOP_FLAGS %AxB%+%AH%+%BL%
-JNE .semicolon_no_discard_check
+ALUOP_FLAGS %B%+%BL%
+JZ .semicolon_store                   # the 2 has no previous param
+ALUOP_BL %B<<1%+%BL%
+ALUOP_BL %B-1%+%BL%                   # BL = count*2 - 1: offset of the
+LDI_BH 0x00                           # previous param's low byte
+LDI_A :t_ansi_param_buf
+ALUOP16O_A %ALU16_A+B%
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%
+LDA_C_AL                              # AL = previous param value
+LDI_BL 38
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JEQ .semicolon_discard
+LDI_BL 48
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JNE .semicolon_store
+.semicolon_discard
 ST .ansi_discard 0x01
+.ansi_semicolon_discarding
 ST16 :t_ansi_accum 0x0000
 JMP .ansi_return
 
-.semicolon_no_discard_check
+.semicolon_store
 LD_BL :t_ansi_param_count
 LDI_AH 4
 ALUOP_FLAGS %AxB%+%AH%+%BL%          # already have 4 params stored?
 JEQ .ansi_invalid
 CALL .ansi_store_param
-JMP .ansi_return
-
-.ansi_semicolon_discarding
-ST16 :t_ansi_accum 0x0000
 JMP .ansi_return
 
 .ansi_private_flag
@@ -153,7 +155,9 @@ JMP .ansi_return
 .ansi_final_byte
 LD_BL .ansi_discard
 ALUOP_FLAGS %B%+%BL%
-JNZ .final_byte_discarding
+JNZ .ansi_finish                     # discarded truecolor: drop the whole
+                                      # sequence silently -- never dispatch
+                                      # with its half-stored params
 
 LD_BL :t_ansi_param_count
 LDI_AH 4
@@ -161,11 +165,6 @@ ALUOP_FLAGS %AxB%+%AH%+%BL%
 JEQ .ansi_invalid
 CALL .ansi_store_param                # finalize the trailing parameter
 CALL .ansi_dispatch_command            # AL is still the final byte
-JMP .ansi_finish
-
-.final_byte_discarding
-CALL .ansi_dispatch_command            # AL still the final byte; the SGR
-                                        # handler no-ops when discarding
 JMP .ansi_finish
 
 # --- shared exits ---
@@ -704,18 +703,11 @@ CALL :t_cursor_off
 JMP .disp_done
 
 .disp_sgr
-LD_BL .ansi_discard
-ALUOP_FLAGS %B%+%BL%
-JNZ .disp_done                        # 38;2/48;2 truecolor: silent no-op
-
-LD_AL :t_ansi_param_count
-ALUOP_FLAGS %A%+%AL%
-JNZ .sgr_loop_init
-LDI_AL 0x00                           # ESC[m (no params) == reset
-CALL .sgr_apply_code
-JMP .disp_done
-
-.sgr_loop_init
+# No empty-parameter special case is needed here: the final-byte
+# handler always stores the pending accumulator, so a bare ESC[m
+# arrives as a single parameter of value 0 -- which IS the reset code.
+# Nor a truecolor check: a discarded sequence is dropped before
+# dispatch ever runs.
 ST .sgr_index 0x00
 ST .sgr_pending_shade 0x00
 .sgr_loop
@@ -723,17 +715,7 @@ LD_AL .sgr_index
 LD_BL :t_ansi_param_count
 ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff index < count
 JNO .sgr_apply_pending
-
-# C = &param_buf[index]; AL = param value (low byte)
-LD_AL .sgr_index
-ALUOP_AL %A<<1%+%AL%                  # AL = index*2
-LDI_AH 0x00
-LDI_B :t_ansi_param_buf
-ALUOP16O_A %ALU16_A+B%
-ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%
-INCR_C
-LDA_C_AL
+CALL .sgr_get_param                   # AL = param[index]
 
 LDI_BL 38
 ALUOP_FLAGS %AxB%+%AL%+%BL%
@@ -747,50 +729,31 @@ LD_AL .sgr_index
 ALUOP_ADDR %A+1%+%AL% .sgr_index      # index++
 JMP .sgr_loop
 
+# 38/48: look ahead for the ;5;n 256-color form (2.2.3.1). The ;2
+# truecolor form never reaches here -- the parser discards it before
+# the final byte arrives. A 38/48 whose lookahead doesn't pan out
+# (missing params, or a selector other than 5) is skipped by itself,
+# like any other unsupported code.
 .sgr_256color
-ALUOP_PUSH %A%+%AL%                   # save 38/48 for later
-
+ALUOP_PUSH %A%+%AL%                   # save 38-vs-48 for apply_256color
 LD_AL .sgr_index
 ALUOP_AL %A+1%+%AL%                   # AL = index+1
 LD_BL :t_ansi_param_count
-ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff (index+1) < count
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff index+1 < count
 JNO .sgr_256_skip
-
-LD_AL .sgr_index
-ALUOP_AL %A+1%+%AL%
-ALUOP_AL %A<<1%+%AL%                  # AL = (index+1)*2
-LDI_AH 0x00
-LDI_B :t_ansi_param_buf
-ALUOP16O_A %ALU16_A+B%
-ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%
-INCR_C
-LDA_C_AL                              # AL = param[index+1]
+CALL .sgr_get_param                   # AL = param[index+1]
 LDI_BL 5
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .sgr_256_skip
-
 LD_AL .sgr_index
 ALUOP_AL %A+1%+%AL%
 ALUOP_AL %A+1%+%AL%                   # AL = index+2
 LD_BL :t_ansi_param_count
-ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff (index+2) < count
-JNO .sgr_256_skip
-
-LD_AL .sgr_index
-ALUOP_AL %A+1%+%AL%
-ALUOP_AL %A+1%+%AL%
-ALUOP_AL %A<<1%+%AL%                  # AL = (index+2)*2
-LDI_AH 0x00
-LDI_B :t_ansi_param_buf
-ALUOP16O_A %ALU16_A+B%
-ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%
-INCR_C
-LDA_C_AL                              # AL = n (256-color index)
-POP_BL                                 # BL = 38 or 48
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff index+2 < count
+JNO .sgr_256_skip2                    # "38;5" but no n: drop both params
+CALL .sgr_get_param                   # AL = n (256-color index)
+POP_BL                                # BL = 38 or 48
 CALL .sgr_apply_256color
-
 LD_AL .sgr_index
 ALUOP_AL %A+1%+%AL%
 ALUOP_AL %A+1%+%AL%
@@ -798,25 +761,50 @@ ALUOP_ADDR %A+1%+%AL% .sgr_index      # index += 3
 JMP .sgr_loop
 
 .sgr_256_skip
-POP_BL                                 # discard saved 38/48, balance stack
+POP_BL                                # discard saved 38/48, balance stack
 LD_AL .sgr_index
-ALUOP_ADDR %A+1%+%AL% .sgr_index      # index++ (malformed lookahead: skip 1)
+ALUOP_ADDR %A+1%+%AL% .sgr_index      # index++ (skip just the 38/48)
 JMP .sgr_loop
 
+.sgr_256_skip2
+POP_BL                                # discard saved 38/48, balance stack
+ALUOP_ADDR %A%+%AL% .sgr_index        # AL is already index+2: skip the
+JMP .sgr_loop                         # 38/48 AND its dangling 5, so the 5
+                                      # can't be misread as SGR 5 (blink)
+
+# Params exhausted: apply a deferred bold/normal (codes 1/22) last, so
+# ESC[1;31m and ESC[31;1m both mean light red -- the shade change
+# always operates on the final color.
+#
+# The shade math exploits the color byte layout: each channel is a
+# 2-bit field, and (color >> 1) & 0x15 extracts every channel's high
+# bit aligned onto its own low bit (the 0x15 also masks off the
+# blink/cursor bits' shift spill). Bold upgrades shade 2 -> 3 (binary
+# 10 -> 11) by ORing that in: only fields with the high bit set gain a
+# low bit. Normal downgrades 3 -> 2 (11 -> 10) by AND-NOTing it out.
+# Shades 0 and 1 have no high bit and pass through both unchanged.
 .sgr_apply_pending
 LD_AL .sgr_pending_shade
 LDI_BL 1
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .sgr_do_bold
+JEQ .sgr_pend_bold
 LDI_BL 2
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .sgr_do_normal
+JNE .disp_done                        # no pending shade change
+
+LD_AL :t_term_current_color           # SGR 22 (normal)
+ALUOP_BL %A>>1%+%AL%
+LDI_AH 0x15
+ALUOP_BL %A&B%+%AH%+%BL%              # BL = channel high bits, aligned low
+ALUOP_ADDR %A&~B%+%AL%+%BL% :t_term_current_color
 JMP .disp_done
-.sgr_do_bold
-CALL .sgrcode_bold
-JMP .disp_done
-.sgr_do_normal
-CALL .sgrcode_normal
+
+.sgr_pend_bold
+LD_AL :t_term_current_color           # SGR 1 (bold)
+ALUOP_BL %A>>1%+%AL%
+LDI_AH 0x15
+ALUOP_BL %A&B%+%AH%+%BL%
+ALUOP_ADDR %A|B%+%AL%+%BL% :t_term_current_color
 JMP .disp_done
 
 .disp_done
@@ -831,181 +819,125 @@ POP_AH
 RET
 
 ######
-# Applies one simple SGR code (attributes 0/5/25, foreground colors
-# 30-37/90-97/39). Codes 1 (bold) and 22 (normal) are DEFERRED -- they
-# set :sgr_pending_shade instead of mutating the color immediately, so
-# a combined sequence like ESC[1;31m upgrades the shade AFTER the color
-# param is applied regardless of which order the two params appear in
-# (see .disp_sgr's post-loop pending-shade application). All other
-# codes are silently ignored per 2.2.3's ignored-code table.
+# Applies one simple SGR code: 0/39 reset, 5/25 blink, and the
+# foreground colors 30-37/90-97. Codes 1 (bold) and 22 (normal) only
+# record themselves in .sgr_pending_shade -- .sgr_apply_pending applies
+# the shade change after the parameter loop finishes. Everything else
+# is silently ignored per 2.2.3's ignored-code table.
 #
 # Inputs:
 #  AL - SGR code (0-255)
 # Clobbers: A, B, C.
 .sgr_apply_code
-LDI_BL 0
+ALUOP_FLAGS %A%+%AL%
+JZ .sgrcode_reset                     # 0: reset
+LDI_BL 39
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .sgrcode_reset
+JEQ .sgrcode_reset                    # 39: default fg == reset (spec)
 LDI_BL 1
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .sgrcode_pending_bold
-LDI_BL 5
-ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .sgrcode_blink_on
 LDI_BL 22
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .sgrcode_pending_normal
+LDI_BL 5
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JEQ .sgrcode_blink_on
 LDI_BL 25
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .sgrcode_blink_off
-LDI_BL 39
-ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .sgrcode_reset
 
 LDI_BL 30
 ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff AL < 30
 JO .sgrcode_done
 LDI_BL 38
-ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff AL < 38
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff AL < 38: codes 30-37
 JO .sgrcode_fg_low
-
 LDI_BL 90
 ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff AL < 90
 JO .sgrcode_done
 LDI_BL 98
-ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff AL < 98
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff AL < 98: codes 90-97
 JO .sgrcode_fg_high
-
-JMP .sgrcode_done                      # anything else: ignored
+.sgrcode_done
+RET                                   # anything else: ignored
 
 .sgrcode_reset
-LDI_AL 0x3f
-CALL .sgr_set_color
-JMP .sgrcode_done
+LDI_AL 0x3f                           # white; bit 7 clear drops blink too
+JMP .sgr_set_color                    # (tail call)
 
 .sgrcode_pending_bold
 ST .sgr_pending_shade 0x01
-JMP .sgrcode_done
+RET
 
 .sgrcode_pending_normal
 ST .sgr_pending_shade 0x02
-JMP .sgrcode_done
+RET
 
 .sgrcode_blink_on
-LD_AL :t_term_current_color
 LDI_BL 0x80
-ALUOP_AL %A|B%+%AL%+%BL%
-ALUOP_ADDR %A%+%AL% :t_term_current_color
-JMP .sgrcode_done
+LD_AL :t_term_current_color
+ALUOP_ADDR %A|B%+%AL%+%BL% :t_term_current_color
+RET
 
 .sgrcode_blink_off
+LDI_BL 0x80
 LD_AL :t_term_current_color
-LDI_BL 0x7f
-ALUOP_AL %A&B%+%AL%+%BL%
-ALUOP_ADDR %A%+%AL% :t_term_current_color
-JMP .sgrcode_done
-
-.sgrcode_fg_low
-LDI_BL 30
-ALUOP_AL %A-B%+%AL%+%BL%              # AL = table index 0-7
-CALL .sgr_lookup_color
-JMP .sgrcode_done
+ALUOP_ADDR %A&~B%+%AL%+%BL% :t_term_current_color
+RET
 
 .sgrcode_fg_high
-LDI_BL 82
-ALUOP_AL %A-B%+%AL%+%BL%              # AL = table index 8-15
-CALL .sgr_lookup_color
-JMP .sgrcode_done
-
-.sgrcode_done
-RET
-
-######
-# Upgrades any channel currently at shade-2 to shade-3 in
-# :t_term_current_color (SGR 1, bold -- deferred; see .disp_sgr).
-# Channels at any other shade are left unchanged.
-#
-# Clobbers: A, B.
-.sgrcode_bold
-LD_AL :t_term_current_color
-LDI_BL 0x30
-ALUOP_BH %A&B%+%AL%+%BL%              # BH = color & 0x30 (red field)
-LDI_AH 0x20
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .bold_check_g
-LDI_BL 0x10
-ALUOP_AL %A|B%+%AL%+%BL%
-.bold_check_g
-LDI_BL 0x0c
-ALUOP_BH %A&B%+%AL%+%BL%              # BH = color & 0x0c (green field)
-LDI_AH 0x08
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .bold_check_b
-LDI_BL 0x04
-ALUOP_AL %A|B%+%AL%+%BL%
-.bold_check_b
-LDI_BL 0x03
-ALUOP_BH %A&B%+%AL%+%BL%              # BH = color & 0x03 (blue field)
-LDI_AH 0x02
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .bold_apply
-LDI_BL 0x01
-ALUOP_AL %A|B%+%AL%+%BL%
-.bold_apply
-ALUOP_ADDR %A%+%AL% :t_term_current_color
-RET
+LDI_BL 82                             # 90-97 -> table index 8-15
+JMP .sgrcode_fg_common
+.sgrcode_fg_low
+LDI_BL 30                             # 30-37 -> table index 0-7
+.sgrcode_fg_common
+ALUOP_AL %A-B%+%AL%+%BL%
+LDI_B .sgr_color_table
+JMP .sgr_table_color                  # (tail call)
 
 ######
-# Downgrades any channel currently at shade-3 to shade-2 in
-# :t_term_current_color (SGR 22, normal -- deferred; see .disp_sgr).
-#
-# Clobbers: A, B.
-.sgrcode_normal
-LD_AL :t_term_current_color
-LDI_BL 0x30
-ALUOP_BH %A&B%+%AL%+%BL%
-LDI_AH 0x30
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .normal_check_g
-LDI_BL 0xef
-ALUOP_AL %A&B%+%AL%+%BL%
-.normal_check_g
-LDI_BL 0x0c
-ALUOP_BH %A&B%+%AL%+%BL%
-LDI_AH 0x0c
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .normal_check_b
-LDI_BL 0xfb
-ALUOP_AL %A&B%+%AL%+%BL%
-.normal_check_b
-LDI_BL 0x03
-ALUOP_BH %A&B%+%AL%+%BL%
-LDI_AH 0x03
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .normal_apply
-LDI_BL 0xfe
-ALUOP_AL %A&B%+%AL%+%BL%
-.normal_apply
-ALUOP_ADDR %A%+%AL% :t_term_current_color
-RET
-
-######
-# Looks up :sgr_color_table[AL] (index 0-15) and applies it via
-# .sgr_set_color. Shared by plain SGR 30-37/90-97 and the 256-color
-# n<16 case (2.2.3.1, which is defined to match the 16-color table).
+# Reads the low byte of :t_ansi_param_buf[AL]. (Param values are
+# always <= 255 -- the digit accumulator flushes anything larger --
+# so the low byte is the whole value.)
 #
 # Inputs:
-#  AL - table index 0-15
-# Clobbers: A, B, C.
-.sgr_lookup_color
+#  AL - parameter index (0-3)
+# Outputs:
+#  AL - parameter value
+# Clobbers: AH, B, C.
+.sgr_get_param
+ALUOP_AL %A<<1%+%AL%
+ALUOP_AL %A+1%+%AL%                   # AL = index*2 + 1 (low-byte offset)
+LDI_B :t_ansi_param_buf
+# ... falls through into .sgr_table_lookup
+
+######
+# Reads table[AL] from a byte table based at B.
+#
+# Inputs:
+#  AL - index, B - table base address
+# Outputs:
+#  AL - table byte
+# Clobbers: AH, C.
+.sgr_table_lookup
 LDI_AH 0x00
-LDI_B .sgr_color_table
 ALUOP16O_A %ALU16_A+B%
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%
 LDA_C_AL
-CALL .sgr_set_color
 RET
+
+######
+# Looks up table[AL] (byte table based at B) and makes it the current
+# rendered color.
+#
+# Inputs:
+#  AL - index, B - table base address
+# Clobbers: A, C.
+.sgr_table_color
+CALL .sgr_table_lookup
+# ... falls through into .sgr_set_color
 
 ######
 # Sets :t_term_current_color to AL and turns on color rendering.
@@ -1027,42 +959,32 @@ RET
 #  BL - 38 (foreground) or 48 (background)
 # Clobbers: A, B, C. Preserves D (.sgr_cube_to_color saves/restores it).
 .sgr_apply_256color
-ALUOP_PUSH %A%+%AL%                   # save n
 LDI_AH 38
-ALUOP_FLAGS %AxB%+%AH%+%BL%
-POP_AL                                 # restore n regardless of branch
+ALUOP_FLAGS %AxB%+%AH%+%BL%           # (compare leaves AL=n untouched)
 JNE .apply256_done                    # 48 (background): parsed, ignored
-
 LDI_BL 16
 ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff n < 16
 JO .apply256_low16
-
 LDI_BL 232
 ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff n < 232
 JO .apply256_cube
-
-LDI_BL 232
-ALUOP_AL %A-B%+%AL%+%BL%              # AL = g = n - 232
-CALL .sgr_gray_to_color
-JMP .apply256_done
-
+ALUOP_AL %A-B%+%AL%+%BL%              # AL = gray step n - 232 (BL still 232)
+LDI_B .sgr_gray_table
+JMP .sgr_table_color                  # (tail call)
 .apply256_low16
-CALL .sgr_lookup_color
-JMP .apply256_done
-
+LDI_B .sgr_color_table                # n = 0-15: the standard 16 colors
+JMP .sgr_table_color                  # (tail call)
 .apply256_cube
 LDI_BL 16
-ALUOP_AL %A-B%+%AL%+%BL%              # AL = idx = n - 16
-CALL .sgr_cube_to_color
-JMP .apply256_done
-
+ALUOP_AL %A-B%+%AL%+%BL%              # AL = cube index n - 16 (0-215)
+JMP .sgr_cube_to_color                # (tail call)
 .apply256_done
 RET
 
 ######
-# Decomposes a 6x6x6 color-cube index into an Odyssey color byte via
-# the shade-quantization table (2.2.3.1: xterm levels 0-5 -> shades
-# 0,1,1,2,2,3) and applies it via .sgr_set_color.
+# Applies a 6x6x6 color-cube index: decompose into xterm r/g/b levels
+# (0-5), quantize each through .sgr_cube_shade (levels 0-5 -> shades
+# 0,1,1,2,2,3), pack the shades into a color byte, make it current.
 #
 # Inputs:
 #  AL - cube index (0-215, i.e. n-16 for SGR 38;5;n)
@@ -1071,7 +993,7 @@ RET
 PUSH_DH
 PUSH_DL
 
-LDI_BH 0x00                           # r = 0
+LDI_BH 0x00                           # r = idx / 36 by repeated subtract
 .cube_r_loop
 LDI_BL 36
 ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff idx < 36
@@ -1082,10 +1004,10 @@ JMP .cube_r_loop
 .cube_r_done
 ALUOP_DH %B%+%BH%                     # DH = r
 
-LDI_BH 0x00                           # g = 0
+LDI_BH 0x00                           # g = rem / 6, b = rem % 6
 .cube_g_loop
 LDI_BL 6
-ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff idx < 6
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O iff rem < 6
 JO .cube_g_done
 ALUOP_AL %A-B%+%AL%+%BL%
 ALUOP_BH %B+1%+%BH%
@@ -1093,71 +1015,29 @@ JMP .cube_g_loop
 .cube_g_done
 ALUOP_DL %B%+%BH%                     # DL = g; AL is now b (0-5)
 
-LDI_AH 0x00
 LDI_B .sgr_cube_shade
-ALUOP16O_A %ALU16_A+B%
-ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%
-LDA_C_AL                              # AL = shade_b
+CALL .sgr_table_lookup
 ALUOP_PUSH %A%+%AL%                   # push shade_b
-
 MOV_DL_AL                             # AL = g
-LDI_AH 0x00
 LDI_B .sgr_cube_shade
-ALUOP16O_A %ALU16_A+B%
-ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%
-LDA_C_AL                              # AL = shade_g
+CALL .sgr_table_lookup
 ALUOP_PUSH %A%+%AL%                   # push shade_g
-
 MOV_DH_AL                             # AL = r
-LDI_AH 0x00
 LDI_B .sgr_cube_shade
-ALUOP16O_A %ALU16_A+B%
-ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%
-LDA_C_AL                              # AL = shade_r
+CALL .sgr_table_lookup                # AL = shade_r
 
 ALUOP_AL %A<<1%+%AL%
+ALUOP_AL %A<<1%+%AL%                  # shade_r << 2
+POP_BL                                # BL = shade_g
+ALUOP_AL %A|B%+%AL%+%BL%
 ALUOP_AL %A<<1%+%AL%
-ALUOP_AL %A<<1%+%AL%
-ALUOP_AL %A<<1%+%AL%                  # AL = shade_r << 4
-POP_BL                                 # BL = shade_g
-ALUOP_BL %B<<1%+%BL%
-ALUOP_BL %B<<1%+%BL%                  # BL = shade_g << 2
-ALUOP_AL %A|B%+%AL%+%BL%              # AL |= shade_g<<2
-POP_BL                                 # BL = shade_b
-ALUOP_AL %A|B%+%AL%+%BL%              # AL |= shade_b
-
+ALUOP_AL %A<<1%+%AL%                  # (r<<2 | g) << 2
+POP_BL                                # BL = shade_b
+ALUOP_AL %A|B%+%AL%+%BL%              # = r<<4 | g<<2 | b
 CALL .sgr_set_color
 
 POP_DL
 POP_DH
-RET
-
-######
-# Applies the 24-step grayscale ramp (2.2.3.1: shade = round(g*3/23))
-# via a precomputed table, then applies it via .sgr_set_color.
-#
-# Inputs:
-#  AL - gray step (0-23, i.e. n-232 for SGR 38;5;n)
-# Clobbers: A, B, C.
-.sgr_gray_to_color
-LDI_AH 0x00
-LDI_B .sgr_gray_table
-ALUOP16O_A %ALU16_A+B%
-ALUOP_CH %A%+%AH%
-ALUOP_CL %A%+%AL%
-LDA_C_AL                              # AL = shade s (0-3)
-ALUOP_BL %A%+%AL%                     # BL = s
-ALUOP_AL %A<<1%+%AL%
-ALUOP_AL %A<<1%+%AL%                  # AL = s<<2
-ALUOP_BH %A%+%AL%                     # BH = s<<2
-ALUOP_AL %A<<1%+%AL%
-ALUOP_AL %A<<1%+%AL%                  # AL = s<<4
-ALUOP_AL %A|B%+%AL%+%BH%              # AL |= s<<2
-ALUOP_AL %A|B%+%AL%+%BL%              # AL |= s
-CALL .sgr_set_color
 RET
 
 :t_ansi_state "\0"
@@ -1174,4 +1054,6 @@ RET
 .sgr_pending_shade "\0"
 .sgr_color_table 0x00 0x20 0x08 0x28 0x02 0x22 0x0a 0x2a 0x15 0x30 0x0c 0x3c 0x03 0x33 0x0f 0x3f
 .sgr_cube_shade 0x00 0x01 0x01 0x02 0x02 0x03
-.sgr_gray_table 0x00 0x00 0x00 0x00 0x01 0x01 0x01 0x01 0x01 0x01 0x01 0x01 0x02 0x02 0x02 0x02 0x02 0x02 0x02 0x02 0x03 0x03 0x03 0x03
+# Grayscale ramp: full color bytes for shade = round(g*3/23), i.e. the
+# quantized shade replicated into all three channels (0x00/0x15/0x2a/0x3f).
+.sgr_gray_table 0x00 0x00 0x00 0x00 0x15 0x15 0x15 0x15 0x15 0x15 0x15 0x15 0x2a 0x2a 0x2a 0x2a 0x2a 0x2a 0x2a 0x2a 0x3f 0x3f 0x3f 0x3f
