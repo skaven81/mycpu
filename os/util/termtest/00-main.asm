@@ -26,6 +26,7 @@ CALL :tt_result
 CALL :tests_cursor_run
 CALL :tests_output_run
 CALL :tests_ansi_run
+CALL :tests_sgr_run
 
 # --- hand control back to serrun for the next iteration, if present ---
 CALL .chain_to_serrun
