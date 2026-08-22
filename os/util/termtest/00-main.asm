@@ -24,6 +24,7 @@ CALL :tt_result
 
 # --- library test suites ---
 CALL :tests_cursor_run
+CALL :tests_output_run
 
 # --- hand control back to serrun for the next iteration, if present ---
 CALL .chain_to_serrun

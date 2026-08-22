@@ -235,7 +235,13 @@ RET
 #  AH - expected byte value
 #  AL - actual (got) byte value
 :tt_assert_eq
-ALUOP_FLAGS %AxB%+%AH%+%AL%
+ALUOP_PUSH %B%+%BL%
+ALUOP_BL %A%+%AH%            # BL = expected (the ALU's A-port only takes
+                              # AH/AL and its B-port only BH/BL, so AH and
+                              # AL can't be compared directly -- copy one
+                              # of them into a B-register first)
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+POP_BL
 JEQ .tt_assert_pass
 CALL :tt_fail
 RET
