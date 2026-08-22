@@ -8,6 +8,12 @@
 LDI_C .suite_name
 CALL :tt_suite
 
+# Snapshot the ROM's own cursor row now: it's whatever the shell/serrun
+# left it at (never guaranteed 0), so "untouched" is verified against this
+# baseline later, not against a hardcoded value.
+LD_AL $crsr_row
+ALUOP_ADDR %A%+%AL% .rom_row_baseline_val
+
 # --- basic movement, defaults, clamping ---
 
 CALL :t_cursor_init
@@ -165,7 +171,7 @@ CALL :tt_assert_eq
 # --- ANSI sequences never touch the ROM's own cursor state ---
 
 LD_AL $crsr_row
-LDI_AH 0x00
+LD_AH .rom_row_baseline_val
 LDI_C .tn_rom_cursor_untouched
 CALL :tt_assert_eq
 
@@ -198,6 +204,9 @@ CALL :tt_assert_eq
 # --- valid but unsupported: ESC[6n renders nothing, resets state ---
 
 CALL :t_cursor_init
+ST %display_chars%+1 0x00             # sentinel: prior test left an ESC
+                                       # glyph here; must not appear to
+                                       # survive by accident
 LDI_C .seq_devstatus                  # "X\x1b[6n"
 CALL :t_print
 LD_AL %display_chars%
@@ -261,6 +270,7 @@ CALL :tt_result
 RET
 
 .suite_name "ansi\0"
+.rom_row_baseline_val "\0"
 .seq_5c 0x1b "[5C\0"
 .seq_b_default 0x1b "[B\0"
 .seq_gotorc 0x1b "[10;20H\0"

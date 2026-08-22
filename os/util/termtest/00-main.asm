@@ -13,6 +13,13 @@
 CALL :argv_init                  # AL=argc, C=argv base; unused, but must
                                   # consume the BIOS's argc/argv per the ABI
 
+# VAR globals are NOT guaranteed zero at load: this ODY's VAR pool overlays
+# whatever the previously-run program (the shell, serrun, or a prior
+# termtest run) left behind. Force deterministic state before anything
+# touches the ANSI parser -- otherwise the first :t_print can see a stray
+# nonzero $t_ansi_state and flush garbage from an uninitialized seq buffer.
+CALL :t_ansi_reset
+
 # --- smoke test: prove the harness itself works end to end ---
 LDI_C .suite_smoke_name
 CALL :tt_suite

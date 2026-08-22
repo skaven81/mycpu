@@ -563,16 +563,27 @@ LDI_BL 0x10
 ALUOP_AH %A|B%+%AH%+%BL%    # Bump CH up to the 0x5000 range
 MOV_CL_AL                   # Copy CL to AL
 
+# AH:AL now holds the source color address -- save it around the BH bump
+# below, which needs AL as ALU scratch (the ALU's B-port can only read
+# BH/BL, so the OR mask for "BH | 0x10" has to come from the A-port, and
+# that means AH or AL; AL is free of anything ELSE right now, but its
+# current value is half of the address we still need for the loop).
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+
 MOV_DH_BH                   # Copy DH to BH
 LDI_AL 0x10
 ALUOP_BH %A|B%+%BH%+%AL%    # Bump DH up to the 0x5000 range
 MOV_DL_BL                   # Copy DL to BL
 
+POP_AL
+POP_AH                      # restore AH:AL = source color address
+
 .term_strcpy_loop
 LDA_C_TD                    # load character from source into TD
 STA_D_TD                    # write character from TD to dest
 LDA_A_TD                    # load color from source into TD
-STA_A_TD                    # write color from TD to dest
+STA_B_TD                    # write color from TD to dest
 
 ALUOP_PUSH %A%+%AL%
 LDA_C_AL
