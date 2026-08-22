@@ -28,6 +28,7 @@ CALL :tests_output_run
 CALL :tests_ansi_run
 CALL :tests_sgr_run
 CALL :tests_readline_run
+CALL :tests_history_run
 
 # --- hand control back to serrun for the next iteration, if present ---
 CALL .chain_to_serrun
