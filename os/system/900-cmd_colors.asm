@@ -6,12 +6,18 @@
 #     with that same SGR number, so this is a genuine preview of what
 #     each ANSI color CODE looks like (replaces the old @-code grid,
 #     which both set color AND printed its own @-code as the label).
+#     Printed as two rows of 8 swatches, each row explicitly closed by
+#     .swatch_row_end (ESC[0m + newline).
 #  2. All 64 raw Odyssey color-byte values (0x00-0x3f), swept via direct
-#     framebuffer color writes (TERMINAL_REFACTOR.md 2.2.4/2.2.5) rather
-#     than ANSI -- 256-color SGR (38;5;n) was cut from the BIOS during
-#     the Phase 2 ROM-budget gate, so this is the only way left to reach
+#     framebuffer color writes rather than ANSI -- 256-color SGR (38;5;n)
+#     isn't implemented in this BIOS, so this is the only way left to reach
 #     values ANSI can't name. Labeled with the raw hex byte, since that's
-#     what it actually is, not an ANSI code.
+#     what it actually is, not an ANSI code. Each "0x%x " token is a
+#     fixed 5 characters (this BIOS's %x is always exactly 2 hex digits),
+#     so the sweep is broken into explicit rows of 8 tokens (40 columns)
+#     with a newline after each row -- otherwise 5 doesn't evenly divide
+#     the 64-column terminal width and the auto-wrap cuts a token in half
+#     at the end of some rows.
 
 :cmd_colors
 ST $term_render_color 0x01      # color rendering on for the whole command
@@ -65,6 +71,7 @@ CALL :print
 
 LDI_AL 0x00
 LDI_BL 0x40
+LDI_BH 0x08                     # tokens remaining in the current row of 8
 .raw_loop
 ALUOP_FLAGS %A&B%+%AL%+%BL%
 JEQ .raw_loop_done
@@ -73,10 +80,13 @@ CALL :heap_push_AL
 LDI_C .raw_label_fmt
 CALL :printf
 ALUOP_AL %A+1%+%AL%
+ALUOP_BH %B-1%+%BH%              # row countdown -- also latches flags
+JNZ .raw_loop
+LDI_C :str_nl
+CALL :print                      # row of 8 done -- break the line
+LDI_BH 0x08
 JMP .raw_loop
 .raw_loop_done
-LDI_C :str_nl
-CALL :print              # not a bare putchar -- see :print's header
 
 ST $term_render_color 0x00
 RET
