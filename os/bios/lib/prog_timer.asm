@@ -115,6 +115,15 @@ ST %ptmr_clr_all_irq% 0x00
 RETI
 
 ###########
+# :ptmr_clk_set -- CUT/DISABLED (Phase 2 ROM-budget gate, 2026-08-22). Zero
+# consumers anywhere (no BIOS-internal caller, no system/util program, not a
+# C-compiler intrinsic) -- the 82C54's clock select is set once by whatever
+# configures a given timer's period, not changed at runtime, so this
+# general-purpose setter has never actually been called. Commented out
+# (not deleted) to free 56 bytes of ROM for the :readline UART
+# source-selector; restore by removing the leading '#' from every line
+# below if a future consumer needs runtime clock-select changes.
+#
 # Utility function for setting timer clocks
 #
 # Usage:
@@ -125,42 +134,42 @@ RETI
 #      * 3 = system clock
 #   2. Push byte to heap: timer select (1, 2, 3)
 #   3. Call function
-:ptmr_clk_set
-ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %B%+%BL%
-ALUOP_PUSH %B%+%BH%
-
-# Set up our field mask into AH
-#  0b00000011 timer1
-#  0b00001100 timer2
-#  0b00110000 timer3
-# And shift the clock select as well
-CALL :heap_pop_BL               # timer select in BL
-ALUOP_BL %B-1%+%BL%             # convert 1-based timer select to 0-based field index
-CALL :heap_pop_AL               # clock speed select in AL
-LDI_AH 0b00000011               # AH = field mask, set to timer1 field by default
-.clk_set_field_shift_loop
-ALUOP_FLAGS %B%+%BL%            # do we need to shift the field mask?
-JZ .clk_set_field_shift_done    # if timer select is exhausted, we're done
-ALUOP_AH %A<<1%+%AH%            # shift field mask left two positions
-ALUOP_AH %A<<1%+%AH%
-ALUOP_AL %A<<1%+%AL%            # shift clock select left two positions
-ALUOP_AL %A<<1%+%AL%
-ALUOP_BL %B-1%+%BL%             # decrement timer select
-JMP .clk_set_field_shift_loop
-.clk_set_field_shift_done
-
-LD_BL $ptmr_clk_select          # load current clock settings into BL
-ALUOP_BL %B&~A%+%AH%+%BL%       # clear the two bits of the field mask AH
-ALUOP_BL %A|B%+%AL%+%BL%        # set the clock select bits from AL
-
-ALUOP_ADDR %B%+%BL% %ptmr_base_clksel%  # Set the new clocks value
-ALUOP_ADDR %B%+%BL% $ptmr_clk_select    # Save the new clock settings
-
-POP_BH
-POP_BL
-POP_AH
-POP_AL
-RET
+#:ptmr_clk_set
+#ALUOP_PUSH %A%+%AL%
+#ALUOP_PUSH %A%+%AH%
+#ALUOP_PUSH %B%+%BL%
+#ALUOP_PUSH %B%+%BH%
+#
+## Set up our field mask into AH
+##  0b00000011 timer1
+##  0b00001100 timer2
+##  0b00110000 timer3
+## And shift the clock select as well
+#CALL :heap_pop_BL               # timer select in BL
+#ALUOP_BL %B-1%+%BL%             # convert 1-based timer select to 0-based field index
+#CALL :heap_pop_AL               # clock speed select in AL
+#LDI_AH 0b00000011               # AH = field mask, set to timer1 field by default
+#.clk_set_field_shift_loop
+#ALUOP_FLAGS %B%+%BL%            # do we need to shift the field mask?
+#JZ .clk_set_field_shift_done    # if timer select is exhausted, we're done
+#ALUOP_AH %A<<1%+%AH%            # shift field mask left two positions
+#ALUOP_AH %A<<1%+%AH%
+#ALUOP_AL %A<<1%+%AL%            # shift clock select left two positions
+#ALUOP_AL %A<<1%+%AL%
+#ALUOP_BL %B-1%+%BL%             # decrement timer select
+#JMP .clk_set_field_shift_loop
+#.clk_set_field_shift_done
+#
+#LD_BL $ptmr_clk_select          # load current clock settings into BL
+#ALUOP_BL %B&~A%+%AH%+%BL%       # clear the two bits of the field mask AH
+#ALUOP_BL %A|B%+%AL%+%BL%        # set the clock select bits from AL
+#
+#ALUOP_ADDR %B%+%BL% %ptmr_base_clksel%  # Set the new clocks value
+#ALUOP_ADDR %B%+%BL% $ptmr_clk_select    # Save the new clock settings
+#
+#POP_BH
+#POP_BL
+#POP_AH
+#POP_AL
+#RET
 

@@ -68,16 +68,18 @@
 #    to 0) clears the line instead of loading an entry.
 #
 # Hardware-proven as os/util/termtest/40-t_readline.asm (t_-prefixed); this
-# is a mechanical prefix-strip transfer, no logic changes. Keyboard-only:
-# the source-selector concept the legacy :input gained in an earlier
-# revision (kb/UART/both) is NOT carried over here -- :readline's spec
-# (2.4.1) only ever specified keyboard input, and :input itself is deleted
-# by this transfer. Whether the shell needs UART-driven input again is a
-# Task 9 (shell migration) decision, not resolved here.
+# is a mechanical prefix-strip transfer, no logic changes, EXCEPT: the
+# kb/UART/both source-selector the legacy :input gained in an earlier
+# revision (Phase 1's :t_readline never had it -- its spec only specified
+# keyboard input) was ported into the poll loop here at Task 9, once the
+# owner noticed the shell-over-serrun use case would otherwise regress.
+# :ptmr_clk_set (os/bios/lib/prog_timer.asm, 56 bytes, zero consumers) was
+# commented out to make ROM room for this addition.
 
 VAR global word $rl_buf
 VAR global byte $rl_maxlen
 VAR global byte $rl_echo
+VAR global byte $rl_source
 VAR global byte $rl_len
 VAR global byte $rl_pos
 VAR global word $rl_start_addr
@@ -108,7 +110,18 @@ VAR global byte $rl_ret_status
 # Inputs:
 #  C - pointer to caller-supplied buffer
 #  AL - buffer size in bytes, including the null terminator
-#  AH - flags: bit 0 = echo (1=on, 0=silent); bits 1-7 reserved
+#  AH - flags: bit 0 = echo (1=on, 0=silent); bit 1 = accept keyboard
+#       keystrokes; bit 2 = accept UART bytes (OR both together to accept
+#       either, matching the legacy :input source-selector -- ported back
+#       in 2026-08-22 so the shell stays drivable over the serrun serial
+#       link after the :input->:readline transfer, which had dropped this).
+#       A UART byte carries no keyflags (always reported as AH=0x00 to the
+#       rest of the poll loop), so e.g. Ctrl+C cannot be sent as a raw 0x03
+#       byte with meaning -- it's handled as an ordinary ignored control
+#       character, same as any other sub-0x20 byte outside the handled
+#       set. Passing neither bit 1 nor bit 2 hangs in the poll loop
+#       forever -- that's a caller bug, not a runtime error this detects.
+#       Bits 3-7 reserved.
 # Outputs:
 #  AL - number of characters entered (0 for empty input or Ctrl+C)
 #  AH - status: 0 = Enter, 1 = Ctrl+C abort
@@ -125,6 +138,7 @@ ALUOP_PUSH %B%+%BL%
 ALUOP_ADDR %A%+%AL% $rl_maxlen
 LDI_BL 0x01
 ALUOP_ADDR %A&B%+%AH%+%BL% $rl_echo
+ALUOP_ADDR %A%+%AH% $rl_source         # full flags byte, for the poll loop's source check
 
 MOV_CH_AH
 MOV_CL_AL
@@ -146,12 +160,30 @@ LDI_AL 0x00
 ALUOP_ADDR_D %A%+%AL%                 # buf[0] = 0 (empty string so far)
 
 ###
-# Poll loop
+# Poll loop. Checks the enabled source(s) per $rl_source (bit 1 = keyboard,
+# bit 2 = UART) -- see :readline's header for the full contract.
 .rl_poll
+LD_AL $rl_source
+LDI_BL 0x02
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JZ .rl_poll_skip_kb              # keyboard source not requested
 CALL :kb_bufsize
 ALUOP_FLAGS %A%+%AL%
-JZ .rl_poll
+JNZ .rl_poll_have_kb             # keyboard has a keystroke waiting, use it
+.rl_poll_skip_kb
+LD_AL $rl_source
+LDI_BL 0x04
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JZ .rl_poll                      # UART source not requested either, keep polling
+CALL :uart_bufsize
+ALUOP_FLAGS %A%+%AL%
+JZ .rl_poll                      # empty, go back to polling
+CALL :uart_readbuf               # received byte into AL
+LDI_AH 0x00                      # no keyflags for serial input
+JMP .rl_poll_have_char
+.rl_poll_have_kb
 CALL :kb_readbuf                      # AH=keyflags, AL=char
+.rl_poll_have_char
 
 LDI_BL %kb_keyflag_BREAK%
 ALUOP_FLAGS %A&B%+%AH%+%BL%
