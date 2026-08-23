@@ -136,11 +136,19 @@ row/col). Both:
 
 **File**: `os/bios/lib/terminal_input.asm`
 
-**The `:input` function** (lines 27-336):
+**The `:input` function** (lines 38-347):
 
-- Installs buffered keyboard IRQ handler
+- Relies on the keyboard IRQ1 handler already being the buffered one
+  (`:kb_irq_buf`, installed once at BIOS boot in `00-main.asm` and left
+  resident for the life of the system). `:input` no longer installs or
+  restores the vector itself -- see note below.
+- Takes an `AL` source-selector parameter (`%input_source_kb%`/
+  `%input_source_uart%`, OR together for both) added 2026-08-22 so the
+  shell can be driven over the `serrun` serial link as well as the
+  physical keyboard. A UART byte carries no keyflags (always reported as
+  `AH=0x00`).
 - Saves current cursor position as mark 0 and mark 1
-- Polls keyboard buffer in a tight loop
+- Polls the enabled source(s) in a tight loop
 - Handles: BS, DEL, left/right arrows, Home, End, Insert toggle, Ctrl+C, Enter
 - Returns with marks 0 and 1 set to input boundaries
 - Caller must call `cursor_mark_getstring()` to extract the string from the framebuffer
@@ -194,12 +202,20 @@ row/col). Both:
    from the current position to mark 1, one byte at a time (lines 152-161). On a long
    input line this is visible.
 
-8. **IRQ1 vector manipulation**: `:input` saves/restores the IRQ1 vector to install
-   the buffered handler. This is fragile -- if the caller already has the buffered
-   handler installed, this save/restore is unnecessary overhead.
-
-9. **Keyboard buffer is tiny**: 7 keystrokes max (14 bytes at 0xBE00). Fast typists
+8. **Keyboard buffer is tiny**: 7 keystrokes max (14 bytes at 0xCC00). Fast typists
    can overflow it.
+
+> **Update (resolved since this document was first written)**: the old problem
+> #8, "IRQ1 vector manipulation" (`:input` saving/restoring the IRQ1 vector on
+> every call), has been fixed independently of this refactor. As of commit
+> `d210e4c` ("Buffer keystrokes between commands for smoother UX"),
+> `00-main.asm` installs `:kb_irq_buf` as the IRQ1 handler once at boot and it
+> stays resident permanently; `:input` and `80-run_system_ody.asm`'s exec loop
+> (which now does an explicit `UMASKINT` at the top of every iteration) no
+> longer touch the vector at all. This means keystrokes typed between programs
+> are buffered rather than dropped, and `:readline` (2.4) inherits this for
+> free -- it can assume the buffered handler is always installed and needs no
+> IRQ1 management of its own, simpler than what was originally assumed here.
 
 ---
 
@@ -226,6 +242,18 @@ row/col). Both:
    operations MUST update both 0x4xxx (chars) and 0x5xxx (colors) together, regardless
    of whether color rendering is active. Programs that write color bytes directly must
    see predictable behavior when the terminal scrolls or moves text.
+
+6. **ANSI is the recommended path, not the only path**: For the large majority of
+   programs, `print`/`printf` with `$term_flags` bit 1 (ANSI mode) set is the most
+   convenient and effective way to produce output -- portable escape codes, no need to
+   understand framebuffer geometry, correct interaction with scrolling and cursor
+   movement for free. It is the default recommendation in the C header and in example
+   code. But it is not the only supported path: programs with unusual needs (full-screen
+   UIs, games, custom widgets, anything painting large regions where per-character
+   function-call overhead matters) are expected to poke the framebuffer directly instead.
+   This is not a fallback or an unsupported escape hatch -- it is a first-class, fully
+   documented API surface (2.2.5) with the same color-sync guarantees (principle 5) as
+   the ANSI path.
 
 ### 2.2 Terminal Output -- Proposed Design
 
@@ -456,16 +484,76 @@ SGR     Name           Odyssey byte
 8       Hidden         (no effect)
 9       Strikethrough  (no effect)
 21-29   Various resets (ignored except 22, 25 as listed above)
-38      Extended fg    (256-color/truecolor -- not supported)
+38;2;r;g;b  Extended fg, truecolor  (valid grammar, not implemented -- see below)
 39      Default fg     (treated as reset to white)
 40-47   Background     (ignored -- hardware has no background color)
-48      Extended bg    (ignored)
+48;2;r;g;b  Extended bg, truecolor  (ignored -- no background support)
+48;5;n  Extended bg, 256-color  (parsed correctly, ignored -- no background support)
 49      Default bg     (ignored)
 100-107 Bright bg      (ignored)
 ```
 
+`38;5;n` (extended foreground, 256-color palette) IS supported -- see 2.2.3.1
+below. It is listed separately from the ignored codes above because it
+actually changes the rendered color, unlike everything else in this table.
+
 Multiple SGR parameters in a single sequence (e.g. `ESC[1;31m` for bold red) are
 supported -- each parameter is processed in order.
+
+#### 2.2.3.1 Extended 256-color mode (SGR 38;5;n / 48;5;n)
+
+`ESC [ 38 ; 5 ; <n> m` sets the foreground color from the standard ANSI
+256-color palette, where `<n>` is 0-255. `ESC [ 48 ; 5 ; <n> m` is the
+background form; since the Odyssey video hardware has no background color, it
+is parsed correctly (so the parameter stream stays aligned for anything
+chained after it) but produces no color change -- consistent with every other
+background SGR code.
+
+The Odyssey color byte has only 4 levels (2 bits) per channel -- 64 colors
+total, not 256 -- so the palette is quantized down deterministically:
+
+```
+n = 0-15     Same as SGR 30-37 / 90-97 (the 16 standard/bright colors, see
+             the foreground color table above).
+
+n = 16-231   The 6x6x6 RGB color cube: index = 16 + 36r + 6g + b, where each
+             of r, g, b is 0-5. Each channel's 6-level value is quantized to
+             the Odyssey's 4-level (0-3) shade via the lookup table:
+                 xterm level:   0  1  2  3  4  5
+                 odyssey shade: 0  1  1  2  2  3
+
+n = 232-255  24-step grayscale ramp. Let g = n - 232 (0-23). All three
+             channels get the same shade: shade = round(g * 3 / 23),
+             giving the same 0-3 range as above.
+```
+
+This is a fixed, lossy mapping -- the hardware cannot reproduce 256 distinct
+colors, so many adjacent palette indices collapse to the same displayed
+shade. This matches how 256-color ANSI output already degrades gracefully on
+any terminal with fewer than 256 actual colors; it is not special-cased
+Odyssey behavior.
+
+**Parsing note**: unlike every other SGR code, `38` and `48` are not
+single-parameter commands -- they consume two additional parameters (the
+`5` selector and the index `n`). When the SGR parameter loop encounters `38`
+or `48`, it must look ahead: if the next parameter is `5`, consume it and the
+following parameter (the index) as a unit and apply the mapping above; if the
+next parameter is `2`, this is the truecolor form (see below). Because
+`$ansi_param_buf` holds at most 4 parameters per escape sequence, a single
+`ESC[...m` can combine one 256-color selector (3 parameters: `38`, `5`, `n`)
+with at most one more simple SGR code, e.g. `ESC[1;38;5;208m` (bold + orange,
+4 parameters total). A sequence like `ESC[38;5;208;48;5;22m` (6 parameters)
+exceeds the budget and is treated as a parameter-buffer-overflow error per
+the invalid-sequence handling in 2.2.3 (buffered characters are flushed to
+the screen, parser resets).
+
+**`ESC[38;2;r;g;b m` and `ESC[48;2;r;g;b m` (24-bit truecolor) are recognized
+as valid CSI grammar but are NOT implemented.** They fall into the "valid but
+unsupported" case from 2.2.3 (silently discarded, parser resets to normal) --
+handling them fully would require consuming 5 parameters (`38`, `2`, `r`,
+`g`, `b`), blowing the 4-parameter budget for no real benefit given the
+hardware's 64-color ceiling. Programs that want reproducible results on the
+Odyssey should use `38;5;n` instead of truecolor.
 
 ##### ANSI parser error handling
 
@@ -536,6 +624,65 @@ whether NEW characters get a color byte written -- it does NOT affect preservati
 existing color data during scroll, clear, or text-shift operations. If a program writes
 color bytes directly to the 0x5xxx region, those colors will scroll and move correctly
 along with their associated characters.
+
+#### 2.2.5 Direct framebuffer access
+
+ANSI escape sequences (2.2.3) are the recommended output method for most programs
+(design principle 6), but some programs are better served writing directly to the
+character and color framebuffers instead of going through `putchar`/`print` at all --
+full-screen UIs that repaint large regions every frame, games, or anything where the
+per-character overhead of a function call (even the ~10-15 instruction fast path of
+2.3.1) is worth avoiding. This is a supported, documented API, not an undocumented
+implementation detail programs happen to be able to reach.
+
+**Layout**: The character framebuffer is a flat 64x60 grid of bytes at
+`%display_chars%` (0x4000), one CP437 byte per cell, row-major. The color framebuffer
+is the same 64x60 grid of bytes at `%display_color%` (0x5000), one byte per cell,
+positionally parallel to the character grid -- cell (row, col) has its character at
+`%display_chars% + row*64 + col` and its color at `%display_color% + row*64 + col`.
+
+**Address computation**: Programs don't need to hand-roll the `row*64 + col`
+multiply. The existing cursor conversion utilities do it:
+
+```
+:cursor_conv_rowcol   AH=row, AL=col  ->  A = 12-bit offset from framebuffer base
+:cursor_conv_addr     A = address in chars/color range  ->  AH=row, AL=col
+```
+
+Add the base address to the returned offset to get an absolute address in either
+region (they share the same offset space -- offset 0 is the top-left cell in both
+`%display_chars%` and `%display_color%`).
+
+**Color byte format**: unchanged from today (2.6.1) -- `[BLINK][CURSOR][Rfg 2b][Gfg
+2b][Bfg 2b]`, i.e. bits 0-1 = blue shade (0-3), bits 2-3 = green shade, bits 4-5 = red
+shade, bit 6 (0x40) = cursor, bit 7 (0x80) = blink. This is the same 64-color space
+the ANSI SGR mapping (2.2.3, 2.2.3.1) targets, so colors picked by hand and colors
+picked by an ANSI-writing program compose correctly if they ever share a screen.
+
+**Cursor state is not touched by raw pokes**: writing directly to 0x4xxx/0x5xxx does
+not move `$crsr_row`, `$crsr_col`, `$crsr_addr_chars`, or `$crsr_addr_color` -- those
+only change via the cursor functions (2.3). A program that paints the framebuffer
+directly and then wants to resume cursor-relative output (`putchar`, `print`, more
+ANSI) must call `cursor_goto_rowcol` or `cursor_goto_addr` first to resync the cursor
+to wherever it wants output to continue from. Conversely, a program that never calls
+`putchar`/`print`/readline at all (e.g. a game driving the whole screen by hand every
+frame) can ignore cursor state entirely and just turn the cursor off once at startup
+(`cursor_off`) to keep it from being rendered mid-frame.
+
+**Interaction with scroll**: Design principle 5 (color sync is mandatory) applies here
+too -- if `:term_scroll` runs (because some other code path called `putchar` with a
+newline near the bottom row, for instance), it scrolls both the char and color regions
+together regardless of how those bytes got there. A directly-painted screen scrolls
+correctly. Programs that manage their own full-screen display and never want the
+BIOS's scroll-on-newline behavior should set `$term_flags` bits 4/5 (bottom-edge
+no-scroll or wrap-to-top, see 2.2.1) if they use `putchar`/`print` at all near the
+bottom row, or simply avoid triggering it by not printing there.
+
+**Recommended pattern**: raw framebuffer writes bypass `$term_flags` and the ANSI
+parser entirely -- there is no "raw mode" flag to set, because there's no function
+call in the loop to configure. A tight fill/paint loop just uses `ALUOP_ADDR`/`ST` at
+computed addresses. This is the fastest path available; it is intentionally the same
+mechanism `:term_scroll` and `:clear_screen` already use internally.
 
 ### 2.3 Cursor Management -- Proposed Changes
 
@@ -754,6 +901,21 @@ extern void clear_screen(char fill_char, uint8_t color);
 extern uint8_t term_render_color;      /* 0=off, nonzero=write color with each char */
 extern uint8_t term_current_color;     /* color byte to write */
 
+/* --- Direct framebuffer access (2.2.5) --- */
+/* For programs that bypass putchar/print and paint the framebuffer directly. */
+#define TERM_CHAR_BASE   0x4000   /* base of character framebuffer (%display_chars%) */
+#define TERM_COLOR_BASE  0x5000   /* base of color framebuffer (%display_color%), same layout */
+#define TERM_COLS        64
+#define TERM_ROWS        60
+#define TERM_CELL_ADDR(row, col)  ((row) * TERM_COLS + (col))  /* offset from either base */
+
+/* Color byte bit layout, same space the ANSI SGR mapping (2.2.3, 2.2.3.1) targets: */
+#define TERM_COLOR_BLUE_MASK   0x03  /* bits 0-1, shade 0-3 */
+#define TERM_COLOR_GREEN_MASK  0x0c  /* bits 2-3, shade 0-3 */
+#define TERM_COLOR_RED_MASK    0x30  /* bits 4-5, shade 0-3 */
+#define TERM_COLOR_CURSOR      0x40  /* bit 6 */
+#define TERM_COLOR_BLINK       0x80  /* bit 7 */
+
 /* --- Readline --- */
 #define RL_ECHO    0x01
 
@@ -850,8 +1012,9 @@ Rough estimates:
   bytes ROM), `:print_raw` (~30 bytes ROM), `.cursor_advance` (~60 bytes ROM), history
   globals (~6 bytes RAM), cursor save/restore (~20 bytes ROM),
   `cursor_display_sync` no longer auto-called (saves ROM in goto functions, ~-40
-  bytes) = **~1020 bytes ROM added, ~34 bytes RAM added**
-- **Net**: ~130 bytes ROM freed, ~34 bytes RAM freed
+  bytes), 256-color lookup/quantization for SGR 38;5;n (~80 bytes ROM, table-driven
+  rather than computed, no extra RAM) = **~1100 bytes ROM added, ~34 bytes RAM added**
+- **Net**: ~50 bytes ROM freed, ~34 bytes RAM freed
 
 ---
 
@@ -888,3 +1051,16 @@ Rough estimates:
 9. **ANSI parser error handling**: Invalid sequences flush buffered characters to
    screen. Valid but unsupported sequences are silently discarded. String termination
    mid-sequence triggers a flush and parser reset.
+
+10. **256-color palette via SGR 38;5;n is supported**, quantized to the hardware's
+    64-color space via the fixed mapping in 2.2.3.1. 24-bit truecolor (`38;2;r;g;b`)
+    is recognized as valid grammar but not implemented -- not worth the parameter
+    budget for a color depth the hardware can't reproduce. `48;5;n` / `48;2;r;g;b`
+    (background forms) are parsed but ignored, consistent with decision 2.
+
+11. **Direct framebuffer access is a first-class, documented API (2.2.5), not an
+    unsupported side channel**. ANSI via `print`/`printf` is the recommended default
+    for most programs (design principle 6), but programs with unusual performance or
+    control needs are expected to write 0x4xxx/0x5xxx directly, using the same
+    address-computation utilities (`cursor_conv_rowcol`/`cursor_conv_addr`) and color
+    byte format the ANSI path uses internally.

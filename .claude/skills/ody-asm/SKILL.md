@@ -581,5 +581,45 @@ For C-generated code: `make <basename>.asm` once, insert traces directly in
 the generated .asm, then `make` -- the binary is rebuilt from your edited .asm
 as long as the .c is untouched.
 
-Ask the owner to run on hardware and report the trace output. Use skill
+**On the lab PC** (only there -- see "Driving real hardware" below), run it
+yourself: `send-file` the binary and `expect`/`read` the trace lines back
+over serial instead of asking the owner to do it by hand. Everywhere else,
+ask the owner to run on hardware and report the trace output. Use skill
 **ody-remap-log** to correlate `assembler.log` offsets with runtime addresses.
+
+## Driving real hardware (lab PC sessions only)
+
+Most sessions have no path to real hardware -- default to asking the owner
+to run things and report back. On the lab PC, `odyssey_console.py`
+(`/net/geofront/raid/mycpu2/odyssey_console/`) already holds the serial
+port and video capture open, and its `odyctl` CLI gives a genuine
+closed loop: send keystrokes over serial, and read back the result via a
+video screencap (the Odyssey's shell output is video-only -- it does NOT
+echo over the serial link, so `screencap` is how you observe output, not
+`read`/`expect`, except for programs that deliberately print status lines
+over UART, e.g. `os/bios/lib/trace.asm` or a test harness like
+`os/util/termtest/`).
+
+```bash
+cd /net/geofront/raid/mycpu2/odyssey_console
+./odyctl status                        # confirm connected before anything else
+./odyctl send $'dir\r'                 # keystrokes; \r is Enter, not \n
+./odyctl screencap /tmp/out.png        # THEN read the PNG with the Read tool
+./odyctl send-file path/to/PROGRAM.ODY # SERODY transfer to a waiting `serrun`
+./odyctl expect 'TT RESULT' --timeout 120   # for programs that report over UART
+```
+
+- There is no hard-reset capability from software -- if a program hangs the
+  machine, there is no recovery but a human at the lab PC. Be correspondingly
+  cautious about sending anything untested (infinite loops, `HLT`, unbounded
+  recursion on the 256-byte hardware stack) -- validate with `asmcheck.sh`
+  first as always, and prefer small, incremental sends over one big blind one.
+- `odyctl` talks to the control socket of an already-running
+  `odyssey_console.py`; if `status` fails to connect, the app isn't running
+  -- don't try to open the serial port directly, ask the owner to start it.
+  See `odyssey_console/README.md` for the full command/tool inventory
+  (including `set-baud`, `set-rts`, and the MCP bridge).
+- This capability is session-scoped to whichever machine actually has the
+  adapter plugged in -- do not assume a future session has it just because
+  a past one did; check `odyctl status` (or absence of the `odyctl` binary
+  entirely) rather than assuming from context.
