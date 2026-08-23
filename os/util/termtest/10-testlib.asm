@@ -2,9 +2,9 @@
 
 # termtest serial test harness.
 #
-# Every test suite reports over the UART only (never via the ROM's own
-# :print/:putchar) so the framebuffer stays free for the code under test.
-# Wire protocol, one line per event:
+# Every test suite reports over the UART only, keeping the report protocol
+# machine-parseable regardless of whatever's on screen. Wire protocol, one
+# line per event:
 #   TT START <suite>\n
 #   PASS <test>\n
 #   FAIL <test> exp=XX got=XX\n
@@ -251,7 +251,7 @@ RET
 
 ######
 # Injects synthetic keystrokes into the keyboard ring buffer, exactly as
-# :kb_irq_buf would from a real keypress. Lets tests drive :t_readline
+# :kb_irq_buf would from a real keypress. Lets tests drive :readline
 # without a physical keyboard. Must not race a real keystroke, so the
 # write-pointer update is masked.
 #

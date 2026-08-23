@@ -1,144 +1,148 @@
 # vim: syntax=asm-mycpu
 
-# Tests for the SGR + 256-color extension to 35-t_ansi.asm's 'm' dispatch
-# (TERMINAL_REFACTOR.md 2.2.3 color table, 2.2.3.1 256-color quantization).
-# Every test enables ANSI mode, resets the cursor to (0,0), sends an escape
-# sequence immediately followed by 'X' through :t_print, and checks the
-# character/color bytes at the framebuffer origin. Tests that need a known
-# starting color set $t_term_render_color/$t_term_current_color directly
-# first (2.2.4's documented direct-write pattern).
+# Tests for the ROM's SGR handling in terminal_ansi.asm's 'm' dispatch
+# (TERMINAL_REFACTOR.md 2.2.3 color table). Every test enables ANSI mode,
+# resets the cursor to (0,0), sends an escape sequence immediately followed
+# by 'X' through :print, and checks the character/color bytes at the
+# framebuffer origin. Tests that need a known starting color set
+# $term_render_color/$term_current_color directly first (2.2.4's documented
+# direct-write pattern).
+#
+# 256-color quantization (2.2.3.1) is CUT/UNIMPLEMENTED (Phase 2 ROM-budget
+# gate -- see terminal_ansi.asm's header) -- see the note further down for
+# what that means for the tests in this file.
 
 :tests_sgr_run
 LDI_C .suite_name
 CALL :tt_suite
 
-ST $t_term_flags 0x02                # ANSI on, raw off
+ST $term_flags 0x02                # ANSI on, raw off
 
 # --- all 16 base foreground colors (SGR 30-37, 90-97) ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c30
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x00
 LDI_C .tn_c30
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c31
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x20
 LDI_C .tn_c31
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c32
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x08
 LDI_C .tn_c32
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c33
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x28
 LDI_C .tn_c33
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c34
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x02
 LDI_C .tn_c34
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c35
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x22
 LDI_C .tn_c35
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c36
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x0a
 LDI_C .tn_c36
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c37
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x2a
 LDI_C .tn_c37
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c90
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x15
 LDI_C .tn_c90
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c91
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x30
 LDI_C .tn_c91
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c92
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x0c
 LDI_C .tn_c92
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c93
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x3c
 LDI_C .tn_c93
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c94
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x03
 LDI_C .tn_c94
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c95
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x33
 LDI_C .tn_c95
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c96
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x0f
 LDI_C .tn_c96
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_c97
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x3f
 LDI_C .tn_c97
@@ -146,49 +150,49 @@ CALL :tt_assert_eq
 
 # --- attributes: reset, bold upgrade, normal downgrade, blink on/off ---
 
-CALL :t_cursor_init
-ST $t_term_render_color 0x00
-ST $t_term_current_color 0x15        # garbage baseline, distinct from 0x3f
+CALL :cursor_init
+ST $term_render_color 0x00
+ST $term_current_color 0x15        # garbage baseline, distinct from 0x3f
 LDI_C .seq_reset
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x3f
 LDI_C .tn_reset
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_bold_red                  # ESC[1;31m -- bold applied after color
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x30
 LDI_C .tn_bold_red
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
-ST $t_term_render_color 0x01
-ST $t_term_current_color 0x30        # light red (shade-3 red)
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0x30        # light red (shade-3 red)
 LDI_C .seq_normal
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x20
 LDI_C .tn_normal
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
-ST $t_term_render_color 0x01
-ST $t_term_current_color 0x2a        # white, no blink
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0x2a        # white, no blink
 LDI_C .seq_blink_on
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0xaa
 LDI_C .tn_blink_on
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
-ST $t_term_render_color 0x01
-ST $t_term_current_color 0xaa        # white, blinking
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0xaa        # white, blinking
 LDI_C .seq_blink_off
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x2a
 LDI_C .tn_blink_off
@@ -196,125 +200,51 @@ CALL :tt_assert_eq
 
 # --- ignored codes leave the color untouched ---
 
-CALL :t_cursor_init
-ST $t_term_render_color 0x01
-ST $t_term_current_color 0x2a
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0x2a
 LDI_C .seq_ignored_reverse           # ESC[7m
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x2a
 LDI_C .tn_ignored_reverse
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
-ST $t_term_render_color 0x01
-ST $t_term_current_color 0x2a
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0x2a
 LDI_C .seq_ignored_bg                # ESC[44m
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x2a
 LDI_C .tn_ignored_bg
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
-ST $t_term_render_color 0x01
-ST $t_term_current_color 0x2a
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0x2a
 LDI_C .seq_ignored_defbg             # ESC[49m
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x2a
 LDI_C .tn_ignored_defbg
 CALL :tt_assert_eq
 
-# --- 256-color quantization spot checks (2.2.3.1) ---
+# 256-color quantization (2.2.3.1) is CUT/UNIMPLEMENTED (Phase 2 ROM-budget
+# gate -- see terminal_ansi.asm's header): 38;5;n / 48;5;n are silently
+# discarded, same as 38;2 truecolor. The tests below cover that discard
+# behavior directly; there is no per-value quantization suite here since
+# the quantization code doesn't exist in ROM. The per-value quantization
+# tests this file used to have (hardware-proven before the cut) are
+# recoverable from this file's git history if the feature ever comes back.
 
-CALL :t_cursor_init
-LDI_C .seq_256_1
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x20
-LDI_C .tn_256_1
-CALL :tt_assert_eq
+# --- 48;5;n (256-color background): silently discarded, no color change ---
 
-CALL :t_cursor_init
-LDI_C .seq_256_9
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x30
-LDI_C .tn_256_9
-CALL :tt_assert_eq
-
-CALL :t_cursor_init
-LDI_C .seq_256_16
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x00
-LDI_C .tn_256_16
-CALL :tt_assert_eq
-
-CALL :t_cursor_init
-LDI_C .seq_256_21
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x03
-LDI_C .tn_256_21
-CALL :tt_assert_eq
-
-CALL :t_cursor_init
-LDI_C .seq_256_110
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x1a
-LDI_C .tn_256_110
-CALL :tt_assert_eq
-
-CALL :t_cursor_init
-LDI_C .seq_256_196
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x30
-LDI_C .tn_256_196
-CALL :tt_assert_eq
-
-CALL :t_cursor_init
-LDI_C .seq_256_231
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x3f
-LDI_C .tn_256_231
-CALL :tt_assert_eq
-
-CALL :t_cursor_init
-LDI_C .seq_256_232
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x00
-LDI_C .tn_256_232
-CALL :tt_assert_eq
-
-CALL :t_cursor_init
-LDI_C .seq_256_244
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x2a
-LDI_C .tn_256_244
-CALL :tt_assert_eq
-
-CALL :t_cursor_init
-LDI_C .seq_256_255
-CALL :t_print
-LD_AL %display_color%
-LDI_AH 0x3f
-LDI_C .tn_256_255
-CALL :tt_assert_eq
-
-# --- 48;5;n (256-color background): parsed, no color change ---
-
-CALL :t_cursor_init
-ST $t_term_render_color 0x01
-ST $t_term_current_color 0x2a
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0x2a
 LDI_C .seq_256_bg
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x2a
 LDI_C .tn_256_bg
@@ -324,27 +254,30 @@ LDI_AH 'X'
 LDI_C .tn_256_bg_char
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_ansi_state
+LD_AL $ansi_state
 LDI_C .tn_256_bg_state
 CALL :tt_assert_eq
 
-# --- combined: bold + 256-color (4 params) ---
+# --- discard consumes the WHOLE sequence, not just the 38-onward part:
+# "1;38;5;208m" (bold + 256-color) discards the leading bold too ---
 
-CALL :t_cursor_init
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0x2a
 LDI_C .seq_bold_256
-CALL :t_print
+CALL :print
 LD_AL %display_color%
-LDI_AH 0x34
+LDI_AH 0x2a
 LDI_C .tn_bold_256
 CALL :tt_assert_eq
 
 # --- 38;2 truecolor: silently discarded, color unchanged ---
 
-CALL :t_cursor_init
-ST $t_term_render_color 0x01
-ST $t_term_current_color 0x2a
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0x2a
 LDI_C .seq_truecolor
-CALL :t_print
+CALL :print
 LD_AL %display_color%
 LDI_AH 0x2a
 LDI_C .tn_truecolor
@@ -354,27 +287,37 @@ LDI_AH 'X'
 LDI_C .tn_truecolor_char
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_ansi_state
+LD_AL $ansi_state
 LDI_C .tn_truecolor_state
 CALL :tt_assert_eq
 
-# --- 6-param overflow (38;5;n;48;5;n): flushed raw, color unchanged ---
+# --- 6-param 38-prefixed sequence (38;5;208;48;5;22m, 19 chars incl. the
+# leading '['): the 38 lookahead sets the discard flag on the semicolon
+# after "5" (well within the 16-byte $ansi_seq_buf), but every character is
+# still recorded into that buffer regardless of discard state (:ansi_feed
+# checks the buffer at the top, before dispatch) -- and this sequence is
+# longer than the 16-byte buffer, so it hits the buffer-overflow ->
+# :ansi_flush path (raw glyph dump, ESC included) before the final 'm' is
+# ever reached. Discard state never gets a chance to matter here: length
+# overflow wins first. Contrast .seq_param_overflow in 70-tests_ansi.asm
+# (no 38/48 prefix, fits in 16 bytes, still overflows on param COUNT) --
+# both land on :ansi_flush, but by different routes. ---
 
-CALL :t_cursor_init
-ST $t_term_render_color 0x01
-ST $t_term_current_color 0x2a
+CALL :cursor_init
+ST $term_render_color 0x01
+ST $term_current_color 0x2a
 LDI_C .seq_overflow6
-CALL :t_print
+CALL :print
 LD_AL %display_chars%
 LDI_AH 0x1b
-LDI_C .tn_overflow6_esc
+LDI_C .tn_overflow6_char
 CALL :tt_assert_eq
-LD_AL $t_term_current_color
+LD_AL $term_current_color
 LDI_AH 0x2a
 LDI_C .tn_overflow6_color
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_ansi_state
+LD_AL $ansi_state
 LDI_C .tn_overflow6_state
 CALL :tt_assert_eq
 
@@ -407,16 +350,6 @@ RET
 .seq_ignored_reverse 0x1b "[7mX\0"
 .seq_ignored_bg 0x1b "[44mX\0"
 .seq_ignored_defbg 0x1b "[49mX\0"
-.seq_256_1 0x1b "[38;5;1mX\0"
-.seq_256_9 0x1b "[38;5;9mX\0"
-.seq_256_16 0x1b "[38;5;16mX\0"
-.seq_256_21 0x1b "[38;5;21mX\0"
-.seq_256_110 0x1b "[38;5;110mX\0"
-.seq_256_196 0x1b "[38;5;196mX\0"
-.seq_256_231 0x1b "[38;5;231mX\0"
-.seq_256_232 0x1b "[38;5;232mX\0"
-.seq_256_244 0x1b "[38;5;244mX\0"
-.seq_256_255 0x1b "[38;5;255mX\0"
 .seq_256_bg 0x1b "[48;5;9mX\0"
 .seq_bold_256 0x1b "[1;38;5;208mX\0"
 .seq_truecolor 0x1b "[38;2;255;0;0mX\0"
@@ -446,16 +379,6 @@ RET
 .tn_ignored_reverse "ign_reverse\0"
 .tn_ignored_bg "ign_bg\0"
 .tn_ignored_defbg "ign_defbg\0"
-.tn_256_1 "c256_1\0"
-.tn_256_9 "c256_9\0"
-.tn_256_16 "c256_16\0"
-.tn_256_21 "c256_21\0"
-.tn_256_110 "c256_110\0"
-.tn_256_196 "c256_196\0"
-.tn_256_231 "c256_231\0"
-.tn_256_232 "c256_232\0"
-.tn_256_244 "c256_244\0"
-.tn_256_255 "c256_255\0"
 .tn_256_bg "c256_bg\0"
 .tn_256_bg_char "c256_bg_char\0"
 .tn_256_bg_state "c256_bg_state\0"
@@ -463,6 +386,6 @@ RET
 .tn_truecolor "truecolor\0"
 .tn_truecolor_char "truecolor_char\0"
 .tn_truecolor_state "truecolor_state\0"
-.tn_overflow6_esc "overflow6_esc\0"
+.tn_overflow6_char "overflow6_char\0"
 .tn_overflow6_color "overflow6_color\0"
 .tn_overflow6_state "overflow6_state\0"

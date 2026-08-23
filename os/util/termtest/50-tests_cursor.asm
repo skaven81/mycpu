@@ -1,17 +1,20 @@
 # vim: syntax=asm-mycpu
 
-# Tests for 20-t_cursor.asm (TERMINAL_REFACTOR.md 2.3).
+# Tests for the ROM's cursor library, os/bios/lib/cursor.asm
+# (TERMINAL_REFACTOR.md 2.3). ESC[s/ESC[u save/restore (:cursor_save/
+# :cursor_restore) were cut during the Phase 2 ROM-budget gate -- see
+# cursor.asm's header -- so there is no save/restore round-trip test here.
 
 :tests_cursor_run
 LDI_C .suite_name
 CALL :tt_suite
 
-# --- :t_cursor_conv_rowcol ---
+# --- :cursor_conv_rowcol ---
 
 # (0,0) -> offset 0x0000
 LDI_AH 0x00
 LDI_AL 0x00
-CALL :t_cursor_conv_rowcol
+CALL :cursor_conv_rowcol
 ALUOP_ADDR %A%+%AH% .cc_result_hi
 ALUOP_ADDR %A%+%AL% .cc_result_lo
 LDI_AH 0x00
@@ -26,7 +29,7 @@ CALL :tt_assert_eq
 # (0,63) -> offset 0x003F
 LDI_AH 0x00
 LDI_AL 0x3f
-CALL :t_cursor_conv_rowcol
+CALL :cursor_conv_rowcol
 ALUOP_ADDR %A%+%AH% .cc_result_hi
 ALUOP_ADDR %A%+%AL% .cc_result_lo
 LDI_AH 0x00
@@ -41,7 +44,7 @@ CALL :tt_assert_eq
 # (1,0) -> offset 0x0040
 LDI_AH 0x01
 LDI_AL 0x00
-CALL :t_cursor_conv_rowcol
+CALL :cursor_conv_rowcol
 ALUOP_ADDR %A%+%AH% .cc_result_hi
 ALUOP_ADDR %A%+%AL% .cc_result_lo
 LDI_AH 0x00
@@ -56,7 +59,7 @@ CALL :tt_assert_eq
 # (59,63) -> offset 0x0EFF
 LDI_AH 0x3b
 LDI_AL 0x3f
-CALL :t_cursor_conv_rowcol
+CALL :cursor_conv_rowcol
 ALUOP_ADDR %A%+%AH% .cc_result_hi
 ALUOP_ADDR %A%+%AL% .cc_result_lo
 LDI_AH 0x0e
@@ -68,12 +71,12 @@ LD_AL .cc_result_lo
 LDI_C .tn_convrc_5963_lo
 CALL :tt_assert_eq
 
-# --- :t_cursor_conv_addr (round-trips the offsets above) ---
+# --- :cursor_conv_addr (round-trips the offsets above) ---
 
 # 0x4000 -> row 0, col 0
 LDI_AH 0x40
 LDI_AL 0x00
-CALL :t_cursor_conv_addr
+CALL :cursor_conv_addr
 ALUOP_ADDR %A%+%AH% .cc_result_hi
 ALUOP_ADDR %A%+%AL% .cc_result_lo
 LDI_AH 0x00
@@ -88,7 +91,7 @@ CALL :tt_assert_eq
 # 0x403F -> row 0, col 63
 LDI_AH 0x40
 LDI_AL 0x3f
-CALL :t_cursor_conv_addr
+CALL :cursor_conv_addr
 ALUOP_ADDR %A%+%AH% .cc_result_hi
 ALUOP_ADDR %A%+%AL% .cc_result_lo
 LDI_AH 0x00
@@ -103,7 +106,7 @@ CALL :tt_assert_eq
 # 0x4040 -> row 1, col 0
 LDI_AH 0x40
 LDI_AL 0x40
-CALL :t_cursor_conv_addr
+CALL :cursor_conv_addr
 ALUOP_ADDR %A%+%AH% .cc_result_hi
 ALUOP_ADDR %A%+%AL% .cc_result_lo
 LDI_AH 0x01
@@ -118,7 +121,7 @@ CALL :tt_assert_eq
 # 0x4EFF -> row 59, col 63
 LDI_AH 0x4e
 LDI_AL 0xff
-CALL :t_cursor_conv_addr
+CALL :cursor_conv_addr
 ALUOP_ADDR %A%+%AH% .cc_result_hi
 ALUOP_ADDR %A%+%AL% .cc_result_lo
 LDI_AH 0x3b
@@ -130,46 +133,46 @@ LD_AL .cc_result_lo
 LDI_C .tn_convaddr_4eff_col
 CALL :tt_assert_eq
 
-# --- :t_cursor_goto_rowcol(5,10) -> row/col/addr_chars/addr_color ---
+# --- :cursor_goto_rowcol(5,10) -> row/col/addr_chars/addr_color ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_AH 0x05
 LDI_AL 0x0a
-CALL :t_cursor_goto_rowcol
+CALL :cursor_goto_rowcol
 
 LDI_AH 0x05
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_goto_row
 CALL :tt_assert_eq
 
 LDI_AH 0x0a
-LD_AL $t_crsr_col
+LD_AL $crsr_col
 LDI_C .tn_goto_col
 CALL :tt_assert_eq
 
 LDI_AH 0x41
-LD_AL $t_crsr_addr_chars
+LD_AL $crsr_addr_chars
 LDI_C .tn_goto_ach_hi
 CALL :tt_assert_eq
 
 LDI_AH 0x4a
-LD_AL $t_crsr_addr_chars+1
+LD_AL $crsr_addr_chars+1
 LDI_C .tn_goto_ach_lo
 CALL :tt_assert_eq
 
 LDI_AH 0x51
-LD_AL $t_crsr_addr_color
+LD_AL $crsr_addr_color
 LDI_C .tn_goto_acl_hi
 CALL :tt_assert_eq
 
 LDI_AH 0x4a
-LD_AL $t_crsr_addr_color+1
+LD_AL $crsr_addr_color+1
 LDI_C .tn_goto_acl_lo
 CALL :tt_assert_eq
 
 # --- goto must NOT touch the color framebuffer (2.3.2) ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 ST %display_color% 0x00
 LD_AL %display_color%
 LDI_BL 0x40
@@ -177,23 +180,23 @@ ALUOP_AL %A|B%+%AL%+%BL%
 ALUOP_ADDR %A%+%AL% %display_color%   # display_color[0] = 0x40 (simulated cursor glyph)
 LDI_AH 0x03
 LDI_AL 0x03
-CALL :t_cursor_goto_rowcol            # move away -- must not touch color RAM
+CALL :cursor_goto_rowcol            # move away -- must not touch color RAM
 LD_AL %display_color%
 LDI_AH 0x40
 LDI_C .tn_goto_no_color_touch
 CALL :tt_assert_eq
 
-# --- :t_cursor_display_sync sets/clears the cursor bit per $t_crsr_on ---
+# --- :cursor_display_sync sets/clears the cursor bit per $crsr_on ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 ST %display_color% 0x00
-CALL :t_cursor_display_sync           # on=1 (from init) -> bit should be set
+CALL :cursor_display_sync           # on=1 (from init) -> bit should be set
 LD_AL %display_color%
 LDI_AH 0x40
 LDI_C .tn_sync_on
 CALL :tt_assert_eq
 
-CALL :t_cursor_off                    # sets on=0 and syncs -> bit should clear
+CALL :cursor_off                    # sets on=0 and syncs -> bit should clear
 LD_AL %display_color%
 LDI_AH 0x00
 LDI_C .tn_sync_off
@@ -202,69 +205,49 @@ CALL :tt_assert_eq
 # --- edge bounds: address-linear movement, no-op at screen edges ---
 
 # right at (2,63) moves to (3,0), address-linear
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_AH 0x02
 LDI_AL 0x3f
-CALL :t_cursor_goto_rowcol
-CALL :t_cursor_right
+CALL :cursor_goto_rowcol
+CALL :cursor_right
 LDI_AH 0x03
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_right_wrap_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_crsr_col
+LD_AL $crsr_col
 LDI_C .tn_right_wrap_col
 CALL :tt_assert_eq
 
 # left at (0,0) is a no-op
-CALL :t_cursor_init
-CALL :t_cursor_left
+CALL :cursor_init
+CALL :cursor_left
 LDI_AH 0x00
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_left_edge_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_crsr_col
+LD_AL $crsr_col
 LDI_C .tn_left_edge_col
 CALL :tt_assert_eq
 
 # down at (59,0) is a no-op
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_AH 0x3b
 LDI_AL 0x00
-CALL :t_cursor_goto_rowcol
-CALL :t_cursor_down
+CALL :cursor_goto_rowcol
+CALL :cursor_down
 LDI_AH 0x3b
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_down_edge_row
 CALL :tt_assert_eq
 
 # up at (0,0) is a no-op
-CALL :t_cursor_init
-CALL :t_cursor_up
+CALL :cursor_init
+CALL :cursor_up
 LDI_AH 0x00
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_up_edge_row
-CALL :tt_assert_eq
-
-# --- :t_cursor_save / :t_cursor_restore round trip ---
-
-CALL :t_cursor_init
-LDI_AH 0x0a
-LDI_AL 0x14
-CALL :t_cursor_goto_rowcol
-CALL :t_cursor_save
-LDI_AH 0x00
-LDI_AL 0x00
-CALL :t_cursor_goto_rowcol
-CALL :t_cursor_restore
-LDI_AH 0x0a
-LD_AL $t_crsr_row
-LDI_C .tn_saverestore_row
-CALL :tt_assert_eq
-LDI_AH 0x14
-LD_AL $t_crsr_col
-LDI_C .tn_saverestore_col
 CALL :tt_assert_eq
 
 CALL :tt_result
@@ -305,5 +288,3 @@ RET
 .tn_left_edge_col "left_edge_col\0"
 .tn_down_edge_row "down_edge_row\0"
 .tn_up_edge_row "up_edge_row\0"
-.tn_saverestore_row "saverestore_row\0"
-.tn_saverestore_col "saverestore_col\0"

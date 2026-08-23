@@ -1,8 +1,13 @@
 # vim: syntax=asm-mycpu
 
-# Tests for 35-t_ansi.asm (TERMINAL_REFACTOR.md 2.2.3, non-SGR sequences).
-# Every test enables ANSI mode ($t_term_flags bit 1) and drives the parser
-# through :t_print so the string-end flush path gets exercised too.
+# Tests for the ROM's ANSI CSI state machine, os/bios/lib/terminal_ansi.asm
+# (TERMINAL_REFACTOR.md 2.2.3, non-SGR sequences). Every test enables ANSI
+# mode ($term_flags bit 1) and drives the parser through :print so the
+# string-end flush path gets exercised too.
+#
+# ESC[s/ESC[u save/restore were cut during the Phase 2 ROM-budget gate (see
+# terminal_ansi.asm's and cursor.asm's headers), so there is no
+# save/restore test here.
 
 :tests_ansi_run
 LDI_C .suite_name
@@ -16,91 +21,69 @@ ALUOP_ADDR %A%+%AL% .rom_row_baseline_val
 
 # --- basic movement, defaults, clamping ---
 
-CALL :t_cursor_init
-ST $t_term_flags 0x02                # ANSI on, raw off
+CALL :cursor_init
+ST $term_flags 0x02                # ANSI on, raw off
 LDI_C .seq_5c
-CALL :t_print                        # ESC[5C from (0,0) -> (0,5)
+CALL :print                        # ESC[5C from (0,0) -> (0,5)
 LDI_AH 0x00
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_5c_row
 CALL :tt_assert_eq
 LDI_AH 0x05
-LD_AL $t_crsr_col
+LD_AL $crsr_col
 LDI_C .tn_5c_col
 CALL :tt_assert_eq
 
 LDI_C .seq_b_default
-CALL :t_print                        # ESC[B default n=1 -> (1,5)
+CALL :print                        # ESC[B default n=1 -> (1,5)
 LDI_AH 0x01
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_b_row
 CALL :tt_assert_eq
 LDI_AH 0x05
-LD_AL $t_crsr_col
+LD_AL $crsr_col
 LDI_C .tn_b_col
 CALL :tt_assert_eq
 
 LDI_C .seq_gotorc
-CALL :t_print                        # ESC[10;20H -> row 9, col 19
+CALL :print                        # ESC[10;20H -> row 9, col 19
 LDI_AH 0x09
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_gotorc_row
 CALL :tt_assert_eq
 LDI_AH 0x13
-LD_AL $t_crsr_col
+LD_AL $crsr_col
 LDI_C .tn_gotorc_col
 CALL :tt_assert_eq
 
 LDI_C .seq_h_default
-CALL :t_print                        # ESC[H -> (0,0)
+CALL :print                        # ESC[H -> (0,0)
 LDI_AH 0x00
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_h_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_crsr_col
+LD_AL $crsr_col
 LDI_C .tn_h_col
 CALL :tt_assert_eq
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_AH 0x03
 LDI_AL 0x00
-CALL :t_cursor_goto_rowcol
+CALL :cursor_goto_rowcol
 LDI_C .seq_99a
-CALL :t_print                        # ESC[99A from row 3 -> clamp to row 0
+CALL :print                        # ESC[99A from row 3 -> clamp to row 0
 LDI_AH 0x00
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_clamp_row
-CALL :tt_assert_eq
-
-# --- save/restore ---
-
-CALL :t_cursor_init
-LDI_AH 0x08
-LDI_AL 0x08
-CALL :t_cursor_goto_rowcol
-LDI_C .seq_save
-CALL :t_print
-LDI_AH 0x00
-LDI_AL 0x00
-CALL :t_cursor_goto_rowcol
-LDI_C .seq_restore
-CALL :t_print
-LDI_AH 0x08
-LD_AL $t_crsr_row
-LDI_C .tn_restore_row
-CALL :tt_assert_eq
-LDI_AH 0x08
-LD_AL $t_crsr_col
-LDI_C .tn_restore_col
 CALL :tt_assert_eq
 
 # --- erase screen (2J) ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 ST %display_chars% 0x41              # sentinel so we can see it get cleared
 LDI_C .seq_2j
-CALL :t_print
+CALL :print
 LD_AL %display_chars%
 LDI_AH 0x00
 LDI_C .tn_2j_cleared
@@ -110,9 +93,12 @@ LDI_AH 0x00
 LDI_C .tn_2j_cleared_end
 CALL :tt_assert_eq
 
-# --- erase line (K), all three modes on a prepared row ---
+# --- erase line (K) is CUT/DISABLED (Phase 2 ROM-budget gate -- see
+# terminal_ansi.asm's dispatch-table comment by 'K'/.disp_erase_screen):
+# ESC[0K is now an unrecognized-but-valid final byte, a silent no-op per
+# 2.2.3's "valid but unsupported" rule -- the prepared row is untouched ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_D %display_chars%
 LDI_AL 0x00
 .el_fill_loop
@@ -126,30 +112,30 @@ JNE .el_fill_loop
 
 LDI_AH 0x00
 LDI_AL 0x20
-CALL :t_cursor_goto_rowcol            # cursor at (0,32)
+CALL :cursor_goto_rowcol            # cursor at (0,32)
 LDI_C .seq_0k
-CALL :t_print                         # clear cursor..end of line
+CALL :print                         # ESC[0K: no-op, row stays all 'X'
 LD_AL %display_chars%
 LDI_AH 0x58
 LDI_C .tn_0k_before
 CALL :tt_assert_eq                    # col 0 untouched
 LD_AL %display_chars%+32
-LDI_AH 0x00
+LDI_AH 0x58
 LDI_C .tn_0k_at_cursor
-CALL :tt_assert_eq                    # col 32 cleared
+CALL :tt_assert_eq                    # col 32 untouched (K is a no-op)
 LD_AL %display_chars%+63
-LDI_AH 0x00
+LDI_AH 0x58
 LDI_C .tn_0k_end
-CALL :tt_assert_eq                    # col 63 cleared
+CALL :tt_assert_eq                    # col 63 untouched (K is a no-op)
 
 # --- ANSI ?25h / ?25l toggles the cursor flag + display bit ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 ST %display_color% 0x00
 LDI_C .seq_hide
-CALL :t_print
+CALL :print
 LDI_AH 0x00
-LD_AL $t_crsr_on
+LD_AL $crsr_on
 LDI_C .tn_hide_flag
 CALL :tt_assert_eq
 LD_AL %display_color%
@@ -158,9 +144,9 @@ LDI_C .tn_hide_bit
 CALL :tt_assert_eq
 
 LDI_C .seq_show
-CALL :t_print
+CALL :print
 LDI_AH 0x01
-LD_AL $t_crsr_on
+LD_AL $crsr_on
 LDI_C .tn_show_flag
 CALL :tt_assert_eq
 LD_AL %display_color%
@@ -177,9 +163,9 @@ CALL :tt_assert_eq
 
 # --- error handling ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_invalid_esc                # "A\x1bQB"
-CALL :t_print
+CALL :print
 LD_AL %display_chars%
 LDI_AH 'A'
 LDI_C .tn_inv_a
@@ -197,18 +183,18 @@ LDI_AH 'B'
 LDI_C .tn_inv_b
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_ansi_state
+LD_AL $ansi_state
 LDI_C .tn_inv_state
 CALL :tt_assert_eq
 
 # --- valid but unsupported: ESC[6n renders nothing, resets state ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 ST %display_chars%+1 0x00             # sentinel: prior test left an ESC
                                        # glyph here; must not appear to
                                        # survive by accident
 LDI_C .seq_devstatus                  # "X\x1b[6n"
-CALL :t_print
+CALL :print
 LD_AL %display_chars%
 LDI_AH 'X'
 LDI_C .tn_devstatus_x
@@ -218,29 +204,29 @@ LDI_AH 0x00
 LDI_C .tn_devstatus_nothing
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_ansi_state
+LD_AL $ansi_state
 LDI_C .tn_devstatus_state
 CALL :tt_assert_eq
 
 # --- parameter overflow: 5+ params flushes the raw sequence ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_param_overflow              # "\x1b[1;2;3;4;5m"
-CALL :t_print
+CALL :print
 LD_AL %display_chars%
 LDI_AH 0x1b
 LDI_C .tn_overflow_esc
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_ansi_state
+LD_AL $ansi_state
 LDI_C .tn_overflow_state
 CALL :tt_assert_eq
 
 # --- mid-string termination: print("AB\x1b[3") flushes on the null ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_midterm                     # "AB\x1b[3"
-CALL :t_print
+CALL :print
 LD_AL %display_chars%
 LDI_AH 'A'
 LDI_C .tn_mid_a
@@ -262,7 +248,7 @@ LDI_AH '3'
 LDI_C .tn_mid_three
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_ansi_state
+LD_AL $ansi_state
 LDI_C .tn_mid_state
 CALL :tt_assert_eq
 
@@ -276,8 +262,6 @@ RET
 .seq_gotorc 0x1b "[10;20H\0"
 .seq_h_default 0x1b "[H\0"
 .seq_99a 0x1b "[99A\0"
-.seq_save 0x1b "[s\0"
-.seq_restore 0x1b "[u\0"
 .seq_2j 0x1b "[2J\0"
 .seq_0k 0x1b "[0K\0"
 .seq_hide 0x1b "[?25l\0"
@@ -296,8 +280,6 @@ RET
 .tn_h_row "h_row\0"
 .tn_h_col "h_col\0"
 .tn_clamp_row "clamp_row\0"
-.tn_restore_row "restore_row\0"
-.tn_restore_col "restore_col\0"
 .tn_2j_cleared "2j_cleared\0"
 .tn_2j_cleared_end "2j_cleared_end\0"
 .tn_0k_before "0k_before\0"

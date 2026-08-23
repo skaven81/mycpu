@@ -1,25 +1,41 @@
 # vim: syntax=asm-mycpu
 
-# Tests for 40-t_readline.asm (TERMINAL_REFACTOR.md 2.4.1/2.4.2). Every
-# test injects a scripted key sequence via :kb_inject *before* calling
-# :t_readline (which then consumes it synchronously from the poll loop),
-# and asserts the returned AL/AH plus buffer and/or screen content.
+# Tests for the ROM's readline, os/bios/lib/terminal_input.asm
+# (TERMINAL_REFACTOR.md 2.4.1/2.4.2). Every test injects a scripted key
+# sequence via :kb_inject *before* calling :readline (which then consumes
+# it synchronously from the poll loop), and asserts the returned AL/AH plus
+# buffer and/or screen content.
+#
+# AH (the flags input to :readline) grew a source-selector since Phase 1's
+# :t_readline: bit 0 = echo, bit 1 = accept keyboard, bit 2 = accept UART
+# (terminal_input.asm's header). Every test here drives input via
+# :kb_inject, so AH always has bit 1 set (0x03 for echo on, 0x02 for echo
+# off) -- passing the old Phase 1 value of just 0x01/0x00 (echo bit only,
+# no source bits) leaves $rl_source with neither source enabled and hangs
+# :readline's poll loop forever, since it never has a byte to read.
+#
+# Insert/overwrite mode (2.4.1 decision 5) was CUT/DELETED during the
+# Phase 2 ROM-budget gate (see terminal_input.asm's header): :readline
+# always inserts, and the Insert key (0x0f) is simply an unrecognized
+# control code that gets ignored. History (2.4.3) was also cut (commented
+# out, not deleted) and isn't tested here at all -- see terminal_input.asm's
+# header for how to restore it.
 
 :tests_readline_run
 LDI_C .suite_name
 CALL :tt_suite
-ST $t_term_flags 0x00                # fast path, ctrl chars on, echo via putchar
+ST $term_flags 0x00                # fast path, ctrl chars on, echo via putchar
 
 # --- "hi" + Enter ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_hi_enter
 LDI_AL 3
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01                          # echo on
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 ALUOP_ADDR %A%+%AH% .rt_status
 
@@ -54,14 +70,14 @@ CALL :tt_assert_eq
 
 # --- Enter alone ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_enter_only
 LDI_AL 1
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 ALUOP_ADDR %A%+%AH% .rt_status
 
@@ -80,14 +96,14 @@ CALL :tt_assert_eq
 
 # --- "abc" + BS + "d" + Enter -> "abd" ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_abc_bs_d
 LDI_AL 6
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 
 LDI_AH 0x03
@@ -113,14 +129,14 @@ CALL :tt_assert_eq
 
 # --- "abd" + Left + Left + "X" + Enter -> "aXbd" (insert, default mode) ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_abd_ll_x
 LDI_AL 7
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 
 LDI_AH 0x04
@@ -160,19 +176,21 @@ LD_AL %display_chars%+3
 LDI_C .tn_ins_screen3
 CALL :tt_assert_eq
 
-# --- "ab" + Left + Left + Insert + "X" + Enter -> "Xb" (overwrite) ---
+# --- "ab" + Left + Left + Insert + "X" + Enter -> "Xab" (overwrite mode is
+# cut: Insert (0x0f) is an unrecognized control code and is silently
+# ignored, so 'X' inserts at the cursor same as any other typed char) ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_ab_ll_ins_x
 LDI_AL 7
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 
-LDI_AH 0x02
+LDI_AH 0x03
 LD_AL .rt_len
 LDI_C .tn_ovw_len
 CALL :tt_assert_eq
@@ -180,25 +198,29 @@ LDI_AH 'X'
 LD_AL .rl_buf
 LDI_C .tn_ovw_buf0
 CALL :tt_assert_eq
-LDI_AH 'b'
+LDI_AH 'a'
 LD_AL .rl_buf+1
 LDI_C .tn_ovw_buf1
 CALL :tt_assert_eq
-LDI_AH 0x00
+LDI_AH 'b'
 LD_AL .rl_buf+2
 LDI_C .tn_ovw_buf2
+CALL :tt_assert_eq
+LDI_AH 0x00
+LD_AL .rl_buf+3
+LDI_C .tn_ovw_buf3
 CALL :tt_assert_eq
 
 # --- "abcd" + Home + DEL + Enter -> "bcd" ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_abcd_home_del
 LDI_AL 7
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 
 LDI_AH 0x03
@@ -220,14 +242,14 @@ CALL :tt_assert_eq
 
 # --- "abcd" + Home + End + "e" + Enter -> "abcde" (End returns to tail) ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_abcd_home_end_e
 LDI_AL 8
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 
 LDI_AH 0x05
@@ -241,14 +263,14 @@ CALL :tt_assert_eq
 
 # --- maxlen clamp: buffer size 5, "abcdefg" + Enter -> "abcd" ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_maxlen
 LDI_AL 8
 CALL :kb_inject
 LDI_C .rl_buf5
 LDI_AL 5
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 
 LDI_AH 0x04
@@ -270,14 +292,14 @@ CALL :tt_assert_eq
 
 # --- Ctrl+C mid-entry ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_C .seq_ctrlc
 LDI_AL 2
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 ALUOP_ADDR %A%+%AH% .rt_status
 
@@ -296,15 +318,15 @@ CALL :tt_assert_eq
 
 # --- Echo off: screen untouched, buffer still edited ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 ST %display_chars% 0x40              # sentinel ('@') at the start position
 LDI_C .seq_hi_enter
 LDI_AL 3
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x00                          # echo off
-CALL :t_readline
+LDI_AH 0x02                          # echo off, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 
 LDI_AH 0x02
@@ -324,27 +346,27 @@ LD_AL %display_chars%
 LDI_C .tn_noecho_screen
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_crsr_row
+LD_AL $crsr_row
 LDI_C .tn_noecho_row
 CALL :tt_assert_eq
 LDI_AH 0x00
-LD_AL $t_crsr_col
+LD_AL $crsr_col
 LDI_C .tn_noecho_col
 CALL :tt_assert_eq
 
 # --- Wrap: start at col 60, type 8 digits + Enter -> continues on next row ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_AH 0x05
 LDI_AL 0x3c                          # (row 5, col 60)
-CALL :t_cursor_goto_rowcol
+CALL :cursor_goto_rowcol
 LDI_C .seq_wrap_type
 LDI_AL 9                             # 8 digits + Enter
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 
 LDI_AH 0x08
@@ -366,17 +388,17 @@ CALL :tt_assert_eq
 
 # --- BS back across the wrap: same start, 8 digits then 5 backspaces ---
 
-CALL :t_cursor_init
+CALL :cursor_init
 LDI_AH 0x05
 LDI_AL 0x3c                          # (row 5, col 60)
-CALL :t_cursor_goto_rowcol
+CALL :cursor_goto_rowcol
 LDI_C .seq_wrap_bs
 LDI_AL 14                            # 8 digits + 5 backspaces + Enter
 CALL :kb_inject
 LDI_C .rl_buf
 LDI_AL 16
-LDI_AH 0x01
-CALL :t_readline
+LDI_AH 0x03                          # echo on, accept keyboard
+CALL :readline
 ALUOP_ADDR %A%+%AL% .rt_len
 
 LDI_AH 0x03
@@ -446,6 +468,7 @@ RET
 .tn_ovw_buf0 "ovw_buf0\0"
 .tn_ovw_buf1 "ovw_buf1\0"
 .tn_ovw_buf2 "ovw_buf2\0"
+.tn_ovw_buf3 "ovw_buf3\0"
 .tn_del_len "del_len\0"
 .tn_del_buf0 "del_buf0\0"
 .tn_del_buf1 "del_buf1\0"

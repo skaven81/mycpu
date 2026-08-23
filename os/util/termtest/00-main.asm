@@ -1,10 +1,15 @@
 # vim: syntax=asm-mycpu
 
-# termtest - userspace proving ground for the new terminal I/O library
-# (see /TERMINAL_REFACTOR.md). Runs a battery of self-checking test suites
-# and reports PASS/FAIL/RESULT lines over the UART; never uses the ROM's
-# own :print/:putchar so the framebuffer stays available to the library
-# under test.
+# termtest - ROM regression suite for the BIOS terminal subsystem (see
+# /TERMINAL_REFACTOR.md). Runs a battery of self-checking test suites
+# against the ROM's own :print/:putchar/:cursor_*/:ansi_*/:readline
+# directly, and reports PASS/FAIL/RESULT lines over the UART.
+#
+# Some suites below cover functionality that was cut during the Phase 2
+# ROM-budget gate (256-color SGR, ANSI save/restore, readline insert vs
+# overwrite mode); the readline history suite tested nothing but cut
+# functionality and was dropped entirely. See each affected suite file's
+# header for what changed and why.
 #
 # On exit, chains back to /SYS/SERRUN.ODY (if present) so a PC-side driver
 # can push the next build without a human re-typing "serrun" each time.
@@ -16,9 +21,9 @@ CALL :argv_init                  # AL=argc, C=argv base; unused, but must
 # VAR globals are NOT guaranteed zero at load: this ODY's VAR pool overlays
 # whatever the previously-run program (the shell, serrun, or a prior
 # termtest run) left behind. Force deterministic state before anything
-# touches the ANSI parser -- otherwise the first :t_print can see a stray
-# nonzero $t_ansi_state and flush garbage from an uninitialized seq buffer.
-CALL :t_ansi_reset
+# touches the ANSI parser -- otherwise the first :print can see a stray
+# nonzero $ansi_state and flush garbage from an uninitialized seq buffer.
+CALL :ansi_reset
 
 # --- smoke test: prove the harness itself works end to end ---
 LDI_C .suite_smoke_name
@@ -29,13 +34,12 @@ CALL :tt_pass
 
 CALL :tt_result
 
-# --- library test suites ---
+# --- ROM terminal subsystem test suites ---
 CALL :tests_cursor_run
 CALL :tests_output_run
 CALL :tests_ansi_run
 CALL :tests_sgr_run
 CALL :tests_readline_run
-CALL :tests_history_run
 
 # --- hand control back to serrun for the next iteration, if present ---
 CALL .chain_to_serrun
