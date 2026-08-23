@@ -180,15 +180,15 @@ JMP .program_exit
 # If `date`, just print date and exit
 .just_date
 CALL .printdate
-LDI_AL '\n'
-CALL :putchar
+LDI_C :str_nl
+CALL :print
 JMP .program_exit
 
 # If `time`, just print time and exit
 .just_time
 CALL .printtime
-LDI_AL '\n'
-CALL :putchar
+LDI_C :str_nl
+CALL :print
 JMP .program_exit
 
 .program_exit
@@ -197,11 +197,11 @@ RET
 # If called with no arguments, print date and time and exit
 .printclock
 CALL .printdate
-LDI_AL ' '
-CALL :putchar
+LDI_C .clock_sep_str
+CALL :print
 CALL .printtime
-LDI_AL '\n'
-CALL :putchar
+LDI_C :str_nl
+CALL :print
 RET
 
 # Prints the date with no newline
@@ -232,6 +232,7 @@ CALL :heap_push_AL
 CALL :printf
 RET
 
+.clock_sep_str " \0"
 .arg_date "date\0"
 .arg_time "time\0"
 .arg_set "set\0"

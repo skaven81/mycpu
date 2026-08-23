@@ -29,6 +29,13 @@
 # LF alone advances the row).
 
 :cmd_console
+# No visible cursor for this whole session -- .receive_vt220 feeds
+# arbitrary streamed bytes through :putchar, which never syncs, so any
+# mark left by the startup banner's :print call below would go stale the
+# instant the first byte arrives. readline turns the cursor back on by
+# itself the next time the shell prompts for input, so no explicit
+# cursor_on is needed before returning.
+CALL :cursor_off
 
 # Initialize argv: AL=argc, C=argv base
 CALL :argv_init

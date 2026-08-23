@@ -75,8 +75,8 @@ CALL :printf
 ALUOP_AL %A+1%+%AL%
 JMP .raw_loop
 .raw_loop_done
-LDI_AL '\n'
-CALL :putchar
+LDI_C :str_nl
+CALL :print              # not a bare putchar -- see :print's header
 
 ST $term_render_color 0x00
 RET

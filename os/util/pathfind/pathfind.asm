@@ -44,8 +44,12 @@ PUSH_CL
 CALL :print                     # print the directory entry
 POP_CL
 POP_CH
-LDI_AL '\n'
-CALL :putchar                   # print a trailing newline
+PUSH_CH                         # save dirent string address (needed below)
+PUSH_CL                         # across the newline print, which needs C
+LDI_C :str_nl                   # not a bare putchar -- see :print's header
+CALL :print                     # print a trailing newline
+POP_CL
+POP_CH                          # restore dirent string address
 # Free the directory entry string
 ALUOP_PUSH %B%+%BL%             # save the low byte of the directory entry
 MOV_CH_AH

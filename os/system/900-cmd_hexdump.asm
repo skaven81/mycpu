@@ -148,13 +148,13 @@ ST $term_flags 0x03      # raw+ANSI: literal control bytes in the ASCII
                           # column print as glyphs, while the row format's
                           # embedded SGR escapes still get parsed
 CALL :printf
-ST $term_flags 0x02      # back to ANSI-only for the newline putchar below
+ST $term_flags 0x02      # back to ANSI-only for the newline below
                           # (raw off, so '\n' actually advances the line)
-# Print the newline
-ALUOP_PUSH %A%+%AL%
-LDI_AL '\n'
-CALL :putchar
-POP_AL
+# Print the newline via :print (not a bare putchar -- putchar never syncs
+# the cursor, which would strand the printf call's mark; :print preserves
+# A and C for us, same as the manual push/pop this replaced)
+LDI_C :str_nl
+CALL :print
 
 # Increment start address to next row
 LDI_BH 0x00

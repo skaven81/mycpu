@@ -3,6 +3,7 @@
 #include "types.h"
 #include "terminal_output.h"
 #include "extmalloc.h"
+#include "cursor.h"
 
 // BIOS global variables -- accessed directly via $variable name mapping
 extern uint16_t malloc_range_start;
@@ -358,6 +359,13 @@ static void memstat_show_legend(void) {
 }
 
 void cmd_memstat(void) {
+    // Cursor off for the whole command: emit_ch (used heavily by
+    // memstat_show_main_ram/ext_ram's per-cell loops) calls :putchar
+    // directly, which never syncs the cursor -- with the cursor on, any
+    // :print/:printf call's mark above/between those loops would go
+    // stale the moment the loop moves on. Synced back on at the end,
+    // at the true final position.
+    cursor_off();
     term_flags = 0x02;      // ANSI mode on for the whole command
     memstat_sep_d();
     emit_sgr(97); print("     Wire Wrap Odyssey -- Memory Status"); emit_sgr(0);
@@ -368,4 +376,5 @@ void cmd_memstat(void) {
     memstat_show_legend();
     memstat_sep_d();
     term_flags = 0x00;
+    cursor_on();
 }

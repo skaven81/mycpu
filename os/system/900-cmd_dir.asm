@@ -58,8 +58,8 @@ MOV_CH_AH                       # Put address of dirent string into A
 MOV_CL_AL
 CALL :print
 CALL :free                      # free the rendered string
-LDI_AL '\n'
-CALL :putchar
+LDI_C :str_nl
+CALL :print                     # :print preserves C, no need to save it
 JMP .printdir_loop
 
 .loop_end

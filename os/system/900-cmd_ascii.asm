@@ -1,6 +1,11 @@
 # vim: syntax=asm-mycpu
 
 :cmd_ascii
+# Cursor off for the whole grid print (bracketed rather than converting
+# every space/newline below to :print -- see 40-parse_command.asm's
+# .print_help for why bare :putchar mixed with :print needs this).
+CALL :cursor_off
+
 # print the header
 LDI_AL '\n'
 CALL :putchar
@@ -48,6 +53,7 @@ JNZ .ascii_row_loop
 LDI_AL '\n'
 CALL :putchar
 
+CALL :cursor_on
 RET
 
 .header  "  0 1 2 3 4 5 6 7 8 9 a b c d e f\n\0"

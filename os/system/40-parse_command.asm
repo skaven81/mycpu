@@ -197,8 +197,15 @@ RET
 .cmd_end 0x00
 
 #####
-# Help output, prints list of available commands
+# Help output, prints list of available commands. Bracketed with
+# cursor_off/cursor_on (rather than converting every space/newline in the
+# loop below to :print) since this mixes many bare :putchar calls with
+# :print calls -- :putchar never syncs the cursor, so a :print call's mark
+# would otherwise go stale the moment any :putchar after it moves the
+# cursor. Off for the whole function, on (synced at the true final
+# position) right before returning.
 .print_help
+CALL :cursor_off
 LDI_C .cmd_help_header
 CALL :print
 
@@ -228,6 +235,7 @@ CALL :putchar
 LDI_C .cmd_help_header2
 CALL :print
 CALL :putchar
+CALL :cursor_on
 RET
 
 ###

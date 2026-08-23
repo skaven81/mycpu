@@ -38,10 +38,8 @@ CALL :printf
 JMP .prompt_done
 
 .nodir_prompt
-LDI_AL '>'
-CALL :putchar
-LDI_AL ' '
-CALL :putchar
+LDI_C .nodir_prompt_str
+CALL :print
 
 .prompt_done
 POP_CL
@@ -51,3 +49,4 @@ POP_AL
 RET
 
 .prompt "%c:%s> \0"
+.nodir_prompt_str "> \0"
