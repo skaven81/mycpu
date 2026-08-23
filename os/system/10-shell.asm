@@ -14,6 +14,14 @@
 :shell_main
 CALL :argv_init                 # pop and discard BIOS-provided argc/argv from heap
 
+# Command history's backing store and bookkeeping ($rl_history_page/
+# capacity/entry_sz/count/write_idx) are BIOS boot-time state (see
+# 00-main.asm), NOT set up here -- SYSTEM.ODY is a fresh ODY load every
+# time an external program exits back to the shell, so anything shell_main
+# itself allocated or reset would vanish/reset on the very next prompt,
+# which is exactly the bug this design avoids. read_command.asm just
+# flips $rl_history_buf on around its own :readline call.
+
 .command_loop
 CALL :print_prompt
 CALL :read_command              # sets :shell_argc, :shell_argv_ptr, :shell_input_ptr

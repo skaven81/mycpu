@@ -39,11 +39,31 @@ ALUOP_ADDR_C %A%+%AL%           # write lo byte
 # Accept both keyboard and UART so the shell is drivable remotely over
 # serial (the whole point of the serrun workflow) as well as locally.
 # :readline itself echoes the trailing newline, so no manual putchar here.
+#
+# History is enabled ONLY for this call: $rl_history_buf is the library's
+# actual enable switch and every :readline call anywhere sees it, so it's
+# pointed at the BIOS-reserved history page's extended-memory window
+# (0xE000, see 00-main.asm/terminal_input.asm) right before the call and
+# reset to 0 right after, so other readline consumers (e.g.
+# 900-cmd_clock.asm's numeric prompt) never see history enabled.
+# $rl_history_page == 0 means boot-time :extmalloc found no page available
+# (extended memory exhausted) -- skip enabling in that case rather than
+# hand a live history ring page 0, which doubles as BIOS scratch space.
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%                # C = input buffer address
+LD_AL $rl_history_page
+ALUOP_FLAGS %A%+%AL%
+JZ .rc_no_history
+LDI_AH 0xe0
+LDI_AL 0x00
+ALUOP_ADDR %A%+%AH% $rl_history_buf
+ALUOP_ADDR %A%+%AL% $rl_history_buf+1
+.rc_no_history
 LDI_AL 128                       # maxlen incl. null terminator (1 segment)
 LDI_AH 0x07                      # bit0 echo, bit1 keyboard, bit2 UART
 CALL :readline                   # AL=length (0=blank Enter or Ctrl+C), AH=status
+ST $rl_history_buf 0x00
+ST $rl_history_buf+1 0x00        # disable history again for every other caller
 
 # Allocate argv pointer array (4 blocks = 64 bytes = up to 31 args + null)
 # TODO: add overflow detection after strsplit -- if argc > 31, print a

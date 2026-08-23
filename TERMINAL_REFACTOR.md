@@ -1111,12 +1111,16 @@ matches Part 2 as specified.
    commit with a working copy, in the now-deleted
    `os/util/termtest/40-t_readline.asm`, is `6def9fd`).
 
-5. **Readline history (2.4.3) is disabled**, not deleted -- every
-   history-related line in `terminal_input.asm` (the `$rl_history_*` VAR
-   block, the Up/Down key dispatch, the `.rl_history_*`/`.rl_hist_*`
-   handlers) is commented out with a leading `#` and restorable verbatim.
-   `:ptmr_clk_set` (`os/bios/lib/prog_timer.asm`, zero consumers) was cut to
-   make ROM room for item 6 below instead of restoring history.
+5. **Readline history (2.4.3) was re-enabled 2026-08-23**, once a later ROM
+   eviction/dedup pass (`6115b68`) freed ~1484 bytes back. It is active only
+   in the SYSTEM.ODY shell's own command-line prompt, not everywhere
+   `:readline` is called: `$rl_history_buf` is left at 0 (disabled) by
+   default, and `os/system/30-read_command.asm` points it at the shell's
+   allocated ring buffer only around its own `:readline` call, resetting it
+   to 0 immediately after. `os/system/900-cmd_clock.asm`'s numeric-entry
+   `:readline` call never touches `$rl_history_buf`, so it sees it at 0 and
+   gets no history -- this is the caller-managed design (2.4.3) working as
+   specified, not a gap.
 
 6. **`:readline`'s `AH` flags byte gained a source-selector that 2.4.1 never
    specified.** The spec's `AH` layout was bit 0 = echo only (bits 1-7

@@ -31,17 +31,17 @@
 #    from scratch (or pulling the last commit that had it, `6def9fd`, which
 #    still carried a working hardware-proven copy in the now-deleted
 #    os/util/termtest/40-t_readline.asm).
-#  - History is CUT/DISABLED, to help fit the 16 KiB ROM budget. Every
-#    history-related line below is commented out with '#', NOT deleted --
-#    restore it verbatim by removing the leading '#' from: the
-#    $rl_history_* VAR block, the $rl_history_browse_idx reset in
-#    :readline's prologue, the Up/Down key dispatch in the poll loop, the
-#    .rl_history_up/.rl_history_down/.rl_hist_down_clear handlers, the
-#    .rl_history_append call in .rl_enter, and the whole "history helpers"
-#    section at the end of the file (.rl_hist_check onward). Design:
-#    entirely caller-managed via the $rl_history_* globals. $rl_history_buf
-#    ==0 disables history (every history helper starts with .rl_hist_check
-#    and no-ops). Enter with non-empty input appends to the circular buffer
+#  - History is entirely caller-managed via the $rl_history_* globals.
+#    $rl_history_buf==0 disables it (every history helper starts with
+#    .rl_hist_check and no-ops) -- a caller that never touches
+#    $rl_history_buf gets no history at all, which is how a readline call
+#    that shouldn't offer history (e.g. a fixed-format numeric prompt)
+#    stays plain: leave the global at 0, or save/clear/restore it around
+#    the call if some other consumer has it enabled. The caller allocates
+#    $rl_history_buf's backing RAM once and fills in capacity/entry_sz;
+#    entry_sz should be >= the readline maxlen it's paired with, or long
+#    entries get silently truncated on append (see .rl_history_append).
+#    Enter with non-empty input appends to the circular buffer
 #    (.rl_history_append, called from .rl_enter). Up/Down browse via
 #    $rl_history_browse_idx (0 = not browsing / editing a fresh line; 1 =
 #    newest entry, 2 = next older, ...; reset to 0 at the top of every
@@ -82,13 +82,21 @@ VAR global byte $rl_ret_status
 # History. $rl_history_buf==0 (the default) disables history --
 # every helper checks it via .rl_hist_check. The caller (the shell, or any
 # other consumer) allocates history_buf and fills in capacity/entry_sz to
-# enable it.
-#VAR global word $rl_history_buf
-#VAR global byte $rl_history_capacity
-#VAR global byte $rl_history_count
-#VAR global byte $rl_history_entry_sz
-#VAR global byte $rl_history_write_idx
-#VAR global byte $rl_history_browse_idx
+# enable it. $rl_history_page is separate: it names the one extended-memory
+# page the BIOS reserves at boot (see 00-main.asm) for SYSTEM.ODY's shell
+# history, which .rl_history_append/.rl_hist_load select via
+# :extpage_e_push before touching content addressed through
+# $rl_history_buf -- a consumer using its own plain malloc'd RAM instead
+# (a valid, fully independent alternative use of $rl_history_buf) pays a
+# harmless extra page-select round trip, since that only affects the
+# 0xE000 window and their buffer isn't in it.
+VAR global word $rl_history_buf
+VAR global byte $rl_history_page
+VAR global byte $rl_history_capacity
+VAR global byte $rl_history_count
+VAR global byte $rl_history_entry_sz
+VAR global byte $rl_history_write_idx
+VAR global byte $rl_history_browse_idx
 
 ######
 # Reads a line of input with line editing support.
@@ -133,7 +141,7 @@ ALUOP_ADDR %A%+%AL% $rl_buf+1
 
 ST $rl_len 0x00
 ST $rl_pos 0x00
-#ST $rl_history_browse_idx 0x00        # not browsing yet (harmless if disabled)
+ST $rl_history_browse_idx 0x00        # not browsing yet (harmless if disabled)
 
 LD_AH $crsr_addr_chars
 LD_AL $crsr_addr_chars+1
@@ -228,12 +236,12 @@ JEQ .rl_left
 LDI_BL 0x14                           # Right
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .rl_right
-#LDI_BL 0x12                           # Up
-#ALUOP_FLAGS %AxB%+%AL%+%BL%
-#JEQ .rl_history_up
-#LDI_BL 0x11                           # Down
-#ALUOP_FLAGS %AxB%+%AL%+%BL%
-#JEQ .rl_history_down
+LDI_BL 0x12                           # Up
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JEQ .rl_history_up
+LDI_BL 0x11                           # Down
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JEQ .rl_history_down
 
 LDI_BL ' '                            # printable range: 0x20-0x7e
 ALUOP_FLAGS %A-B%+%AL%+%BL%
@@ -246,7 +254,7 @@ JMP .rl_typed_char
 ###
 # Enter / Ctrl+C: both converge on .rl_finish (newline + return).
 .rl_enter
-#CALL .rl_history_append               # no-op if history disabled or line empty
+CALL .rl_history_append               # no-op if history disabled or line empty
 LD_AL $rl_len
 CALL .rl_seek                         # cursor to end of input before newline
 LD_AL $rl_len
@@ -334,59 +342,59 @@ ALUOP_ADDR %A%+%AL% $rl_pos
 CALL .rl_seek
 JMP .rl_poll
 
-####
-## Up: browse one entry further into the past (no-op if disabled or already
-## at the oldest stored entry).
-#.rl_history_up
-#CALL .rl_hist_check
-#JZ .rl_poll
-#
-#LD_AL $rl_history_browse_idx
-#LD_BL $rl_history_count
-#ALUOP_FLAGS %AxB%+%AL%+%BL%
-#JEQ .rl_poll                          # already showing the oldest entry
-#
-#ALUOP_AL %A+1%+%AL%
-#ALUOP_ADDR %A%+%AL% $rl_history_browse_idx
-#
-#CALL .rl_hist_calc_idx                # AL = target physical slot
-#CALL .rl_history_recall_entry
-#JMP .rl_poll
-#
-####
-## Down: browse one entry back toward the present; past the newest entry,
-## clears the line (no-op if disabled or already on the fresh/empty line).
-#.rl_history_down
-#CALL .rl_hist_check
-#JZ .rl_poll
-#
-#LD_AL $rl_history_browse_idx
-#ALUOP_FLAGS %A%+%AL%
-#JZ .rl_poll                           # already on the fresh line
-#
-#ALUOP_AL %A-1%+%AL%                   # Z set iff browse_idx just hit 0
-#ALUOP_ADDR %A%+%AL% $rl_history_browse_idx
-#JZ .rl_hist_down_clear
-#
-#CALL .rl_hist_calc_idx
-#CALL .rl_history_recall_entry
-#JMP .rl_poll
-#
-#.rl_hist_down_clear
-#LD_AL $rl_len
-#ALUOP_ADDR %A%+%AL% $rl_tmp_blank     # remember old length to blank it out
-#LDI_AL 0x00
-#ALUOP_ADDR %A%+%AL% $rl_len
-#ALUOP_ADDR %A%+%AL% $rl_pos
-#LD_DH $rl_buf
-#LD_DL $rl_buf+1
-#LDI_AL 0x00
-#ALUOP_ADDR_D %A%+%AL%                 # buf[0] = 0
-#LDI_AL 0x00
-#LD_BH $rl_tmp_blank
-#CALL .rl_redraw_tail
-#JMP .rl_poll
-#
+###
+# Up: browse one entry further into the past (no-op if disabled or already
+# at the oldest stored entry).
+.rl_history_up
+CALL .rl_hist_check
+JZ .rl_poll
+
+LD_AL $rl_history_browse_idx
+LD_BL $rl_history_count
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JEQ .rl_poll                          # already showing the oldest entry
+
+ALUOP_AL %A+1%+%AL%
+ALUOP_ADDR %A%+%AL% $rl_history_browse_idx
+
+CALL .rl_hist_calc_idx                # AL = target physical slot
+CALL .rl_history_recall_entry
+JMP .rl_poll
+
+###
+# Down: browse one entry back toward the present; past the newest entry,
+# clears the line (no-op if disabled or already on the fresh/empty line).
+.rl_history_down
+CALL .rl_hist_check
+JZ .rl_poll
+
+LD_AL $rl_history_browse_idx
+ALUOP_FLAGS %A%+%AL%
+JZ .rl_poll                           # already on the fresh line
+
+ALUOP_AL %A-1%+%AL%                   # Z set iff browse_idx just hit 0
+ALUOP_ADDR %A%+%AL% $rl_history_browse_idx
+JZ .rl_hist_down_clear
+
+CALL .rl_hist_calc_idx
+CALL .rl_history_recall_entry
+JMP .rl_poll
+
+.rl_hist_down_clear
+LD_AL $rl_len
+ALUOP_ADDR %A%+%AL% $rl_tmp_blank     # remember old length to blank it out
+LDI_AL 0x00
+ALUOP_ADDR %A%+%AL% $rl_len
+ALUOP_ADDR %A%+%AL% $rl_pos
+LD_DH $rl_buf
+LD_DL $rl_buf+1
+LDI_AL 0x00
+ALUOP_ADDR_D %A%+%AL%                 # buf[0] = 0
+LDI_AL 0x00
+LD_BH $rl_tmp_blank
+CALL .rl_redraw_tail
+JMP .rl_poll
+
 ###
 # A normal printable character: insert or overwrite per $rl_insert.
 .rl_typed_char
@@ -650,194 +658,210 @@ JMP .rl_shiftr_loop
 .rl_shiftr_done
 RET
 
-#######
-## --- history helpers ---
+######
+# --- history helpers ---
+
+######
+# Tests whether history is enabled.
 #
-#######
-## Tests whether history is enabled.
-##
-## Outputs: Z flag clear iff $rl_history_buf != 0 (JZ after the call means
-##          "disabled").
-## Clobbers: A, B.
-#.rl_hist_check
-#LD_AH $rl_history_buf
-#LD_AL $rl_history_buf+1
-#ALUOP_BL %A%+%AL%
-#ALUOP_FLAGS %A|B%+%AH%+%BL%
-#RET
+# Outputs: Z flag clear iff $rl_history_buf != 0 (JZ after the call means
+#          "disabled").
+# Clobbers: A, B.
+.rl_hist_check
+LD_AH $rl_history_buf
+LD_AL $rl_history_buf+1
+ALUOP_BL %A%+%AL%
+ALUOP_FLAGS %A|B%+%AH%+%BL%
+RET
+
+######
+# Converts a browse depth into a physical history slot index:
+# index = (write_idx - browse_idx) mod capacity. capacity is an arbitrary
+# runtime byte (not necessarily a power of two), so an underflowing
+# subtraction is corrected by adding capacity back on rather than masking.
 #
-#######
-## Converts a browse depth into a physical history slot index:
-## index = (write_idx - browse_idx) mod capacity. capacity is an arbitrary
-## runtime byte (not necessarily a power of two), so an underflowing
-## subtraction is corrected by adding capacity back on rather than masking.
-##
-## Outputs:
-##  AL - physical slot index
-## Clobbers: A, B.
-#.rl_hist_calc_idx
-#LD_AL $rl_history_write_idx
-#LD_BL $rl_history_browse_idx
-#ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff write_idx < browse_idx
-#JNO .rl_hist_calc_done
-#ALUOP_AL %A-B%+%AL%+%BL%              # AL = write_idx - browse_idx, wrapped mod 256
-#LD_BL $rl_history_capacity
-#ALUOP_AL %A+B%+%AL%+%BL%              # AL += capacity -> correct mod-capacity index
-#RET
-#.rl_hist_calc_done
-#ALUOP_AL %A-B%+%AL%+%BL%
-#RET
+# Outputs:
+#  AL - physical slot index
+# Clobbers: A, B.
+.rl_hist_calc_idx
+LD_AL $rl_history_write_idx
+LD_BL $rl_history_browse_idx
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff write_idx < browse_idx
+JNO .rl_hist_calc_done
+ALUOP_AL %A-B%+%AL%+%BL%              # AL = write_idx - browse_idx, wrapped mod 256
+LD_BL $rl_history_capacity
+ALUOP_AL %A+B%+%AL%+%BL%              # AL += capacity -> correct mod-capacity index
+RET
+.rl_hist_calc_done
+ALUOP_AL %A-B%+%AL%+%BL%
+RET
+
+######
+# Computes the RAM address of history slot AL (history_buf + AL*entry_sz),
+# via repeated 16-bit addition -- slot counts are small (bounded by
+# capacity, a handful to a few dozen in practice), so this stays far cheaper
+# than pulling in the general-purpose :mul16.
 #
-#######
-## Computes the RAM address of history slot AL (history_buf + AL*entry_sz),
-## via repeated 16-bit addition -- slot counts are small (bounded by
-## capacity, a handful to a few dozen in practice), so this stays far cheaper
-## than pulling in the general-purpose :mul16.
-##
-## Inputs:
-##  AL - history slot index
-## Outputs:
-##  D - history_buf + AL*entry_sz
-## Clobbers: A, B.
-#.rl_hist_addr
-#ALUOP_ADDR %A%+%AL% $rl_tmp_idx       # remaining iteration count
-#LD_AH $rl_history_buf
-#LD_AL $rl_history_buf+1               # A = running address accumulator
-#.rl_hist_addr_loop
-#LD_BL $rl_tmp_idx
-#ALUOP_FLAGS %B%+%BL%
-#JZ .rl_hist_addr_done
-#LDI_BH 0x00
-#LD_BL $rl_history_entry_sz
-#ALUOP16O_A %ALU16_A+B%
-#LD_BL $rl_tmp_idx
-#ALUOP_BL %B-1%+%BL%
-#ALUOP_ADDR %B%+%BL% $rl_tmp_idx
-#JMP .rl_hist_addr_loop
-#.rl_hist_addr_done
-#ALUOP_ADDR %A%+%AH% $rl_tmp_addr
-#ALUOP_ADDR %A%+%AL% $rl_tmp_addr+1
-#LD_DH $rl_tmp_addr
-#LD_DL $rl_tmp_addr+1
-#RET
+# Inputs:
+#  AL - history slot index
+# Outputs:
+#  D - history_buf + AL*entry_sz
+# Clobbers: A, B.
+.rl_hist_addr
+ALUOP_ADDR %A%+%AL% $rl_tmp_idx       # remaining iteration count
+LD_AH $rl_history_buf
+LD_AL $rl_history_buf+1               # A = running address accumulator
+.rl_hist_addr_loop
+LD_BL $rl_tmp_idx
+ALUOP_FLAGS %B%+%BL%
+JZ .rl_hist_addr_done
+LDI_BH 0x00
+LD_BL $rl_history_entry_sz
+ALUOP16O_A %ALU16_A+B%
+LD_BL $rl_tmp_idx
+ALUOP_BL %B-1%+%BL%
+ALUOP_ADDR %B%+%BL% $rl_tmp_idx
+JMP .rl_hist_addr_loop
+.rl_hist_addr_done
+ALUOP_ADDR %A%+%AH% $rl_tmp_addr
+ALUOP_ADDR %A%+%AL% $rl_tmp_addr+1
+LD_DH $rl_tmp_addr
+LD_DL $rl_tmp_addr+1
+RET
+
+######
+# Appends the current buffer to the history ring (Enter with non-empty
+# input only), then advances write_idx (wrapping at capacity) and count
+# (capped at capacity). No-op if history is disabled or the line is empty.
 #
-#######
-## Appends the current buffer to the history ring (Enter with non-empty
-## input only), then advances write_idx (wrapping at capacity) and count
-## (capped at capacity). No-op if history is disabled or the line is empty.
-##
-## Clobbers: A, B, C, D.
-#.rl_history_append
-#CALL .rl_hist_check
-#JZ .rl_hist_append_ret
+# Clobbers: A, B, C, D.
+.rl_history_append
+CALL .rl_hist_check
+JZ .rl_hist_append_ret
+
+LD_AL $rl_len
+ALUOP_FLAGS %A%+%AL%
+JZ .rl_hist_append_ret                # spec: empty Enter is not recorded
+
+LD_AL $rl_history_page
+CALL :heap_push_AL
+CALL :extpage_e_push                  # select the reserved history page (0xE000 window)
+
+LD_AL $rl_history_write_idx
+CALL .rl_hist_addr                    # D = destination slot
+
+# buf (source) and the history slot (dest) are disjoint allocations, so
+# there's no overlap direction to worry about -- the ROM's :memcpy is a
+# direct fit (and avoids carrying each byte through TD by hand, which
+# isn't interrupt-safe: TD is microcode scratch clobbered by IRQ entry).
+LD_CH $rl_buf
+LD_CL $rl_buf+1
+
+# Copy min(len, entry_sz-1) raw characters, then always write our own null
+# terminator afterward -- never rely on copying the source's own trailing
+# null, because when len is clamped down, the source byte at that offset
+# is a real character, not a null. entry_sz is a caller-managed global
+# with no library-enforced relationship to $rl_maxlen, so a caller that
+# configures entry_sz smaller than maxlen+1
+# would otherwise have a max-length line overflow this :memcpy into the
+# next history slot; truncating here matches this file's existing
+# maxlen-truncation philosophy for the input buffer itself.
+LD_AL $rl_len
+LD_BL $rl_history_entry_sz
+ALUOP_BL %B-1%+%BL%                   # BL = entry_sz - 1 (max chars that fit)
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff len < entry_sz-1 (already safe)
+JO .rl_hist_append_len_safe
+ALUOP_AL %B%+%BL%                     # clamp: AL = entry_sz - 1 (safe char count)
+.rl_hist_append_len_safe
+ALUOP_AL %A-1%+%AL%                   # :memcpy count-1 == (safe char count) - 1
+CALL :memcpy
+ALUOP_ADDR_D %zero%                   # explicit null at dest + safe char count
+                                       # (:memcpy's documented D postcondition)
+
+CALL :extpage_e_pop                   # restore whatever E page the caller had
+CALL :heap_pop_byte                   # discard the page we just left (unused)
+
+LD_AL $rl_history_write_idx
+ALUOP_AL %A+1%+%AL%
+LD_BL $rl_history_capacity
+ALUOP_FLAGS %AxB%+%AL%+%BL%           # E set iff wrapped past the last slot
+JNE .rl_hist_append_wstore
+LDI_AL 0x00
+.rl_hist_append_wstore
+ALUOP_ADDR %A%+%AL% $rl_history_write_idx
+
+LD_AL $rl_history_count
+LD_BL $rl_history_capacity
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff count < capacity
+JNO .rl_hist_append_ret               # already full: count stays capped
+ALUOP_AL %A+1%+%AL%
+ALUOP_ADDR %A%+%AL% $rl_history_count
+
+.rl_hist_append_ret
+RET
+
+######
+# Loads history slot AL into the readline buffer, updating $rl_len and
+# $rl_pos (cursor lands at the end of the recalled text). Does not touch
+# the screen -- callers handle repaint.
 #
-#LD_AL $rl_len
-#ALUOP_FLAGS %A%+%AL%
-#JZ .rl_hist_append_ret                # spec: empty Enter is not recorded
+# Inputs:
+#  AL - history slot index
+# Clobbers: A, B, C, D.
+.rl_hist_load
+ALUOP_PUSH %A%+%AL%                   # save the slot-index arg -- AL is about
+                                       # to be reused to select the history page
+LD_AL $rl_history_page
+CALL :heap_push_AL
+CALL :extpage_e_push                  # select the reserved history page (0xE000 window)
+POP_AL
+
+CALL .rl_hist_addr                    # D = source slot
+LD_CH $rl_buf
+LD_CL $rl_buf+1
+LDI_BL 0x00                           # running length
+.rl_hist_load_loop
+LDA_D_AL
+ALUOP_ADDR_C %A%+%AL%                 # buf[i] = char (copies the null too)
+ALUOP_FLAGS %A%+%AL%
+JZ .rl_hist_load_done
+INCR_C
+INCR_D
+ALUOP_BL %B+1%+%BL%
+JMP .rl_hist_load_loop
+.rl_hist_load_done
+CALL :extpage_e_pop                   # restore whatever E page the caller had
+CALL :heap_pop_byte                   # discard the page we just left (unused)
+ALUOP_ADDR %B%+%BL% $rl_len
+LD_AL $rl_len
+ALUOP_ADDR %A%+%AL% $rl_pos
+RET
+
+######
+# Full-line repaint after recalling history slot AL: loads the entry, then
+# reprints from index 0, blanking out any leftover tail from a longer
+# previous line.
 #
-#LD_AL $rl_history_write_idx
-#CALL .rl_hist_addr                    # D = destination slot
-#
-## buf (source) and the history slot (dest) are disjoint allocations, so
-## there's no overlap direction to worry about -- the ROM's :memcpy is a
-## direct fit (and avoids carrying each byte through TD by hand, which
-## isn't interrupt-safe: TD is microcode scratch clobbered by IRQ entry).
-#LD_CH $rl_buf
-#LD_CL $rl_buf+1
-#
-## Copy min(len, entry_sz-1) raw characters, then always write our own null
-## terminator afterward -- never rely on copying the source's own trailing
-## null, because when len is clamped down, the source byte at that offset
-## is a real character, not a null. entry_sz is a caller-managed global
-## with no library-enforced relationship to $rl_maxlen, so a caller that
-## configures entry_sz smaller than maxlen+1
-## would otherwise have a max-length line overflow this :memcpy into the
-## next history slot; truncating here matches this file's existing
-## maxlen-truncation philosophy for the input buffer itself.
-#LD_AL $rl_len
-#LD_BL $rl_history_entry_sz
-#ALUOP_BL %B-1%+%BL%                   # BL = entry_sz - 1 (max chars that fit)
-#ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff len < entry_sz-1 (already safe)
-#JO .rl_hist_append_len_safe
-#ALUOP_AL %B%+%BL%                     # clamp: AL = entry_sz - 1 (safe char count)
-#.rl_hist_append_len_safe
-#ALUOP_AL %A-1%+%AL%                   # :memcpy count-1 == (safe char count) - 1
-#CALL :memcpy
-#ALUOP_ADDR_D %zero%                   # explicit null at dest + safe char count
-#                                       # (:memcpy's documented D postcondition)
-#
-#LD_AL $rl_history_write_idx
-#ALUOP_AL %A+1%+%AL%
-#LD_BL $rl_history_capacity
-#ALUOP_FLAGS %AxB%+%AL%+%BL%           # E set iff wrapped past the last slot
-#JNE .rl_hist_append_wstore
-#LDI_AL 0x00
-#.rl_hist_append_wstore
-#ALUOP_ADDR %A%+%AL% $rl_history_write_idx
-#
-#LD_AL $rl_history_count
-#LD_BL $rl_history_capacity
-#ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff count < capacity
-#JNO .rl_hist_append_ret               # already full: count stays capped
-#ALUOP_AL %A+1%+%AL%
-#ALUOP_ADDR %A%+%AL% $rl_history_count
-#
-#.rl_hist_append_ret
-#RET
-#
-#######
-## Loads history slot AL into the readline buffer, updating $rl_len and
-## $rl_pos (cursor lands at the end of the recalled text). Does not touch
-## the screen -- callers handle repaint.
-##
-## Inputs:
-##  AL - history slot index
-## Clobbers: A, B, C, D.
-#.rl_hist_load
-#CALL .rl_hist_addr                    # D = source slot
-#LD_CH $rl_buf
-#LD_CL $rl_buf+1
-#LDI_BL 0x00                           # running length
-#.rl_hist_load_loop
-#LDA_D_AL
-#ALUOP_ADDR_C %A%+%AL%                 # buf[i] = char (copies the null too)
-#ALUOP_FLAGS %A%+%AL%
-#JZ .rl_hist_load_done
-#INCR_C
-#INCR_D
-#ALUOP_BL %B+1%+%BL%
-#JMP .rl_hist_load_loop
-#.rl_hist_load_done
-#ALUOP_ADDR %B%+%BL% $rl_len
-#LD_AL $rl_len
-#ALUOP_ADDR %A%+%AL% $rl_pos
-#RET
-#
-#######
-## Full-line repaint after recalling history slot AL: loads the entry, then
-## reprints from index 0, blanking out any leftover tail from a longer
-## previous line.
-##
-## Inputs:
-##  AL - history slot index
-## Clobbers: A, B, D (and whatever .rl_hist_load / .rl_redraw_tail clobber).
-#.rl_history_recall_entry
-#LD_BL $rl_len
-#ALUOP_ADDR %B%+%BL% $rl_tmp_blank     # stash old length
-#CALL .rl_hist_load
-#
-#LD_AL $rl_tmp_blank                   # old length
-#LD_BL $rl_len                         # new length
-#ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff old < new (nothing to blank)
-#JO .rl_hrecall_noblanks
-#ALUOP_AL %A-B%+%AL%+%BL%              # AL = old - new
-#JMP .rl_hrecall_have
-#.rl_hrecall_noblanks
-#LDI_AL 0x00
-#.rl_hrecall_have
-#ALUOP_ADDR %A%+%AL% $rl_tmp_blank
-#
-#LDI_AL 0x00                           # reprint from the start of the line
-#LD_BH $rl_tmp_blank
-#CALL .rl_redraw_tail
-#RET
+# Inputs:
+#  AL - history slot index
+# Clobbers: A, B, D (and whatever .rl_hist_load / .rl_redraw_tail clobber).
+.rl_history_recall_entry
+LD_BL $rl_len
+ALUOP_ADDR %B%+%BL% $rl_tmp_blank     # stash old length
+CALL .rl_hist_load
+
+LD_AL $rl_tmp_blank                   # old length
+LD_BL $rl_len                         # new length
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff old < new (nothing to blank)
+JO .rl_hrecall_noblanks
+ALUOP_AL %A-B%+%AL%+%BL%              # AL = old - new
+JMP .rl_hrecall_have
+.rl_hrecall_noblanks
+LDI_AL 0x00
+.rl_hrecall_have
+ALUOP_ADDR %A%+%AL% $rl_tmp_blank
+
+LDI_AL 0x00                           # reprint from the start of the line
+LD_BH $rl_tmp_blank
+CALL .rl_redraw_tail
+RET

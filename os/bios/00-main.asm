@@ -31,6 +31,15 @@ ST $term_render_color 0x00      # start out in reset mode (no color writes)
 ST $term_current_color %white%  # ensure color byte has a sane starting value
 CALL :ansi_reset
 
+# History disabled by default (same VAR-not-zeroed hazard as above -- a
+# stray nonzero $rl_history_buf would make the very first :readline call
+# anywhere treat garbage RAM as a history ring). SYSTEM.ODY's shell is the
+# only consumer that ever sets this nonzero, and only around its own
+# command-line :readline call (see read_command.asm). The backing storage
+# itself is reserved further below, once malloc/extmalloc are up.
+ST $rl_history_buf 0x00
+ST $rl_history_buf+1 0x00
+
 # Clear the screen
 LDI_AH  0x00
 LDI_AL  %white%
@@ -57,6 +66,37 @@ CALL :putchar
 
 # Initialize malloc space 0x6000 .. 0xafff
 CALL :boot_malloc_init
+
+# Reserve one whole extended-memory page (32 entries x 128 bytes = 4096
+# bytes, all of it) as the permanent backing store for SYSTEM.ODY's
+# command history ring. This has to live here, at boot, and NOT in the
+# shell -- SYSTEM.ODY is a fresh ODY load on every re-entry (every time
+# an external program exits back to the shell), so anything the shell
+# itself allocates or initializes is gone/reset on the very next prompt.
+# An extended-memory page reservation is BIOS-resident state instead
+# (:extmalloc's ledger lives in a VAR, untouched by the ODY loader), so
+# it's the one thing that actually survives across shell re-entries.
+# $rl_history_page names the page; $rl_history_buf (left at 0 above)
+# is still the enable/disable switch the shell flips per-call -- see
+# terminal_input.asm's history header and read_command.asm.
+#
+# $rl_history_page==0 below means :extmalloc found extended memory
+# already full (astronomically unlikely this early in boot, but page 0
+# doubles as scratch space other BIOS internals use, per extmalloc.asm's
+# header -- so capacity/entry_sz are left at 0 rather than risk pointing
+# a live history ring at it). read_command.asm checks $rl_history_page
+# before ever setting $rl_history_buf nonzero, so a 0 here just means
+# history silently never turns on, not a corrupted zero page.
+CALL :extmalloc                 # page number pushed to heap (0 = ext mem full)
+CALL :heap_pop_AL
+ALUOP_ADDR %A%+%AL% $rl_history_page
+ALUOP_FLAGS %A%+%AL%
+JZ .no_history_page
+ST $rl_history_capacity 32
+ST $rl_history_entry_sz 128
+.no_history_page
+ST $rl_history_count 0
+ST $rl_history_write_idx 0
 
 # Set up the timer in a known state
 CALL :timer_set_idle
