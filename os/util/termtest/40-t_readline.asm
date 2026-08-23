@@ -554,7 +554,9 @@ JMP .rl_seek                          # tail call
 .rl_shift_left
 ALUOP_ADDR %A%+%AL% $t_rl_tmp_idx
 LD_BL $t_rl_len
-ALUOP_BL %B-A%+%AL%+%BL%              # BL = len - N (copy count, incl. null)
+ALUOP_BL %B-A%+%AL%+%BL%              # BL = len - N (copy count, incl. null;
+                                       # N is always an existing index, so
+                                       # this is always >= 1)
 ALUOP_ADDR %B%+%BL% $t_rl_tmp_count
 
 CALL .rl_buf_addr                     # D = buf + N (dest)
@@ -567,23 +569,24 @@ LD_AL $t_rl_tmp_idx
 LDI_BL 0x01
 ALUOP_AL %A+B%+%AL%+%BL%              # AL = N+1
 CALL .rl_buf_addr                     # D = buf + N + 1 (source)
+ST_DH $t_rl_tmp_src
+ST_DL $t_rl_tmp_src+1
 
-LD_CH $t_rl_tmp_dest
-LD_CL $t_rl_tmp_dest+1                  # C free to use: :t_readline preserves
-                                       # the caller's C via push/pop around
-                                       # the whole function
-.rl_shiftl_loop
-LD_BL $t_rl_tmp_count
-ALUOP_FLAGS %B%+%BL%
-JZ .rl_shiftl_done
-LDA_D_TD
-STA_C_TD
-INCR_D
-INCR_C
-ALUOP_BL %B-1%+%BL%
-ALUOP_ADDR %B%+%BL% $t_rl_tmp_count
-JMP .rl_shiftl_loop
-.rl_shiftl_done
+# dest (N) < source (N+1), so a forward copy is safe (never reads data
+# it has already overwritten) -- use the ROM's :memcpy instead of a
+# hand-rolled loop through TD, which isn't interrupt-safe (TD is
+# microcode scratch clobbered by IRQ entry). :memcpy wants C = source,
+# D = dest -- the reverse of how the addresses were just computed above
+# -- so load both fresh from the stashed words rather than shuffling
+# registers (MOV only ever goes C/D -> A/B/T, never D -> C).
+LD_CH $t_rl_tmp_src
+LD_CL $t_rl_tmp_src+1
+LD_DH $t_rl_tmp_dest
+LD_DL $t_rl_tmp_dest+1
+LD_AL $t_rl_tmp_count
+ALUOP_AL %A-1%+%AL%                   # :memcpy takes count-1
+CALL :memcpy
+
 LD_AL $t_rl_len
 ALUOP_AL %A-1%+%AL%
 ALUOP_ADDR %A%+%AL% $t_rl_len
@@ -628,8 +631,16 @@ LD_DL $t_rl_tmp_dest+1                  # D = dest pointer, walked downward
 LD_BL $t_rl_tmp_count
 ALUOP_FLAGS %B%+%BL%
 JZ .rl_shiftr_done
+# dest = source+1 here, so this must walk high-to-low (an overlapping
+# forward copy would read already-overwritten bytes) -- the ROM's
+# increment-only :memcpy/MEMCPY_C_D can't do that direction, so this
+# stays a hand-rolled loop through TD. TD is microcode scratch clobbered
+# by IRQ entry, so mask interrupts across the exact two instructions
+# that carry the byte through it.
+MASKINT
 LDA_C_TD
 STA_D_TD
+UMASKINT
 DECR_C
 DECR_D
 ALUOP_BL %B-1%+%BL%
@@ -726,24 +737,14 @@ JZ .rl_hist_append_ret                # spec: empty Enter is not recorded
 LD_AL $t_rl_history_write_idx
 CALL .rl_hist_addr                    # D = destination slot
 
+# buf (source) and the history slot (dest) are disjoint allocations, so
+# there's no overlap direction to worry about -- the ROM's :memcpy is a
+# direct fit (and avoids carrying each byte through TD by hand, which
+# isn't interrupt-safe: TD is microcode scratch clobbered by IRQ entry).
 LD_CH $t_rl_buf
 LD_CL $t_rl_buf+1
-LD_AL $t_rl_len
-LDI_BL 0x01
-ALUOP_AL %A+B%+%AL%+%BL%              # copy count = len+1 (include the null)
-ALUOP_ADDR %A%+%AL% $t_rl_tmp_count
-.rl_hist_append_loop
-LD_BL $t_rl_tmp_count
-ALUOP_FLAGS %B%+%BL%
-JZ .rl_hist_append_copied
-LDA_C_TD
-STA_D_TD
-INCR_C
-INCR_D
-ALUOP_BL %B-1%+%BL%
-ALUOP_ADDR %B%+%BL% $t_rl_tmp_count
-JMP .rl_hist_append_loop
-.rl_hist_append_copied
+LD_AL $t_rl_len                       # :memcpy count-1 == len (count is len+1)
+CALL :memcpy
 
 LD_AL $t_rl_history_write_idx
 ALUOP_AL %A+1%+%AL%

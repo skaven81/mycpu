@@ -541,9 +541,13 @@ RET
 # null character. Used by backspace/delete to shift text left.
 #
 # All four pointer registers are in use (C/D walk the chars, A/B walk
-# the colors), which is why the null test has to bounce the char
-# through AL with a push/pop each iteration -- there is no way to test
-# TD. Runs at human keystroke rate, so per-iteration cost is fine.
+# the colors). The char copy uses the single-instruction MEMCPY_C_D
+# (atomic, so an interrupt can't land mid-copy); the color copy has no
+# equivalent bulk instruction (it's fixed to C/D), so it still carries
+# the byte through TD by hand across two instructions -- interrupts are
+# masked across exactly those two, since TD is microcode scratch that
+# IRQ entry clobbers regardless of what the handler does. Runs at human
+# keystroke rate, so per-iteration cost is fine.
 #
 # Inputs:
 #  C - source address (in the %display_chars% range)
@@ -580,18 +584,16 @@ POP_AL
 POP_AH                      # restore AH:AL = source color address
 
 .term_strcpy_loop
-LDA_C_TD                    # load character from source into TD
-STA_D_TD                    # write character from TD to dest
-LDA_A_TD                    # load color from source into TD
-STA_B_TD                    # write color from TD to dest
-
 ALUOP_PUSH %A%+%AL%
 LDA_C_AL
-ALUOP_FLAGS %A%+%AL%        # check if current char is null
+ALUOP_FLAGS %A%+%AL%        # check (BEFORE copying) whether this char is null
 POP_AL
-JZ .term_strcpy_done        # we are done if the last copied char was null
-INCR_C                      # move to next source char
-INCR_D                      # move to next dest char
+MEMCPY_C_D                  # copy the char C->D; auto-increments both C and D
+MASKINT
+LDA_A_TD                    # load color from source into TD
+STA_B_TD                    # write color from TD to dest
+UMASKINT
+JZ .term_strcpy_done        # we are done once the null itself has been copied
 ALUOP16O_A %ALU16_A+1%              # move to next source color
 ALUOP16O_B %ALU16_B+1%              # move to next dest color
 JMP .term_strcpy_loop       # keep looping until we hit a null character
