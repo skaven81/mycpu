@@ -27,6 +27,13 @@ $(BIOS_HEX) $(BIOS_SYM) &: $(ALL_SOURCES) $(OPCODES_FILE) $(MACROS)
 	$(Q)echo "  ASM     $(BIOS_HEX) $(BIOS_SYM)"
 	$(Q)$(ASSEMBLER) $(ASM_VERBOSE_FLAG) $(ASM_FLAGS) $(ALL_SOURCES) \
 		--output $(BIOS_HEX) --output-symbols $(BIOS_SYM) $(ASM_LOG_REDIRECT)
+	$(Q)size=$$(stat -c%s $(BIOS_HEX)); \
+		if [ $$size -gt 16384 ]; then \
+			echo "ERROR: BIOS $$size bytes > 16384 (ROM budget exceeded)"; \
+			exit 1; \
+		else \
+			echo "  SIZE    $(BIOS_HEX) $$size / 16384 bytes"; \
+		fi
 
 # C compiled assembly
 %.asm: %.c

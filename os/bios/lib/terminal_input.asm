@@ -1,347 +1,811 @@
 # vim: syntax=asm-mycpu
 
-# Terminal input functions
+# Buffer-based line editor (TERMINAL_REFACTOR.md 2.4). Replaces the ROM's
+# marks-based :input entirely -- :readline edits a caller-supplied RAM
+# buffer directly, with no marks, no cursor_save_mark/cursor_get_mark, and
+# no $input_flags.
+#
+# Design (2.4.1/2.4.2):
+#  - Caller owns the buffer (C), gives its size incl. null terminator (AL),
+#    and an echo flag (AH bit 0). Returns AL=length, AH=status (0=Enter,
+#    1=Ctrl+C).
+#  - Internal state ($rl_*) is not reentrant -- matches every other piece of
+#    terminal state in this library ($crsr_*, $ansi_*). One readline call is
+#    active at a time.
+#  - The screen cursor position always corresponds to buffer index $rl_pos
+#    once an operation finishes (invariant maintained by every handler).
+#    Since the framebuffer address space is linear (row*64+col, same scheme
+#    :cursor_goto_addr/.cursor_advance already use), the screen position for
+#    buffer index N is simply $rl_start_addr + N -- no need to track row/col
+#    incrementally, and this naturally reproduces the wrap-at-column-64
+#    behavior typed text gets from :putchar (.rl_seek). Known limitation: if
+#    the input scrolls the screen (crosses the bottom edge), $rl_start_addr
+#    goes stale and repositioning after that point would be wrong -- out of
+#    scope for the tested cases (Task 5).
+#  - Echo (2.4.1 decision 3): every screen-touching primitive (.rl_seek,
+#    .rl_echo_putchar) silently no-ops when $rl_echo is 0, so buffer edits
+#    happen identically whether or not echo is on.
+#  - Insert vs overwrite (2.4.1 decision 5) is CUT/DELETED (Phase 2
+#    ROM-budget gate, the owner's final cut after history/256-color
+#    SGR/ANSI save-restore/the Insert-key toggle -- unlike those, this one
+#    is a real delete, not a comment-out: the owner asked for the toggle
+#    key deleted first, found that left the dead $rl_insert mode-check and
+#    overwrite-mode branch still compiled in, and asked for those deleted
+#    too). :readline now always inserts; there is no overwrite mode. The
+#    hardware-proven Phase 1 insert/overwrite toggle is still intact and
+#    tested in os/util/termtest/40-t_readline.asm/80-tests_readline.asm if
+#    this ever needs to come back -- re-port from there rather than trying
+#    to reconstruct it from history, since this cut removed the code
+#    outright.
+#  - History (2.4.3, Task 6) is CUT/DISABLED (Phase 2 ROM-budget gate: the
+#    transferred terminal subsystem came in 1427 bytes over the 16 KiB BIOS
+#    budget; this was the owner's chosen third cut, after 256-color SGR and
+#    ANSI save/restore). Every history-related line below is commented out
+#    with '#', NOT deleted -- restore it verbatim by removing the leading
+#    '#' from: the $rl_history_* VAR block, the $rl_history_browse_idx reset
+#    in :readline's prologue, the Up/Down key dispatch in the poll loop, the
+#    .rl_history_up/.rl_history_down/.rl_hist_down_clear handlers, the
+#    :.rl_history_append call in .rl_enter, and the whole "history helpers"
+#    section at the end of the file (.rl_hist_check onward). This was
+#    hardware-proven working (42/42) in
+#    os/util/termtest/40-t_readline.asm/85-tests_history.asm before this
+#    cut -- that Phase 1 code is untouched and is the reference for
+#    restoring this. Original design notes, preserved for restoration:
+#    entirely caller-managed via the $rl_history_* globals. $rl_history_buf
+#    ==0 disables history (every history helper starts with .rl_hist_check
+#    and no-ops). Enter with non-empty input appends to the circular buffer
+#    (.rl_history_append, called from .rl_enter). Up/Down browse via
+#    $rl_history_browse_idx (0 = not browsing / editing a fresh line; 1 =
+#    newest entry, 2 = next older, ...; reset to 0 at the top of every
+#    :readline call), converted to a physical slot index by
+#    .rl_hist_calc_idx (write_idx - browse_idx, wrapped mod capacity --
+#    capacity is a runtime byte value, not necessarily a power of two, so
+#    this is done with an explicit borrow-then-add-capacity step, not a
+#    mask). Recall does a full-line repaint (.rl_history_recall_entry):
+#    reprint from index 0, blank out any leftover tail from a longer
+#    previous line, cursor lands at the end of the recalled text (matches
+#    typical shell history UX). Down past the newest entry (browse_idx back
+#    to 0) clears the line instead of loading an entry.
+#
+# Hardware-proven as os/util/termtest/40-t_readline.asm (t_-prefixed); this
+# is a mechanical prefix-strip transfer, no logic changes. Keyboard-only:
+# the source-selector concept the legacy :input gained in an earlier
+# revision (kb/UART/both) is NOT carried over here -- :readline's spec
+# (2.4.1) only ever specified keyboard input, and :input itself is deleted
+# by this transfer. Whether the shell needs UART-driven input again is a
+# Task 9 (shell migration) decision, not resolved here.
+
+VAR global word $rl_buf
+VAR global byte $rl_maxlen
+VAR global byte $rl_echo
+VAR global byte $rl_len
+VAR global byte $rl_pos
+VAR global word $rl_start_addr
+VAR global word $rl_tmp_addr
+VAR global byte $rl_tmp_char
+VAR global byte $rl_tmp_idx
+VAR global byte $rl_tmp_count
+VAR global byte $rl_tmp_blank
+VAR global word $rl_tmp_src
+VAR global word $rl_tmp_dest
+VAR global byte $rl_ret_len
+VAR global byte $rl_ret_status
+
+# History (2.4.3). $rl_history_buf==0 (the default) disables history --
+# every helper checks it via .rl_hist_check. The caller (the shell, or any
+# other consumer) allocates history_buf and fills in capacity/entry_sz to
+# enable it.
+#VAR global word $rl_history_buf
+#VAR global byte $rl_history_capacity
+#VAR global byte $rl_history_count
+#VAR global byte $rl_history_entry_sz
+#VAR global byte $rl_history_write_idx
+#VAR global byte $rl_history_browse_idx
 
 ######
-# Collect input from the user from the current cursor position.
-# Input ends when the user presses the enter key, at which point
-# the cursor is moved to the first column of the next line (scrolling
-# if necessary).
-#
-# When input is complete, cursor mark 0 will denote the beginning
-# of the input, and cursor mark 1 will denote the end. Since this
-# is just display data, there is no null termination.
-#
-# If the user presses ctrl+c at any time, ^C is printed over the
-# current cursor position, and mark 1 will be moved over mark 0
-# before returning, so the result will be an zero-length string.
-#
-# TODO: If the user presses the up or down arrow keys, the list of
-# marks is consulted so previous inputs can be retrieved.
+# Reads a line of input with line editing support.
 #
 # Inputs:
-#  AL - source selector: %input_source_kb% (0x01) to accept keyboard
-#       keystrokes, %input_source_uart% (0x02) to accept UART bytes, OR
-#       them together (0x03) to accept either. A UART byte is reported
-#       with keyflags AH=0x00 (no CTRL/ALT/etc -- a raw serial byte has no
-#       keyflag channel), so e.g. Ctrl+C cannot be sent as a byte 0x03 from
-#       a serial terminal; it must arrive as the literal byte 0x03 and is
-#       handled here as an ordinary ignored control character, same as any
-#       other sub-0x20 byte outside the handled set. Passing 0x00 (neither
-#       source enabled) hangs in the poll loop forever -- that's a caller
-#       bug, not a runtime error this function detects.
+#  C - pointer to caller-supplied buffer
+#  AL - buffer size in bytes, including the null terminator
+#  AH - flags: bit 0 = echo (1=on, 0=silent); bits 1-7 reserved
 # Outputs:
-#  cursor marks 0 and 1 will be set to mark the user's input
+#  AL - number of characters entered (0 for empty input or Ctrl+C)
+#  AH - status: 0 = Enter, 1 = Ctrl+C abort
+#  Buffer at C is filled with a null-terminated string
+# All other registers preserved.
+:readline
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
 
-VAR global byte $input_source
+ALUOP_ADDR %A%+%AL% $rl_maxlen
+LDI_BL 0x01
+ALUOP_ADDR %A&B%+%AH%+%BL% $rl_echo
 
-:input
-ALUOP_ADDR %A%+%AL% $input_source
-CALL :heap_push_all
+MOV_CH_AH
+MOV_CL_AL
+ALUOP_ADDR %A%+%AH% $rl_buf
+ALUOP_ADDR %A%+%AL% $rl_buf+1
 
-# Store our current cursor position at mark 0 and mark 1
-LDI_AL 0
-CALL :cursor_save_mark
-LDI_AL 1
-CALL :cursor_save_mark
+ST $rl_len 0x00
+ST $rl_pos 0x00
+#ST $rl_history_browse_idx 0x00        # not browsing yet (harmless if disabled)
+
+LD_AH $crsr_addr_chars
+LD_AL $crsr_addr_chars+1
+ALUOP_ADDR %A%+%AH% $rl_start_addr
+ALUOP_ADDR %A%+%AL% $rl_start_addr+1
+
+LD_DH $rl_buf
+LD_DL $rl_buf+1
+LDI_AL 0x00
+ALUOP_ADDR_D %A%+%AL%                 # buf[0] = 0 (empty string so far)
 
 ###
-# Start collecting input
-.input_loop
-LD_AL $input_source
-LDI_BL %input_source_kb%
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JZ .input_skip_kb               # keyboard source not requested
-CALL :kb_bufsize                # bufsize into AL
+# Poll loop
+.rl_poll
+CALL :kb_bufsize
 ALUOP_FLAGS %A%+%AL%
-JNZ .input_have_kb              # keyboard has a keystroke waiting, use it
-.input_skip_kb
-LD_AL $input_source
-LDI_BL %input_source_uart%
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JZ .input_loop                  # uart source not requested either, keep polling
-CALL :uart_bufsize              # otherwise check the serial port
+JZ .rl_poll
+CALL :kb_readbuf                      # AH=keyflags, AL=char
+
+LDI_BL %kb_keyflag_BREAK%
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JNZ .rl_poll                          # ignore break events
+
 ALUOP_FLAGS %A%+%AL%
-JZ .input_loop                  # empty, go back to polling
-CALL :uart_readbuf              # received byte into AL
-LDI_AH 0x00                     # no keyflags for serial input
-JMP .input_have_char
-.input_have_kb
-CALL :kb_readbuf                # buffered keyflags into AH and keystroke into AL
-.input_have_char
+JZ .rl_poll                           # ignore bare meta-keypresses (char==0)
 
-###
-# If a break event, do nothing
-LDI_BH %kb_keyflag_BREAK%
-ALUOP_FLAGS %A&B%+%AH%+%BH%
-JNZ .input_loop
-
-###
-# If a meta-keypress (e.g. ctrl or shift with no other key pressed)
-# then AL will be null, so don't record that keystroke.
-ALUOP_FLAGS %A%+%AL%
-JZ .input_loop
-
-###
-# If a ctrl+c, abort input
-LDI_BH %kb_keyflag_CTRL%
-ALUOP_FLAGS %A&B%+%AH%+%BH%
-JZ .input_not_ctrlc
+LDI_BL %kb_keyflag_CTRL%
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JZ .rl_not_ctrlc
 LDI_BL 'c'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .input_not_ctrlc
-LDI_AL '^'                      # it's a ctrl+c
-CALL :putchar
-LDI_AL 'C'
-CALL :putchar                   # print ^C at current cursor location
-LDI_AL 0
-CALL :cursor_get_mark           # fetch mark 0 into A
-LDI_BL 1
-CALL :cursor_save_mark_offset   # save mark at that same location
-JMP .input_done
+JEQ .rl_ctrlc
+.rl_not_ctrlc
 
-###
-# If any other altered key (other than shift) then ignore it.
-.input_not_ctrlc
-LDI_BH %kb_keyflag_CTRL%+%kb_keyflag_ALT%+%kb_keyflag_FUNCTION%
-ALUOP_FLAGS %A&B%+%AH%+%BH%
-JNZ .input_loop
+LDI_BL %kb_keyflag_CTRL%+%kb_keyflag_ALT%+%kb_keyflag_FUNCTION%
+ALUOP_FLAGS %A&B%+%AH%+%BL%
+JNZ .rl_poll                          # ignore any other modified key
 
-###
-# If insert key, toggle insert / overwrite mode
-LDI_BL 0x0f
+LDI_BL 0x0d                           # Enter (CR)
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .input_not_insert
-LD_AH $input_flags
-LDI_BH 0x01
-ALUOP_ADDR %AxB%+%AH%+%BH% $input_flags
-JMP .input_loop
-
-###
-# If home key, move cursor to beginning of string
-.input_not_insert
-LDI_BL 0x02
+JEQ .rl_enter
+LDI_BL 0x0a                           # Enter (LF)
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .input_not_home
-LDI_AL 0
-CALL :cursor_get_mark
-CALL :cursor_goto_addr
-JMP .input_loop
-
-###
-# If end key, move cursor to end of string
-.input_not_home
-LDI_BL 0x1e
+JEQ .rl_enter
+LDI_BL 0x08                           # Backspace
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .input_not_end
-LDI_AL 1
-CALL :cursor_get_mark
-CALL :cursor_goto_addr
-JMP .input_loop
-
-###
-# Backspace?
-.input_not_end
-LDI_BL 0x08
+JEQ .rl_backspace
+LDI_BL 0x7f                           # Delete
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .input_not_backspace
-# check if cursor is at mark 0.  If so, do nothing.
-LDI_AL 0
-CALL :cursor_get_mark                   # mark 0 offset in A
-LD16_B $crsr_addr_chars                 # cursor location in B
-ALUOP_PUSH %A%+%AH%
-LDI_AH 0x0f
-ALUOP_BH %A&B%+%AH%+%BH%                # B now contains just the offset
-POP_AH
-ALUOP16O_B %ALU16_B-A%                   # if cursor is to the right of the
-ALUOP_FLAGS %B%+%BH%                    # mark 0, then B will be nonzero;
-JNZ .do_backspace                       # if cursor is at mark 0 then B will
-ALUOP_FLAGS %B%+%BL%                    # be zero.
-JNZ .do_backspace
-JMP .input_loop                         # if zero, then do nothing
-
-.do_backspace
-CALL :cursor_left
-LDI_AL 1
-CALL :cursor_get_mark                   # mark 1 offset in A
-LDI_BH 0x40
-ALUOP_BH %A+B%+%AH%+%BH%                # hi byte of mark 1 char addr in BH
-ALUOP_BL %A%+%AL%                       # lo byte of mark 1 char addr in BL
-LD16_A $crsr_addr_chars                 # cursor location in A
-ALUOP16O_A %ALU16_A-1%                          # setup for loop entry
-.do_backspace_loop
-ALUOP16O_A %ALU16_A+1%
-ALUOP16O_A %ALU16_A+1%
-LDA_A_CL
-ALUOP16O_A %ALU16_A-1%
-STA_A_CL                                # copy char to the right, to the left
+JEQ .rl_delete
+LDI_BL 0x02                           # Home
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNZ .do_backspace_loop
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNZ .do_backspace_loop
-CALL :cursor_mark_left
-JMP .input_loop
-
-###
-# If not backspace, left arrow?
-.input_not_backspace
-LDI_BL 0x13
+JEQ .rl_home
+LDI_BL 0x1e                           # End
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .input_not_leftarrow
-LDI_AL 0
-CALL :cursor_get_mark                   # mark 0 offset in A
-LD16_B $crsr_addr_chars                 # cursor location in B
-ALUOP_PUSH %A%+%AH%
-LDI_AH 0x0f
-ALUOP_BH %A&B%+%AH%+%BH%                # B now contains just the offset
-POP_AH
-ALUOP16O_B %ALU16_B-A%                   # if cursor is to the right of the
-ALUOP_FLAGS %B%+%BH%                    # mark 0, then B will be nonzero;
-JNZ .do_leftarrow                       # if cursor is at mark 0 then B will
-ALUOP_FLAGS %B%+%BL%                    # be zero.
-JNZ .do_leftarrow
-JMP .input_loop                         # if zero, then do nothing
-.do_leftarrow
-CALL :cursor_left
-JMP .input_loop
-
-###
-# If not left arrow, right arrow?
-.input_not_leftarrow
-LDI_BL 0x14
+JEQ .rl_end
+LDI_BL 0x13                           # Left
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .input_not_rightarrow
-LDI_AL 1
-CALL :cursor_get_mark                   # mark 1 offset in A
-LD16_B $crsr_addr_chars                 # cursor location in B
-ALUOP_PUSH %A%+%AH%
-LDI_AH 0x0f
-ALUOP_BH %A&B%+%AH%+%BH%                # B now contains just the cursor offset
-POP_AH
-ALUOP16O_B %ALU16_B-A%                   # if cursor is to the left of the
-ALUOP_FLAGS %B%+%BH%                    # mark 1, then B will be nonzero;
-JNZ .do_rightarrow                      # if cursor is at mark 0 then B will
-ALUOP_FLAGS %B%+%BL%                    # be zero.
-JNZ .do_rightarrow
-JMP .input_loop
-.do_rightarrow
-CALL :cursor_right
-JMP .input_loop
-
-###
-# Delete?
-.input_not_rightarrow
-LDI_BL 0x7f
+JEQ .rl_left
+LDI_BL 0x14                           # Right
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .input_not_delete
-LDI_AL 1
-CALL :cursor_get_mark                   # mark 1 offset in A
-LDI_BH 0x40
-ALUOP_BH %A+B%+%AH%+%BH%                # hi byte of mark 1 char addr in BH
-ALUOP_BL %A%+%AL%                       # lo byte of mark 1 char addr in BL
-LD16_A $crsr_addr_chars                 # cursor location in A
+JEQ .rl_right
+#LDI_BL 0x12                           # Up
+#ALUOP_FLAGS %AxB%+%AL%+%BL%
+#JEQ .rl_history_up
+#LDI_BL 0x11                           # Down
+#ALUOP_FLAGS %AxB%+%AL%+%BL%
+#JEQ .rl_history_down
 
-ALUOP_FLAGS %B-A%+%AL%+%BL%             # if cursor is ahead of mark 1
-JO .input_loop                          # then do nothing
-
-.delete_loop
-ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .delete_loop_continue
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .delete_loop_continue
-JMP .delete_loop_done
-.delete_loop_continue
-ALUOP16O_A %ALU16_A+1%
-LDA_A_CL                                # get far char
-ALUOP16O_A %ALU16_A-1%                          # move left one
-STA_A_CL                                # put near char
-ALUOP16O_A %ALU16_A+1%                          # move right one
-JMP .delete_loop
-
-.delete_loop_done
-ALUOP_ADDR_B %zero%                     # blank char at mark 1
-LDI_AL 1
-CALL :cursor_mark_left                  # move mark 1 left
-JMP .input_loop
-
-###
-# Enter key?
-.input_not_delete
-LDI_BL 0x0d
-ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .input_done                 # we are done with input upon enter
-
-###
-# Newline?
-LDI_BL 0x0a
-ALUOP_FLAGS %AxB%+%AL%+%BL%
-JEQ .input_done                 # we are done with input upon newline
-
-###
-# Ignore if non-alphanumeric-or-punctuation
-.input_not_enter
-LDI_BL ' '
+LDI_BL ' '                            # printable range: 0x20-0x7e
 ALUOP_FLAGS %A-B%+%AL%+%BL%
-JO .input_loop                  # if B(space)>A(char), ignore it
+JO .rl_poll                           # < space -> ignore
 LDI_BL '~'
 ALUOP_FLAGS %B-A%+%AL%+%BL%
-JO .input_loop                  # if B(~)<A(char), ignore it
+JO .rl_poll                           # > tilde -> ignore
+JMP .rl_typed_char
 
 ###
-# If none of these, then it was a normal
-# character, so append/insert it and move on.
-LD_AH $input_flags
+# Enter / Ctrl+C: both converge on .rl_finish (newline + return).
+.rl_enter
+#CALL .rl_history_append               # no-op if history disabled or line empty
+LD_AL $rl_len
+CALL .rl_seek                         # cursor to end of input before newline
+LD_AL $rl_len
+LDI_AH 0x00
+JMP .rl_finish
+
+.rl_ctrlc
+LD_AL $rl_len                         # seek to end of whatever was visually
+CALL .rl_seek                         # typed; the RETURNED string is empty,
+ST $rl_len 0x00                       # but the screen isn't scrubbed
+LD_DH $rl_buf
+LD_DL $rl_buf+1
+LDI_AL 0x00
+ALUOP_ADDR_D %A%+%AL%                 # buf[0] = 0
+LDI_AL 0x00
+LDI_AH 0x01
+JMP .rl_finish
+
+.rl_finish                            # Input: AL = return length, AH = return status
+ALUOP_ADDR %A%+%AL% $rl_ret_len
+ALUOP_ADDR %A%+%AH% $rl_ret_status
+LDI_AL 0x0a
+CALL .rl_echo_putchar
+LD_AL $rl_ret_len
+LD_AH $rl_ret_status
+JMP .rl_return
+
+###
+# Backspace: move left (no-op at buffer start), then remove the char now
+# under the cursor and redraw the tail (2.4.2).
+.rl_backspace
+LD_AL $rl_pos
+ALUOP_FLAGS %A%+%AL%
+JZ .rl_poll
+ALUOP_AL %A-1%+%AL%
+ALUOP_ADDR %A%+%AL% $rl_pos
+CALL .rl_shift_left
+LD_AL $rl_pos
 LDI_BH 0x01
-ALUOP_FLAGS %A&B%+%AH%+%BH%
-JNZ .input_handle_insert
-# overwrite mode
-ALUOP_PUSH %A%+%AL%
-LDI_AL 1
-CALL :cursor_get_mark           # mark 1 in A
-LDI_BH 0x40
-ALUOP_AH %A|B%+%AH%+%BH%        # A = char addr of mark 1
-LD16_B $crsr_addr_chars         # B = char addr of cursor
-ALUOP_FLAGS %AxB%+%AL%+%BL%     # if A!=B, don't extend mark 1 right
-JNE .overwrite_noextend
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .overwrite_noextend
+CALL .rl_redraw_tail
+JMP .rl_poll
 
-POP_AL
-CALL :putchar
-LDI_AL 1
-CALL :cursor_mark_right
-JMP .input_loop
+###
+# Delete: remove the char under the cursor (no-op at buffer end).
+.rl_delete
+LD_AL $rl_pos
+LD_BL $rl_len
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff pos < len
+JNO .rl_poll
+LD_AL $rl_pos
+CALL .rl_shift_left
+LD_AL $rl_pos
+LDI_BH 0x01
+CALL .rl_redraw_tail
+JMP .rl_poll
 
-.overwrite_noextend
-POP_AL
-CALL :putchar
-JMP .input_loop
+.rl_home
+LDI_AL 0x00
+ALUOP_ADDR %A%+%AL% $rl_pos
+CALL .rl_seek
+JMP .rl_poll
 
-# insert mode
-.input_handle_insert
-ALUOP_PUSH %A%+%AL%
-LDI_AL 1
-CALL :cursor_get_mark           # mark 1 in A
-LDI_BH 0x40
-ALUOP_AH %A|B%+%AH%+%BH%        # A = char addr of mark 1 4005
-LD16_B $crsr_addr_chars         # B = char addr of cursor 4005
-ALUOP16O_A %ALU16_A+1%                  # get A in position to start the loop 4006
-.insert_copy_loop
-ALUOP16O_A %ALU16_A-1%                  # 4005
-LDA_A_CL                        # char @A into CL
-ALUOP16O_A %ALU16_A+1%                  # move right 4006
-STA_A_CL                        # CL into char @A
-ALUOP16O_A %ALU16_A-1%                  # 4005
+.rl_end
+LD_AL $rl_len
+ALUOP_ADDR %A%+%AL% $rl_pos
+CALL .rl_seek
+JMP .rl_poll
+
+.rl_left
+LD_AL $rl_pos
+ALUOP_FLAGS %A%+%AL%
+JZ .rl_poll
+ALUOP_AL %A-1%+%AL%
+ALUOP_ADDR %A%+%AL% $rl_pos
+CALL .rl_seek
+JMP .rl_poll
+
+.rl_right
+LD_AL $rl_pos
+LD_BL $rl_len
 ALUOP_FLAGS %AxB%+%AL%+%BL%
-JNE .insert_copy_loop
-ALUOP_FLAGS %AxB%+%AH%+%BH%
-JNE .insert_copy_loop
-POP_AL
-CALL :putchar
-LDI_AL 1
-CALL :cursor_mark_right
-JMP .input_loop
+JEQ .rl_poll                          # already at end
+ALUOP_AL %A+1%+%AL%
+ALUOP_ADDR %A%+%AL% $rl_pos
+CALL .rl_seek
+JMP .rl_poll
 
-.input_done
-CALL :heap_pop_all
+####
+## Up: browse one entry further into the past (no-op if disabled or already
+## at the oldest stored entry).
+#.rl_history_up
+#CALL .rl_hist_check
+#JZ .rl_poll
+#
+#LD_AL $rl_history_browse_idx
+#LD_BL $rl_history_count
+#ALUOP_FLAGS %AxB%+%AL%+%BL%
+#JEQ .rl_poll                          # already showing the oldest entry
+#
+#ALUOP_AL %A+1%+%AL%
+#ALUOP_ADDR %A%+%AL% $rl_history_browse_idx
+#
+#CALL .rl_hist_calc_idx                # AL = target physical slot
+#CALL .rl_history_recall_entry
+#JMP .rl_poll
+#
+####
+## Down: browse one entry back toward the present; past the newest entry,
+## clears the line (no-op if disabled or already on the fresh/empty line).
+#.rl_history_down
+#CALL .rl_hist_check
+#JZ .rl_poll
+#
+#LD_AL $rl_history_browse_idx
+#ALUOP_FLAGS %A%+%AL%
+#JZ .rl_poll                           # already on the fresh line
+#
+#ALUOP_AL %A-1%+%AL%                   # Z set iff browse_idx just hit 0
+#ALUOP_ADDR %A%+%AL% $rl_history_browse_idx
+#JZ .rl_hist_down_clear
+#
+#CALL .rl_hist_calc_idx
+#CALL .rl_history_recall_entry
+#JMP .rl_poll
+#
+#.rl_hist_down_clear
+#LD_AL $rl_len
+#ALUOP_ADDR %A%+%AL% $rl_tmp_blank     # remember old length to blank it out
+#LDI_AL 0x00
+#ALUOP_ADDR %A%+%AL% $rl_len
+#ALUOP_ADDR %A%+%AL% $rl_pos
+#LD_DH $rl_buf
+#LD_DL $rl_buf+1
+#LDI_AL 0x00
+#ALUOP_ADDR_D %A%+%AL%                 # buf[0] = 0
+#LDI_AL 0x00
+#LD_BH $rl_tmp_blank
+#CALL .rl_redraw_tail
+#JMP .rl_poll
+#
+###
+# A normal printable character: insert or overwrite per $rl_insert.
+.rl_typed_char
+ALUOP_ADDR %A%+%AL% $rl_tmp_char
+
+# Always insert -- overwrite mode is CUT/DELETED (see file header).
+CALL .rl_is_full
+JEQ .rl_poll                          # buffer full: ignore the keystroke
+
+LD_AL $rl_pos
+ALUOP_ADDR %A%+%AL% $rl_tmp_idx       # remember the insertion point
+CALL .rl_insert_shift_right
+
+LD_AL $rl_tmp_idx
+CALL .rl_buf_addr                     # D = buf + insertion point
+LD_AL $rl_tmp_char
+ALUOP_ADDR_D %A%+%AL%
+
+LD_AL $rl_len
+ALUOP_AL %A+1%+%AL%
+ALUOP_ADDR %A%+%AL% $rl_len
+LD_AL $rl_tmp_idx
+ALUOP_AL %A+1%+%AL%
+ALUOP_ADDR %A%+%AL% $rl_pos
+
+LD_AL $rl_tmp_idx
+LDI_BH 0x00                           # string grew: nothing to blank
+CALL .rl_redraw_tail
+JMP .rl_poll
+
+.rl_return
+POP_BL
+POP_BH
+POP_DL
+POP_DH
+POP_CL
+POP_CH
 RET
+
+######
+# --- internal helpers ---
+
+######
+# Moves the screen cursor to the position corresponding to buffer index AL
+# ($rl_start_addr + AL, address-linear -- see file header). No-ops if echo
+# is off.
+#
+# Inputs:
+#  AL - buffer index
+# Clobbers: A, B.
+.rl_seek
+LD_BL $rl_echo
+ALUOP_FLAGS %B%+%BL%
+JZ .rl_seek_ret
+ALUOP_BL %A%+%AL%
+LDI_BH 0x00
+LD_AH $rl_start_addr
+LD_AL $rl_start_addr+1
+ALUOP16O_A %ALU16_A+B%
+JMP :cursor_goto_addr                 # tail call
+.rl_seek_ret
+RET
+
+######
+# Prints AL via :putchar unless echo is off.
+#
+# Inputs:
+#  AL - char
+.rl_echo_putchar
+ALUOP_PUSH %A%+%AL%
+LD_AL $rl_echo
+ALUOP_FLAGS %A%+%AL%
+POP_AL
+JZ .rl_echo_ret
+CALL :putchar
+.rl_echo_ret
+RET
+
+######
+# Tests whether the buffer already holds the maximum content chars
+# (maxlen-1). Shared by the insert and overwrite-extend paths.
+#
+# Outputs: E flag set iff full (JEQ after the call).
+# Clobbers: A, B.
+.rl_is_full
+LD_AL $rl_maxlen
+LDI_BL 0x01
+ALUOP_AL %A-B%+%AL%+%BL%              # AL = maxlen-1 (max content chars)
+LD_BL $rl_len
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+RET
+
+######
+# Computes a pointer into the readline buffer at a given index.
+#
+# Inputs:
+#  AL - buffer index
+# Outputs:
+#  D - $rl_buf + AL
+# Clobbers: A, B.
+.rl_buf_addr
+ALUOP_BL %A%+%AL%
+LDI_BH 0x00
+LD_AH $rl_buf
+LD_AL $rl_buf+1
+ALUOP16O_A %ALU16_A+B%
+ALUOP_ADDR %A%+%AH% $rl_tmp_addr
+ALUOP_ADDR %A%+%AL% $rl_tmp_addr+1
+LD_DH $rl_tmp_addr
+LD_DL $rl_tmp_addr+1
+RET
+
+######
+# Seeks the screen cursor to buffer index AL, then reprints buf[AL..len-1]
+# via :putchar, then BH additional trailing spaces (to erase leftover
+# glyphs when the content shrank), then reseeks to $rl_pos. Every step is a
+# no-op when echo is off (via .rl_seek/.rl_echo_putchar).
+#
+# Inputs:
+#  AL - start index to reprint from
+#  BH - trailing blank count (0 or 1)
+# Clobbers: A, B, D.
+.rl_redraw_tail
+ALUOP_ADDR %B%+%BH% $rl_tmp_blank
+ALUOP_PUSH %A%+%AL%
+CALL .rl_seek
+POP_AL
+
+LD_BL $rl_len
+ALUOP_BL %B-A%+%AL%+%BL%              # BL = len - start_index
+ALUOP_ADDR %B%+%BL% $rl_tmp_count
+CALL .rl_buf_addr                     # D = buf + start_index
+
+.rl_rt_loop
+LD_BL $rl_tmp_count
+ALUOP_FLAGS %B%+%BL%
+JZ .rl_rt_blanks
+LDA_D_AL
+CALL .rl_echo_putchar
+INCR_D
+LD_BL $rl_tmp_count
+ALUOP_BL %B-1%+%BL%
+ALUOP_ADDR %B%+%BL% $rl_tmp_count
+JMP .rl_rt_loop
+.rl_rt_blanks
+LD_BL $rl_tmp_blank
+ALUOP_FLAGS %B%+%BL%
+JZ .rl_rt_reseek
+LDI_AL ' '
+CALL .rl_echo_putchar
+LD_BL $rl_tmp_blank
+ALUOP_BL %B-1%+%BL%
+ALUOP_ADDR %B%+%BL% $rl_tmp_blank
+JMP .rl_rt_blanks
+.rl_rt_reseek
+LD_AL $rl_pos
+JMP .rl_seek                          # tail call
+
+######
+# Removes one character from the buffer at index AL, shifting buf[AL+1..
+# len] (including the null terminator) left over buf[AL..len-1]. len--.
+#
+# Inputs:
+#  AL - index to remove
+# Clobbers: A, B, C, D.
+.rl_shift_left
+ALUOP_ADDR %A%+%AL% $rl_tmp_idx
+LD_BL $rl_len
+ALUOP_BL %B-A%+%AL%+%BL%              # BL = len - N (copy count, incl. null;
+                                       # N is always an existing index, so
+                                       # this is always >= 1)
+ALUOP_ADDR %B%+%BL% $rl_tmp_count
+
+CALL .rl_buf_addr                     # D = buf + N (dest)
+MOV_DH_AH
+MOV_DL_AL
+ALUOP_ADDR %A%+%AH% $rl_tmp_dest
+ALUOP_ADDR %A%+%AL% $rl_tmp_dest+1
+
+LD_AL $rl_tmp_idx
+LDI_BL 0x01
+ALUOP_AL %A+B%+%AL%+%BL%              # AL = N+1
+CALL .rl_buf_addr                     # D = buf + N + 1 (source)
+ST_DH $rl_tmp_src
+ST_DL $rl_tmp_src+1
+
+# dest (N) < source (N+1), so a forward copy is safe (never reads data
+# it has already overwritten) -- use the ROM's :memcpy instead of a
+# hand-rolled loop through TD, which isn't interrupt-safe (TD is
+# microcode scratch clobbered by IRQ entry). :memcpy wants C = source,
+# D = dest -- the reverse of how the addresses were just computed above
+# -- so load both fresh from the stashed words rather than shuffling
+# registers (MOV only ever goes C/D -> A/B/T, never D -> C).
+LD_CH $rl_tmp_src
+LD_CL $rl_tmp_src+1
+LD_DH $rl_tmp_dest
+LD_DL $rl_tmp_dest+1
+LD_AL $rl_tmp_count
+ALUOP_AL %A-1%+%AL%                   # :memcpy takes count-1
+CALL :memcpy
+
+LD_AL $rl_len
+ALUOP_AL %A-1%+%AL%
+ALUOP_ADDR %A%+%AL% $rl_len
+RET
+
+######
+# Opens a one-character gap at buffer index AL, shifting buf[AL..len]
+# (including the null terminator) right by one. Does NOT update $rl_len
+# (the caller bumps it after writing the new character into the gap).
+#
+# Inputs:
+#  AL - index of the new gap
+# Clobbers: A, B, C, D.
+.rl_insert_shift_right
+ALUOP_ADDR %A%+%AL% $rl_tmp_idx
+LD_BL $rl_len
+ALUOP_BL %B-A%+%AL%+%BL%              # BL = len - N
+ALUOP_BL %B+1%+%BL%                   # BL = len - N + 1 (copy count, incl. null)
+ALUOP_ADDR %B%+%BL% $rl_tmp_count
+
+LD_AL $rl_len                         # source: buf + len (the current null)
+CALL .rl_buf_addr
+MOV_DH_AH
+MOV_DL_AL
+ALUOP_ADDR %A%+%AH% $rl_tmp_src
+ALUOP_ADDR %A%+%AL% $rl_tmp_src+1
+
+LD_AL $rl_len
+LDI_BL 0x01
+ALUOP_AL %A+B%+%AL%+%BL%              # dest: buf + len + 1
+CALL .rl_buf_addr
+MOV_DH_AH
+MOV_DL_AL
+ALUOP_ADDR %A%+%AH% $rl_tmp_dest
+ALUOP_ADDR %A%+%AL% $rl_tmp_dest+1
+
+LD_CH $rl_tmp_src
+LD_CL $rl_tmp_src+1                   # C = source pointer, walked downward
+LD_DH $rl_tmp_dest
+LD_DL $rl_tmp_dest+1                  # D = dest pointer, walked downward
+.rl_shiftr_loop
+LD_BL $rl_tmp_count
+ALUOP_FLAGS %B%+%BL%
+JZ .rl_shiftr_done
+# dest = source+1 here, so this must walk high-to-low (an overlapping
+# forward copy would read already-overwritten bytes) -- the ROM's
+# increment-only :memcpy/MEMCPY_C_D can't do that direction, so this
+# stays a hand-rolled loop through TD. TD is microcode scratch clobbered
+# by IRQ entry, so mask interrupts across the exact two instructions
+# that carry the byte through it.
+MASKINT
+LDA_C_TD
+STA_D_TD
+UMASKINT
+DECR_C
+DECR_D
+ALUOP_BL %B-1%+%BL%
+ALUOP_ADDR %B%+%BL% $rl_tmp_count
+JMP .rl_shiftr_loop
+.rl_shiftr_done
+RET
+
+#######
+## --- history helpers (2.4.3) ---
+#
+#######
+## Tests whether history is enabled.
+##
+## Outputs: Z flag clear iff $rl_history_buf != 0 (JZ after the call means
+##          "disabled").
+## Clobbers: A, B.
+#.rl_hist_check
+#LD_AH $rl_history_buf
+#LD_AL $rl_history_buf+1
+#ALUOP_BL %A%+%AL%
+#ALUOP_FLAGS %A|B%+%AH%+%BL%
+#RET
+#
+#######
+## Converts a browse depth into a physical history slot index:
+## index = (write_idx - browse_idx) mod capacity. capacity is an arbitrary
+## runtime byte (not necessarily a power of two), so an underflowing
+## subtraction is corrected by adding capacity back on rather than masking.
+##
+## Outputs:
+##  AL - physical slot index
+## Clobbers: A, B.
+#.rl_hist_calc_idx
+#LD_AL $rl_history_write_idx
+#LD_BL $rl_history_browse_idx
+#ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff write_idx < browse_idx
+#JNO .rl_hist_calc_done
+#ALUOP_AL %A-B%+%AL%+%BL%              # AL = write_idx - browse_idx, wrapped mod 256
+#LD_BL $rl_history_capacity
+#ALUOP_AL %A+B%+%AL%+%BL%              # AL += capacity -> correct mod-capacity index
+#RET
+#.rl_hist_calc_done
+#ALUOP_AL %A-B%+%AL%+%BL%
+#RET
+#
+#######
+## Computes the RAM address of history slot AL (history_buf + AL*entry_sz),
+## via repeated 16-bit addition -- slot counts are small (bounded by
+## capacity, a handful to a few dozen in practice), so this stays far cheaper
+## than pulling in the general-purpose :mul16.
+##
+## Inputs:
+##  AL - history slot index
+## Outputs:
+##  D - history_buf + AL*entry_sz
+## Clobbers: A, B.
+#.rl_hist_addr
+#ALUOP_ADDR %A%+%AL% $rl_tmp_idx       # remaining iteration count
+#LD_AH $rl_history_buf
+#LD_AL $rl_history_buf+1               # A = running address accumulator
+#.rl_hist_addr_loop
+#LD_BL $rl_tmp_idx
+#ALUOP_FLAGS %B%+%BL%
+#JZ .rl_hist_addr_done
+#LDI_BH 0x00
+#LD_BL $rl_history_entry_sz
+#ALUOP16O_A %ALU16_A+B%
+#LD_BL $rl_tmp_idx
+#ALUOP_BL %B-1%+%BL%
+#ALUOP_ADDR %B%+%BL% $rl_tmp_idx
+#JMP .rl_hist_addr_loop
+#.rl_hist_addr_done
+#ALUOP_ADDR %A%+%AH% $rl_tmp_addr
+#ALUOP_ADDR %A%+%AL% $rl_tmp_addr+1
+#LD_DH $rl_tmp_addr
+#LD_DL $rl_tmp_addr+1
+#RET
+#
+#######
+## Appends the current buffer to the history ring (Enter with non-empty
+## input only), then advances write_idx (wrapping at capacity) and count
+## (capped at capacity). No-op if history is disabled or the line is empty.
+##
+## Clobbers: A, B, C, D.
+#.rl_history_append
+#CALL .rl_hist_check
+#JZ .rl_hist_append_ret
+#
+#LD_AL $rl_len
+#ALUOP_FLAGS %A%+%AL%
+#JZ .rl_hist_append_ret                # spec: empty Enter is not recorded
+#
+#LD_AL $rl_history_write_idx
+#CALL .rl_hist_addr                    # D = destination slot
+#
+## buf (source) and the history slot (dest) are disjoint allocations, so
+## there's no overlap direction to worry about -- the ROM's :memcpy is a
+## direct fit (and avoids carrying each byte through TD by hand, which
+## isn't interrupt-safe: TD is microcode scratch clobbered by IRQ entry).
+#LD_CH $rl_buf
+#LD_CL $rl_buf+1
+#
+## Copy min(len, entry_sz-1) raw characters, then always write our own null
+## terminator afterward -- never rely on copying the source's own trailing
+## null, because when len is clamped down, the source byte at that offset
+## is a real character, not a null. entry_sz is a caller-managed global
+## (Symbol Contract, 2.4.3) with no library-enforced relationship to
+## $rl_maxlen, so a caller that configures entry_sz smaller than maxlen+1
+## would otherwise have a max-length line overflow this :memcpy into the
+## next history slot; truncating here matches this file's existing
+## maxlen-truncation philosophy for the input buffer itself.
+#LD_AL $rl_len
+#LD_BL $rl_history_entry_sz
+#ALUOP_BL %B-1%+%BL%                   # BL = entry_sz - 1 (max chars that fit)
+#ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff len < entry_sz-1 (already safe)
+#JO .rl_hist_append_len_safe
+#ALUOP_AL %B%+%BL%                     # clamp: AL = entry_sz - 1 (safe char count)
+#.rl_hist_append_len_safe
+#ALUOP_AL %A-1%+%AL%                   # :memcpy count-1 == (safe char count) - 1
+#CALL :memcpy
+#ALUOP_ADDR_D %zero%                   # explicit null at dest + safe char count
+#                                       # (:memcpy's documented D postcondition)
+#
+#LD_AL $rl_history_write_idx
+#ALUOP_AL %A+1%+%AL%
+#LD_BL $rl_history_capacity
+#ALUOP_FLAGS %AxB%+%AL%+%BL%           # E set iff wrapped past the last slot
+#JNE .rl_hist_append_wstore
+#LDI_AL 0x00
+#.rl_hist_append_wstore
+#ALUOP_ADDR %A%+%AL% $rl_history_write_idx
+#
+#LD_AL $rl_history_count
+#LD_BL $rl_history_capacity
+#ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff count < capacity
+#JNO .rl_hist_append_ret               # already full: count stays capped
+#ALUOP_AL %A+1%+%AL%
+#ALUOP_ADDR %A%+%AL% $rl_history_count
+#
+#.rl_hist_append_ret
+#RET
+#
+#######
+## Loads history slot AL into the readline buffer, updating $rl_len and
+## $rl_pos (cursor lands at the end of the recalled text). Does not touch
+## the screen -- callers handle repaint.
+##
+## Inputs:
+##  AL - history slot index
+## Clobbers: A, B, C, D.
+#.rl_hist_load
+#CALL .rl_hist_addr                    # D = source slot
+#LD_CH $rl_buf
+#LD_CL $rl_buf+1
+#LDI_BL 0x00                           # running length
+#.rl_hist_load_loop
+#LDA_D_AL
+#ALUOP_ADDR_C %A%+%AL%                 # buf[i] = char (copies the null too)
+#ALUOP_FLAGS %A%+%AL%
+#JZ .rl_hist_load_done
+#INCR_C
+#INCR_D
+#ALUOP_BL %B+1%+%BL%
+#JMP .rl_hist_load_loop
+#.rl_hist_load_done
+#ALUOP_ADDR %B%+%BL% $rl_len
+#LD_AL $rl_len
+#ALUOP_ADDR %A%+%AL% $rl_pos
+#RET
+#
+#######
+## Full-line repaint after recalling history slot AL: loads the entry, then
+## reprints from index 0, blanking out any leftover tail from a longer
+## previous line.
+##
+## Inputs:
+##  AL - history slot index
+## Clobbers: A, B, D (and whatever .rl_hist_load / .rl_redraw_tail clobber).
+#.rl_history_recall_entry
+#LD_BL $rl_len
+#ALUOP_ADDR %B%+%BL% $rl_tmp_blank     # stash old length
+#CALL .rl_hist_load
+#
+#LD_AL $rl_tmp_blank                   # old length
+#LD_BL $rl_len                         # new length
+#ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff old < new (nothing to blank)
+#JO .rl_hrecall_noblanks
+#ALUOP_AL %A-B%+%AL%+%BL%              # AL = old - new
+#JMP .rl_hrecall_have
+#.rl_hrecall_noblanks
+#LDI_AL 0x00
+#.rl_hrecall_have
+#ALUOP_ADDR %A%+%AL% $rl_tmp_blank
+#
+#LDI_AL 0x00                           # reprint from the start of the line
+#LD_BH $rl_tmp_blank
+#CALL .rl_redraw_tail
+#RET

@@ -1,455 +1,80 @@
 # vim: syntax=asm-mycpu
 
 # Cursor movement functions
+#
+# TERMINAL_REFACTOR.md 2.3. Replaces the marks-based cursor system (removed
+# entirely -- $crsr_marks, :cursor_save_mark*, :cursor_get_mark,
+# :cursor_clear_mark, :cursor_mark_*, :cursor_scroll_marks,
+# :cursor_shift_marks, :cursor_mark_getstring, $input_flags are all gone).
+#
+# Sync is split from movement (2.3.2): :cursor_left/right/up/down and
+# :cursor_goto_* update position state ONLY -- they never touch the color
+# framebuffer or the cursor glyph. Callers that need the cursor glyph
+# visible at the new position must call :cursor_display_sync themselves.
+# :cursor_on/:cursor_off are the exception: they are explicit visibility
+# requests, so they still sync immediately.
+#
+# ESC[s / ESC[u save/restore (2.3.3) are NOT implemented -- cut during the
+# Phase 2 ROM-budget gate (the transferred terminal subsystem came in 1427
+# bytes over the 16 KiB BIOS budget; this was one of the owner's chosen
+# cuts, along with 256-color SGR in terminal_ansi.asm). The Phase 1
+# hardware-proven :t_cursor_save/:t_cursor_restore in
+# os/util/termtest/20-t_cursor.asm are unaffected by this cut.
+#
+# Hardware-proven as os/util/termtest/20-t_cursor.asm (t_-prefixed); this
+# is a mechanical prefix-strip transfer aside from that cut.
 
 VAR global byte $crsr_row
 VAR global byte $crsr_col
+VAR global byte $crsr_on
 VAR global word $crsr_addr_chars
 VAR global word $crsr_addr_color
-VAR global byte $crsr_on
-VAR global 64 $crsr_marks
-
-VAR global byte $input_flags
-# msb 7
-#     6
-#     5
-#     4
-#     3
-#     2
-#     1
-# lsb 0 insert (set) overwrite (clear)
 
 :cursor_init
-# Initialize the global variables; cursor is set to 0,0 (top left corner) with
-# the cursor showing (on)
-ST $crsr_row 0
-ST $crsr_col 0
-ST $crsr_on 1
+ST $crsr_row 0x00
+ST $crsr_col 0x00
+ST $crsr_on 0x01
 ST16 $crsr_addr_chars %display_chars%
 ST16 $crsr_addr_color %display_color%
-ST $input_flags 0x01
-
-# Initialize the cursor marks, ensuring all marks have the top bit set to
-# mark them as undefined
-ALUOP_PUSH %A%+%AL%
-PUSH_CH
-PUSH_CL
-LDI_C $crsr_marks
-LDI_AL 64
-.cursor_init_loop
-ALUOP_ADDR_C %negone%
-INCR_C
-ALUOP_AL %A-1%+%AL%
-JNZ .cursor_init_loop
-POP_CL
-POP_CH
-POP_AL
 RET
 
 ######
-# Saves the current cursor location in a cursor mark.  Each mark
-# is a 12-bit absolute offset.  The top bit of the mark
-# are used as an active flag
-#  0x80 - mark is undefined if set, defined if clear
-#  0x40 - unused
-#  0x20 - unused
-#  0x10 - unused
-#
-# Inputs:
-#  AL - mark to save (0..31)
-:cursor_save_mark
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %B%+%BL%
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-LDI_B $crsr_marks                   # B points to 0th mark
-ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
-ALUOP_AH %zero%
-ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
-ALUOP_PUSH %B%+%BL%
-LD_AL $crsr_addr_chars              # AL contains high byte of char address
-LDI_BL 0x0f                         # mask to clear the high bits so we just get the offset
-ALUOP_AL %A&B%+%AL%+%BL%            # AL high byte is ready to save
-POP_BL
-ALUOP_ADDR_B %A%+%AL%               # save AL to high byte of mark
-ALUOP16O_B %ALU16_B+1%                      # move to low byte of mark
-LD_AL $crsr_addr_chars+1            # AL contains low byte of char address
-ALUOP_ADDR_B %A%+%AL%               # save AL to low byte of mark
-POP_AL
-POP_AH
-POP_BL
-POP_BH
-RET
-
-######
-# Saves the given offset as a mark
-#
-# Inputs:
-#  A - 12-bit offset (top 4 bits are ignored)
-#  BL - mark ID (0..31)
-:cursor_save_mark_offset
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %B%+%BL%
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-ALUOP_AL %B%+%BL%                   # mark ID into AL
-LDI_B $crsr_marks                   # B points to 0th mark
-ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
-ALUOP_AH %zero%
-ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
-POP_AL
-POP_AH                              # A now contains offset or addr
-ALUOP_PUSH %B%+%BH%
-LDI_BH 0x0f                         # mask to clear high bits of offset
-ALUOP_AH %A&B%+%AH%+%BH%            # offset is now just 12 bits
-POP_BH
-ALUOP_ADDR_B %A%+%AH%               # save high byte of offset
-ALUOP16O_B %ALU16_B+1%                      # move to low byte of mark
-ALUOP_ADDR_B %A%+%AL%               # save low byte of offset
-POP_BL
-POP_BH
-RET
-
-######
-# Saves the given row/col as a mark
-#
-# Inputs:
-#  AH - row (0..59)
-#  AL - col (0..63)
-#  BL - mark ID (0..31)
-:cursor_save_mark_rowcol
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %B%+%BL%
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-ALUOP_AL %B%+%BL%                   # mark ID into AL
-LDI_B $crsr_marks                   # B points to 0th mark
-ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
-ALUOP_AH %zero%
-ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
-POP_AL
-POP_AH                              # A now contains row/col
-CALL :cursor_conv_rowcol            # A now contains offset
-ALUOP_PUSH %B%+%BH%
-LDI_BH 0x0f                         # mask to clear high bits of offset
-ALUOP_AH %A&B%+%AH%+%BH%            # offset is now just 12 bits
-POP_BH
-ALUOP_ADDR_B %A%+%AH%               # save high byte of offset
-ALUOP16O_B %ALU16_B+1%                      # move to low byte of mark
-ALUOP_ADDR_B %A%+%AL%               # save low byte of offset
-POP_BL
-POP_BH
-RET
-
-######
-# Moves the given mark up/down/left/right by one character/row
-#
-# Inputs:
-#  AL - mark ID (0..31)
-:cursor_mark_left
-ALUOP_PUSH %A%+%AH%
-LDI_AH -1
-CALL :cursor_mark_move
-POP_AH
-RET
-
-:cursor_mark_right
-ALUOP_PUSH %A%+%AH%
-LDI_AH 1
-CALL :cursor_mark_move
-POP_AH
-RET
-
-:cursor_mark_up
-ALUOP_PUSH %A%+%AH%
-LDI_AH -64
-CALL :cursor_mark_move
-POP_AH
-RET
-
-:cursor_mark_down
-ALUOP_PUSH %A%+%AH%
-LDI_AH 64
-CALL :cursor_mark_move
-POP_AH
-RET
-
-######
-# Moves the given mark by a given offset.  If the move
-# takes the mark out of the screen boundary (mark offset
-# less than zero or greater than 0x0eff) then the mark
-# is disabled.  If the selected mark is already disabled,
-# it remains disabled and is unchanged.
-#
-# Inputs:
-#  AH - offset amount (-128..127)
-#  AL - mark ID (0..31)
-:cursor_mark_move
-ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %B%+%BL%
-ALUOP_PUSH %B%+%BH%
-
-ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %A%+%AH%                 # ensure offset is on top of stack
-CALL :cursor_get_mark               # load the requested mark into AH+AL
-LDI_BH 0x80
-ALUOP_FLAGS %A&B%+%AH%+%BH%         # check high bit of mark data
-JZ .cmm_valid_mark
-POP_AH                              # if this mark is already disabled, just abort
-POP_AL
-JMP .cmm_done
-
-.cmm_valid_mark                     # this is currently a valid mark
-POP_BL                              # offset (from AH) popped into BL
-ALUOP_PUSH %A%+%AH%
-LDI_AH 0x80                         # mask to see if BL is negative
-ALUOP_FLAGS %A&B%+%AH%+%BL%
-JZ .cmm_pos
-LDI_BH 0xff                         # If BL was negative, extend negation into BH
-JMP .cmm_posnegdone
-.cmm_pos
-LDI_BH 0x00                         # If BL was positive, extend zeros into BH
-.cmm_posnegdone
-POP_AH
-ALUOP16O_A %ALU16_A+B%                    # A contains new offset
-LDI_BH 0x80
-ALUOP_FLAGS %A&B%+%AH%+%BH%         # check if offset is negative
-JNZ .cmm_out_of_bounds
-LDI_BH 0x0e
-ALUOP_FLAGS %B-A%+%AH%+%BH%         # if 0x0e - top byte of new offset overflows, then new offset was > 0x0eff
-JO .cmm_out_of_bounds
-POP_BL                              # offset in A is in bounds; BL contains mark ID
-CALL :cursor_save_mark_offset
-JMP .cmm_done
-
-.cmm_out_of_bounds
-POP_AL                              # AL contains mark ID
-CALL :cursor_clear_mark
-
-.cmm_done
-POP_BH
-POP_BL
-POP_AH
-POP_AL
-RET
-
-
-######
-# Clears the given mark, by zeroing out both bytes of the mark
-#
-# Inputs:
-#  AL - mark to clear (0..31)
-:cursor_clear_mark
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %B%+%BL%
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-LDI_B $crsr_marks                   # B points to 0th mark
-ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
-ALUOP_AH %zero%
-ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
-ALUOP_ADDR_B %negone%               # undefined value
-ALUOP16O_B %ALU16_B+1%                      # move to low byte of mark
-ALUOP_ADDR_B %negone%               # undefined value
-POP_AL
-POP_AH
-POP_BL
-POP_BH
-RET
-
-######
-# Returns the selected mark in A.  If the mark is undefined, then
-# AH will have its high bit set.
-#
-# Inputs:
-#  AL - mark to retrieve (0..31)
-# Outputs:
-#  A[11..0] - mark offset value
-#  A[15] - set if mark is undefined
-:cursor_get_mark
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %B%+%BL%
-LDI_B $crsr_marks                   # B points to 0th mark
-ALUOP_AL %A<<1%+%AL%                # multiply AL by two (each mark is two bytes)
-ALUOP_AH %zero%
-ALUOP16O_B %ALU16_A+B%                    # B points to ALth mark
-LDA_B_AH                            # fetch high byte
-ALUOP16O_B %ALU16_B+1%
-LDA_B_AL                            # fetch low byte
-POP_BL
-POP_BH
-RET
-
-######
-# Moves all the marks up one row - used when scrolling the terminal.
-# When a mark goes negative (scrolls off top of screen) then its high
-# bit gets set, which invalidates it.
-:cursor_scroll_marks
-CALL :heap_push_all
-LDI_D $crsr_marks                   # track address of mark in D
-LDI_BL 32                           # we will update 32 marks, but we decrement and check at the beginning of the loop
-.cscroll_loop
-LDA_D_AH                            # load upper byte of mark into AH
-INCR_D
-LDA_D_AL                            # load lower byte of mark into AL
-DECR_D                              # put pointer back to known location at first byte of this mark
-LDI_BH 0x80
-ALUOP_FLAGS %A&B%+%AH%+%BH%         # check MSB of high byte
-JNZ .cscroll_2                      # Don't bother modifying this mark if it's disabled
-LDI_BH 0xf0
-ALUOP_CH %A&B%+%AH%+%BH%            # save the mark's flags in CH
-LDI_BH 0x0f
-ALUOP_AH %A&B%+%AH%+%BH%            # wipe the flags in AH
-CALL :cursor_conv_addr              # A is now split AH=row, AL=col
-ALUOP_AH %A-1%+%AH%                 # decrement row by one
-JO .cscroll_3                       # If the row overflowed, don't bother converting back to offset
-CALL :cursor_conv_rowcol            # A now contains the offset again
-MOV_CH_BH                           # grab our flags from CH
-ALUOP_AH %A|B%+%AH%+%BH%            # set flags again
-.cscroll_3
-ALUOP_ADDR_D %A%+%AH%               # write upper byte back
-INCR_D
-ALUOP_ADDR_D %A%+%AL%               # write lower byte back
-DECR_D                              # move D pointer back to known location
-.cscroll_2
-INCR_D                              # move D pointer to next mark
-INCR_D
-ALUOP_BL %B-1%+%BL%
-JNZ .cscroll_loop                   # we are done if BL==0 after decrementing
-CALL :heap_pop_all
-RET
-
-######
-# Shifts all mark IDs right by one position, discarding the last
-# mark.  The 0th mark is set as disabled.
-:cursor_shift_marks
-PUSH_DH
-PUSH_DL
-PUSH_CH
-PUSH_CL
-ALUOP_PUSH %A%+%AL%
-LDI_D $crsr_marks+64                # right mark in D
-LDI_C $crsr_marks+62                # left mark in C
-LDI_AL 62                           # we will move 62 bytes
-.cshift_loop
-DECR_D
-DECR_C
-LDA_C_TD
-STA_D_TD                            # move the left mark to the right
-ALUOP_AL %A-1%+%AL%
-JNZ .cshift_loop
-ALUOP_ADDR_C %negone%               # clear the 0th mark
-INCR_C
-ALUOP_ADDR_C %negone%
-POP_AL
-POP_CL
-POP_CH
-POP_DL
-POP_DH
-RET
-
-######
-# Transcribes the characters between two marks into a string
-# at the address in D
-#
-# Inputs:
-#  AL - left mark (0..31)
-#  BL - right mark (0..31)
-#  D - address of string
-:cursor_mark_getstring
-CALL :heap_push_all
-
-ALUOP_CL %A%+%AL%                   # save left mark ID in CL
-
-# get right mark character address into C
-ALUOP_AL %B%+%BL%
-CALL :cursor_get_mark               # A now has right mark offset
-LDI_BH 0x80
-ALUOP_FLAGS %A&B%+%AH%+%BH%         # Check if mark is defined
-JNZ .cmg_finish
-LDI_BH 0x0f
-ALUOP_AH %A&B%+%AH%+%BH%            # mask top four bits of AH
-LDI_BH 0x40
-ALUOP_CH %A+B%+%AH%+%BH%            # CH now has top byte of char address of right mark
-ALUOP_PUSH %A%+%AL%                 # top of stack has lower byte of char address of right mark
-MOV_CL_AL                           # put left mark back into AL
-POP_CL                              # CL now has lower byte of char address of right mark
-
-# get left mark character address into A
-CALL :cursor_get_mark               # A now has left mark offset
-LDI_BH 0x80
-ALUOP_FLAGS %A&B%+%AH%+%BH%         # Check if mark is defined
-JNZ .cmg_finish
-LDI_BH 0x0f
-ALUOP_AH %A&B%+%AH%+%BH%            # mask top four bits of AH
-LDI_BH 0x40
-ALUOP_AH %A+B%+%AH%+%BH%            # AH now has top byte of char address of left mark
-
-# get right mark character address into B
-MOV_CH_BH
-MOV_CL_BL
-
-# get number of chars to transcribe into B
-ALUOP16O_B %ALU16_B-A%               # B now contains num chars to transcribe
-ALUOP_PUSH %A%+%AH%
-LDI_AH 0x80
-ALUOP_FLAGS %A&B%+%AH%+%BH%
-POP_AH
-JNZ .cmg_finish                     # if negative, do nothing
-
-# Transcribe the characters
-.cmg_loop
-ALUOP_FLAGS %B%+%BL%
-JNZ .cmg_continue
-ALUOP_FLAGS %B%+%BH%
-JNZ .cmg_continue
-JMP .cmg_finish                     # If the counter in B is now zero, exit the loop
-.cmg_continue
-LDA_A_TD                            # get character at A (left mark)
-STA_D_TD                            # write it to string at D
-ALUOP16O_A %ALU16_A+1%
-INCR_D                              # move right
-ALUOP16O_B %ALU16_B-1%                      # count this char
-JMP .cmg_loop
-
-.cmg_finish
-ALUOP_ADDR_D %zero%                 # write terminating null at D
-CALL :heap_pop_all
-RET
-
-
-# Turns the cursor flag on or off, then jumps to :cursor_display_sync
+# Turns the cursor flag on or off, then jumps to :cursor_display_sync.
+# Unlike goto/movement, these are explicit visibility requests, so they
+# still sync immediately.
 :cursor_off
-ST $crsr_on 0
+ST $crsr_on 0x00
 JMP :cursor_display_sync
 
 :cursor_on
-ST $crsr_on 1
+ST $crsr_on 0x01
 JMP :cursor_display_sync
 
-# Updates the %display_color% memory at the current cursor
-# location, based on the cursor flag
+######
+# Updates the color framebuffer at the current cursor location to set or
+# clear the cursor bit, based on the cursor-on flag. This is the only
+# place that touches the color framebuffer for cursor display -- movement
+# and goto functions no longer do this automatically (2.3.2).
 :cursor_display_sync
 PUSH_DL
 PUSH_DH
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %A%+%AH%
 LD_DH $crsr_addr_color
-LD_DL $crsr_addr_color+1    # address of our cursor in the color space in D
+LD_DL $crsr_addr_color+1
 LDA_D_AH                    # Load the color data at the cursor into AH
-LD_AL $crsr_on              # Load the cursor flag into AL
-ALUOP_FLAGS %A%+%AL%        # Check if AL is 0 or non-zero
+LD_AL $crsr_on
+ALUOP_FLAGS %A%+%AL%
 JZ .cs_off
 ALUOP_PUSH %B%+%BL%
 LDI_BL %cursor%
-ALUOP_ADDR_D %A|B%+%AH%+%BL% # set the cursor bit in AH and store it back at $crsr_addr_color
+ALUOP_ADDR_D %A|B%+%AH%+%BL% # set the cursor bit and store it back
 POP_BL
 JMP .cs_done
 .cs_off
 ALUOP_PUSH %B%+%BL%
 LDI_BL %cursor%
-ALUOP_ADDR_D %A&~B%+%AH%+%BL% # clear the cursor bit in AH and store it back at $crsr_addr_color
+ALUOP_ADDR_D %A&~B%+%AH%+%BL% # clear the cursor bit and store it back
 POP_BL
 .cs_done
 POP_AH
@@ -458,16 +83,16 @@ POP_DH
 POP_DL
 RET
 
-:cursor_conv_rowcol
+######
 # Given a row,col coordinate, returns a 12-bit value representing the
-# offset in memory from the base of %display_chars% or %display_color%
+# offset in memory from the base of %display_chars% or %display_color%.
 #
 # Inputs:
 #  AH - row (0-59)
 #  AL - col (0-63)
-#
 # Outputs:
 #  A = 12 bit absolute offset
+:cursor_conv_rowcol
 ALUOP_PUSH %B%+%BL%
 LDI_BL 0b00000001           # mask to get the LSB
 ALUOP_FLAGS %A&B%+%AH%+%BL% # check if LSB is set
@@ -486,16 +111,16 @@ ALUOP_AH %AH%+%A>>1%        # shift AH right one position
 POP_BL
 RET
 
-:cursor_conv_addr
-# Given an address within the chars or colors memory range in A,
-# returns the corresponding row/col in AH and AL.
+######
+# Given an address within the chars or colors memory range in A, returns
+# the corresponding row/col in AH and AL.
 #
 # Inputs:
 #  A - Address within the colors or chars ranges
-#
-# Oputputs:
+# Outputs:
 #  AH - row (0-59)
 #  AL - col (0-63)
+:cursor_conv_addr
 ALUOP_PUSH %B%+%BH%
 
 # Mask out the top nybble of AH to return a 12-bit offset
@@ -531,32 +156,31 @@ POP_BH
 RET
 
 ######
-# Single-step cursor movement.
+# Single-step cursor movement. Position state only -- no display sync.
 # No inputs or outputs.
 ######
 
-# Moves the cursor left one column (wraps if necessary)
 :cursor_left
 ALUOP_PUSH %A%+%AL%
 LDI_AL -1
 CALL .cursor_move_real
 POP_AL
 RET
-# Moves the cursor right one column (wraps if necessary)
+
 :cursor_right
 ALUOP_PUSH %A%+%AL%
 LDI_AL 1
 CALL .cursor_move_real
 POP_AL
 RET
-# Moves the cursor up one row
+
 :cursor_up
 ALUOP_PUSH %A%+%AL%
 LDI_AL -64
 CALL .cursor_move_real
 POP_AL
 RET
-# Moves the cursor down one row
+
 :cursor_down
 ALUOP_PUSH %A%+%AL%
 LDI_AL 64
@@ -565,8 +189,9 @@ POP_AL
 RET
 
 ######
-# The actual function that moves the cursor. Allows the cursor to move within
-# the 0x4000-0x4eff range and does nothing if the cursor would go out of bounds.
+# The actual function that moves the cursor. Allows the cursor to move
+# within the 0x4000-0x4eff range and does nothing if the cursor would go
+# out of bounds.
 #
 # Inputs:
 #  AL - cursor movement amount, in absolute address steps
@@ -607,10 +232,11 @@ LDI_BL 0x80
 ALUOP_FLAGS %A&B%+%AH%+%BL% # if B is negative (MSB is set)
 JNZ .cmr_done               # don't move the cursor
 
-# cursor move is OK, so let's sync at the new position
+# cursor move is OK, so let's move to the new position (position state
+# only -- no display sync, unlike the original marks-based implementation)
 MOV_CH_AH
 MOV_CL_AL                   # new cursor addr in A
-CALL :cursor_goto_addr      # sync the cursor to the new location
+CALL :cursor_goto_addr
 
 .cmr_done
 POP_BH
@@ -621,117 +247,64 @@ POP_CL
 POP_CH
 RET
 
-:cursor_goto_addr
-# Moves the cursor to an absolute addr (or offset).
-# The top four bits of the address are ignored.
+######
+# Moves the cursor to an absolute addr (or offset). Position state only:
+# updates crsr_row/col/addr_chars/addr_color. Does NOT touch the color
+# framebuffer and does NOT sync the cursor glyph -- call
+# :cursor_display_sync explicitly afterward if needed (2.3.2).
 #
 # Inputs:
-#  A - address/offset
-PUSH_DL
-PUSH_DH
-ALUOP_PUSH %B%+%BL%
+#  A - address/offset (top four bits are ignored)
+:cursor_goto_addr
 ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %A%+%AH%
-
-# First we need to turn off the cursor at the current cursor location.
-LD_DH $crsr_addr_color
-LD_DL $crsr_addr_color+1            # D reg has the current cursor address in color space
-LDA_D_AH                            # Load RAM@D into AH - current color flags for cursor
 ALUOP_PUSH %B%+%BL%
-LDI_BL %cursor%
-ALUOP_ADDR_D %A&~B%+%AH%+%BL%       # Clear the cursor bit from that byte and store it back
-POP_BL
-
-# Get AH back from the stack
-PEEK_AH
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
 
 # Mask the top four bits of the offset
 LDI_BH 0x0f
 ALUOP_AH %A&B%+%AH%+%BH%
 
 # add %display_chars% to the offset and store in $crsr_addr_chars
-LDI_B %display_chars%                   # put the char base addr in B
-ALUOP16O_B %ALU16_A+B%                        # B now contains the new cursor absolute address
-ALUOP_ADDR %B%+%BH% $crsr_addr_chars    # store the new absolute address in RAM
+LDI_B %display_chars%
+ALUOP16O_B %ALU16_A+B%
+ALUOP_ADDR %B%+%BH% $crsr_addr_chars
 ALUOP_ADDR %B%+%BL% $crsr_addr_chars+1
 
 # add %display_color% to the offset and store in $crsr_addr_color
-LDI_B %display_color%                   # put the color base addr in B
-ALUOP16O_B %ALU16_A+B%                        # B now contains the new cursor absolute address
-ALUOP_ADDR %B%+%BH% $crsr_addr_color    # store the new absolute address in RAM
+LDI_B %display_color%
+ALUOP16O_B %ALU16_A+B%
+ALUOP_ADDR %B%+%BH% $crsr_addr_color
 ALUOP_ADDR %B%+%BL% $crsr_addr_color+1
 
-# turn offset into row,col in A
+# turn offset into row,col in A (A still holds the masked offset -- the
+# two blocks above only ever wrote to B)
 CALL :cursor_conv_addr
-
-# Store the new row and column into our global vars
 ALUOP_ADDR %A%+%AL% $crsr_col
 ALUOP_ADDR %A%+%AH% $crsr_row
 
-# Set or clear the cursor bit at the new location
-CALL :cursor_display_sync
-
-POP_AH
 POP_AL
-POP_BH
+POP_AH
 POP_BL
-POP_DH
-POP_DL
+POP_BH
 RET
 
-:cursor_goto_rowcol
-# Moves the cursor to an absolute col,row position
+######
+# Moves the cursor to an absolute row,col position. Position state only
+# (see :cursor_goto_addr).
+#
+# :cursor_conv_rowcol and :cursor_conv_addr are exact inverses (that is
+# their whole contract, verified by the Task 1 round-trip tests), so
+# rather than duplicate :cursor_goto_addr's address-computation body here
+# a second time, convert to an offset and tail-call it -- it derives
+# row/col right back via :cursor_conv_addr, reproducing this call's own
+# AH/AL exactly. This is a cold path (goto calls are rare relative to
+# putchar), so the extra conversion round-trip costs nothing that matters.
 #
 # Inputs:
 #  AH - row (0-59)
 #  AL - col (0-63)
-PUSH_DL
-PUSH_DH
-ALUOP_PUSH %B%+%BL%
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %A%+%AL%
-ALUOP_PUSH %A%+%AH%
-
-# First we need to turn off the cursor at the current cursor location.
-LD_DH $crsr_addr_color
-LD_DL $crsr_addr_color+1            # D reg has the current cursor address in color space
-LDA_D_AH                            # Load RAM@D into AH - current color flags for cursor
-ALUOP_PUSH %B%+%BL%
-LDI_BL %cursor%
-ALUOP_ADDR_D %A&~B%+%AH%+%BL%       # Clear the cursor bit from that byte and store it back
-POP_BL
-
-# Get our row argument back off the stack
-PEEK_AH
-
-# Store the new row and column into our global vars
-ALUOP_ADDR %A%+%AL% $crsr_col
-ALUOP_ADDR %A%+%AH% $crsr_row
-
-# turn row,col into an offset stored in A
-CALL :cursor_conv_rowcol
-
-# add %display_chars% to the offset and store in $crsr_addr_chars
-LDI_B %display_chars%                   # put the char base addr in B
-ALUOP16O_B %ALU16_A+B%                        # B now contains the new cursor absolute address
-ALUOP_ADDR %B%+%BH% $crsr_addr_chars    # store the new absolute address in RAM
-ALUOP_ADDR %B%+%BL% $crsr_addr_chars+1
-
-# add %display_color% to the offset and store in $crsr_addr_color
-LDI_B %display_color%                   # put the color base addr in B
-ALUOP16O_B %ALU16_A+B%                        # B now contains the new cursor absolute address
-ALUOP_ADDR %B%+%BH% $crsr_addr_color    # store the new absolute address in RAM
-ALUOP_ADDR %B%+%BL% $crsr_addr_color+1
-
-# Set or clear the cursor bit at the new location
-CALL :cursor_display_sync
-
-POP_AH
-POP_AL
-POP_BH
-POP_BL
-POP_DH
-POP_DL
-RET
-
+:cursor_goto_rowcol
+CALL :cursor_conv_rowcol             # A = offset
+JMP :cursor_goto_addr                # tail call: stores row/col + both
+                                      # framebuffer addresses, then RETs

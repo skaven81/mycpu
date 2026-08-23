@@ -21,16 +21,15 @@ CALL :ptmr_init
 # Initialize the heap - this is needed for most commands to work (including :print)
 CALL :heap_init
 
-# Initialize color system, we start without processing color data
-ST $term_color_enabled 0x00
-ST $term_render_color 0x00      # once $term_color_enabled comes on, start out in reset mode
-ST $term_print_raw 0x00         # interpret control chars as cursor movement
+# Initialize terminal output/ANSI state. VAR globals are NOT zeroed at ODY
+# load (they overlay whatever the previous program left there), so this
+# explicit init is load-bearing -- a stray nonzero $ansi_state on first
+# boot corrupts the very first :print call (found during Phase 1 hardware
+# checkpointing, see terminal_ansi.asm).
+ST $term_flags 0x00             # fast path: no raw/ANSI/edge-behavior bits
+ST $term_render_color 0x00      # start out in reset mode (no color writes)
 ST $term_current_color %white%  # ensure color byte has a sane starting value
-ST $term_hexbyte_buf 0x00       # fill the hexbyte buf with NULLs
-ST $term_hexbyte_buf+1 0x00
-ST $term_hexbyte_buf+2 0x00
-ST $term_hexbyte_buf+3 0x00
-ST $term_hexbyte_buf+4 0x00
+CALL :ansi_reset
 
 # Clear the screen
 LDI_AH  0x00
