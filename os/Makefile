@@ -2,8 +2,8 @@
 
 include config.mk
 
-.PHONY: all bios system util cctest
-all: bios system util cctest
+.PHONY: all bios system util cctest termtest
+all: bios system util cctest termtest
 
 bios:
 	$(Q)$(MAKE) -C $(BIOS_DIR)
@@ -18,6 +18,10 @@ util: bios
 cctest: bios
 	$(Q)$(MAKE) -C $(CCTEST_DIR)
 
+termtest: bios
+	$(Q)$(MAKE) -C $(TERMTEST_DIR)
+
+
 #------------------------------------------------------------------------------
 # SD Card Installation
 #------------------------------------------------------------------------------
@@ -26,6 +30,7 @@ sdcard: all
 	$(Q)$(MAKE) -C $(SYSTEM_DIR) sdcard
 	$(Q)$(MAKE) -C $(UTIL_DIR) sdcard
 	$(Q)$(MAKE) -C $(CCTEST_DIR) sdcard
+	$(Q)$(MAKE) -C $(TERMTEST_DIR) sdcard
 
 #------------------------------------------------------------------------------
 # Clean - Use pattern rules to avoid repetition
@@ -43,6 +48,8 @@ clean-util:
 	$(Q)$(MAKE) -C $(UTIL_DIR) clean
 clean-cctest:
 	$(Q)$(MAKE) -C $(CCTEST_DIR) clean
+clean-termtest:
+	$(Q)$(MAKE) -C $(TERMTEST_DIR) clean
 
 #------------------------------------------------------------------------------
 # Verbosity Shortcuts - Use target-specific variables

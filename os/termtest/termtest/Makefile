@@ -1,5 +1,5 @@
 include ../../config.mk
 
-INSTALL_SUBDIR := SYS
+INSTALL_SUBDIR := TERMTEST
 
 include ../../rules.mk

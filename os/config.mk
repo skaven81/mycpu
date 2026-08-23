@@ -12,6 +12,7 @@ BIOS_DIR := $(ROOT_DIR)bios
 SYSTEM_DIR := $(ROOT_DIR)system
 UTIL_DIR := $(ROOT_DIR)util
 CCTEST_DIR := $(ROOT_DIR)cctest
+TERMTEST_DIR := $(ROOT_DIR)termtest
 
 # Build artifacts from BIOS
 BIOS_SYM := $(BIOS_DIR)/bios.sym
