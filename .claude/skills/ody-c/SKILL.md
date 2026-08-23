@@ -1,7 +1,7 @@
 ---
 name: ody-c
 description: Wire Wrap Odyssey C compiler reference. Use when writing C code for the Odyssey - covers which C constructs compile / fail / silently miscompile, the BIOS header inventory and include rules, build integration, compiler error diagnosis, and validated code size optimization techniques.
-version: 2.1.0
+version: 2.2.0
 ---
 
 # Odyssey C Compiler Reference
@@ -117,7 +117,8 @@ always** (`uint8_t/uint16_t/int8_t/int16_t`, `struct uint32 {hi,lo}`,
 
 | Header | Contents |
 |--------|----------|
-| `terminal_output.h` | `printf(char*,...)`, `print(char*)`, `putchar(char)`, `putchar_direct(char)` |
+| `terminal_output.h` | `printf(char*,...)`, `print(char*)`, `print_raw(char*)`, `putchar(char)`, `putchar_raw(char)` -- honors `$term_flags` (raw/ANSI/edge modes) except `putchar_raw`/`print_raw`, which skip all of it for max throughput |
+| `terminal_input.h` | `readline(char *buf, uint8_t maxlen, uint8_t flags)` -> `uint16_t` packed `(status << 8) \| length` (status: 0=Enter, 1=Ctrl+C abort) -- mask/shift apart, same convention as `kb_readbuf`. `RL_ECHO`/`RL_KEYBOARD`/`RL_UART` flag bits |
 | `sprintf.h` | `sprintf(char *dest, char *fmt, ...)` |
 | `halt.h` | `halt()` (emits a bare HLT) |
 | `malloc.h` | `malloc_blocks/calloc_blocks/malloc_segments/calloc_segments(uint8_t)` -> `void*`, `free(void*)` |
@@ -125,7 +126,7 @@ always** (`uint8_t/uint16_t/int8_t/int16_t`, `struct uint32 {hi,lo}`,
 | `strtoi.h` | `strtoi(char*, uint8_t *flags)`, `strtoi8(...)` -- clobber BL |
 | `extmalloc.h` | `extmalloc()`, `extfree`, `extpage_d_push/pop`, `extpage_e_push/pop` |
 | `clearscreen.h` | `clear_screen(char, uint8_t color)` |
-| `cursor.h` | `cursor_init/off/on()` |
+| `cursor.h` | `cursor_init/off/on()` -- no `goto`/`save`/`restore` (save/restore were cut from the ROM entirely; `cursor_goto` has no C wrapper, call the ASM `:cursor_goto_rowcol`/`:cursor_goto_addr` from a hand-written `.asm` helper if C needs it) |
 | `shell_argv.h` | `shell_get_argv_n(uint8_t)` -> `char*` (SYSTEM.ODY built-ins ONLY) |
 | `trace.h` | `trace()`, `trace_begin/end()`, `trace_0()..trace_7()` |
 | `fat16_*.h` (8 files) | fs handles, dirent parsing, dirwalk, pathfind, readfile, cluster math -- most need `fat16_util.h` (+ `types.h`) first |
@@ -170,6 +171,21 @@ doc comment), whether it preserves the register NOT used for the return
 value (many routines internally push/pop `B` even when the doc comment
 doesn't mention it), and the `dest_reg != 'A'` save/restore branch for
 when the compiler wants the result somewhere other than `A`.
+
+**Never generate a pointer argument straight into `dest_reg='C'`.** A
+pointer that resolves to a local (stack-frame) variable needs a D-register
+frame-offset computation, and the only way to move that result out is
+through A/B/T -- MOV never targets C (see skill **ody-asm**'s MOV
+direction rule). `generate_rvalue(..., dest_reg='C')` silently emits
+`MOV_DH_CH`/`MOV_DL_CL` for that case, which aren't real instructions and
+fail to assemble. Always route a C-register pointer argument through A and
+the heap instead: `generate_rvalue(..., dest_reg='A')` then
+`:heap_push_A`, followed by `PUSH_CH`/`PUSH_CL` and `:heap_pop_C` right
+before the call (see `custom_FuncCall_print`/`_print_raw`/`_readline`/
+`_strtoi` for the pattern). This only matters for arguments that resolve
+to a real address computation (locals, array indexing); a string literal
+or file-scope static's address is already a fixed constant and was never
+affected.
 
 printf format specifiers (lowercase = byte, UPPERCASE = word): `%%`, `%c`,
 `%2` binary, `%b` BCD digit, `%x`/`%X` hex, `%u`/`%U` unsigned dec,

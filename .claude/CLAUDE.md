@@ -144,7 +144,9 @@ For the full memory map, peripheral addresses, interrupt vectors, video system d
 
 ## Constraints Summary
 
-- **ROM**: 16 KiB, ~12 KiB used
+- **ROM**: 16 KiB, currently full (16384/16384 bytes, zero margin) -- adding
+  anything new means finding an eviction candidate first (skill **ody-asm**,
+  "Where code should live")
 - **CPU stack**: 256 bytes (0xBF00-0xBFFF) -- deep recursion dangerous
 - **Heap**: ~4 KiB (0xF000-0xFFEF) -- C frames + asm parameter passing
 - **RAM**: ~24 KiB (0x6000-0xBEFF) for malloc/ODY executables

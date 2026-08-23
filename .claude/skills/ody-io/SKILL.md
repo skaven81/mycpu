@@ -1,7 +1,7 @@
 ---
 name: ody-io
 description: Wire Wrap Odyssey memory map, peripherals, I/O, and storage reference. Use when working with memory addresses, peripheral registers, _SLOW peripheral access, interrupts, video/color output, extended memory paging, FAT16 disk access, ODY executable format, printf format specifiers, color codes, or keyboard flags.
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Odyssey Memory Map, I/O, and Storage Reference
@@ -129,9 +129,31 @@ Loader adds base address to each relocation offset. CALL targets to ROM function
 
 `%%` literal, `%c` char, `%2` binary, `%b`/`%B` BCD (1/2 digits), `%x`/`%X` hex (byte/word), `%u`/`%U` unsigned decimal (byte/word), `%d`/`%D` signed decimal (byte/word), `%s` string pointer.
 
-## Color Codes (`:print` strings)
+## Color Codes -- ANSI, not `@`-codes
 
-`@[shade:0-3][color:0-7]` (0=blk 1=blu 2=grn 3=cyn 4=red 5=mag 6=yel 7=wht), `@x[hex]` raw, `@b/@B` blink off/on, `@c/@C` cursor off/on, `@r` reset.
+The old `@[shade][color]` string-embedded color system is gone. Colors are
+set one of two ways:
+
+1. **ANSI SGR escape sequences**, when `$term_flags` bit 1 (ANSI mode) is
+   set: `ESC[30-37m`/`ESC[90-97m` for the 16 standard/bright foreground
+   colors, `ESC[0m` reset, `ESC[1m`/`ESC[22m` bold/normal, `ESC[5m`/`ESC[25m`
+   blink on/off. No background colors (hardware has none) and no
+   reverse-video. **256-color/truecolor SGR (`38;5;n`, `38;2;r;g;b`) is
+   recognized as valid grammar but NOT implemented** (cut to fit the 16 KiB
+   ROM budget) -- such a sequence is silently discarded as a whole unit, no
+   color change happens. Full sequence list, error-handling rules, and the
+   `$ansi_*` state machine: `os/bios/lib/terminal_ansi.asm`.
+2. **Direct framebuffer color writes** -- set `$term_current_color` and
+   `$term_render_color` (nonzero enables writing the color byte alongside
+   every character) directly, or poke `%display_color%` cells by hand. This
+   is the only way to reach a color value ANSI can't name (e.g. exact 2-bit
+   shade control), and the recommended path for full-screen UIs and games
+   that bypass `putchar`/`print` entirely. See `os/bios/lib/terminal_output.asm`
+   for the `$term_flags`/`$term_render_color` contract.
+
+Color byte format is unchanged: `[BLINK][CURSOR][Rfg 2b][Gfg 2b][Bfg 2b]`
+(64 distinct colors). `os/bios/lib/cursor.h`/`terminal_output.h` and skill
+**ody-c**'s header table cover the C-callable surface.
 
 ## Keyboard Flags (0xC001)
 

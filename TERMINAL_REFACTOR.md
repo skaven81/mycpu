@@ -1,8 +1,15 @@
 # Terminal I/O Refactor -- Architecture Document
 
-This document describes the current state of the Odyssey's terminal I/O subsystem,
-its problems, and the proposed next-generation architecture. It serves as the
-specification for implementation.
+This document describes the state of the Odyssey's terminal I/O subsystem before
+this refactor, and the architecture that replaced it. It served as the
+specification for implementation; Part 1 and most of Part 2 remain an accurate
+description of the *design*, but the ROM shipped a handful of scoped-down
+deviations from it -- see Part 4 for the complete list of where the running
+system differs from what's specified below, and why.
+
+**Implemented as of 2026-08-23** (branch `terminal-refactor`). The BIOS has
+shipped this subsystem; `os/util/termtest/` is the permanent ROM regression
+suite (retarget it, don't recreate Phase 1's userspace prototype).
 
 ---
 
@@ -1064,3 +1071,80 @@ Rough estimates:
     control needs are expected to write 0x4xxx/0x5xxx directly, using the same
     address-computation utilities (`cursor_conv_rowcol`/`cursor_conv_addr`) and color
     byte format the ANSI path uses internally.
+
+---
+
+## Part 4: Implementation Deviations
+
+The transferred terminal subsystem came in 1427 bytes over the 16 KiB ROM
+budget. The cuts below are what actually shipped; everything not listed here
+matches Part 2 as specified.
+
+1. **256-color and truecolor SGR (2.2.3.1) are NOT implemented**, despite
+   resolved decision 10 above saying they would be. `ESC[38;5;n`,
+   `ESC[38;2;r;g;b`, and their `48;...` background forms are recognized as
+   valid CSI grammar and silently discarded as a whole sequence -- no color
+   change happens. Only the 16 standard/bright colors (SGR 30-37/90-97) and
+   the attribute codes (0/1/5/22/25) are live. Programs that need a color the
+   16-name set can't reach must set `$term_current_color` directly (2.2.4).
+   See `os/bios/lib/terminal_ansi.asm`'s file header.
+
+2. **`ESC[s` / `ESC[u` cursor save/restore (2.2.3, 2.3.3) are NOT
+   implemented.** `$crsr_saved_row`/`$crsr_saved_col` and
+   `:cursor_save`/`:cursor_restore` do not exist in the ROM.
+
+3. **Erase-line (`ESC[K`, all three modes) is NOT implemented**, and erase-
+   screen (`ESC[J`) only implements mode 2 (full clear) -- modes 0/1
+   (cursor-to-end, start-to-cursor) are cut. All three are silently ignored
+   as unsupported-but-valid, per the normal "valid but unsupported" rule
+   (2.2.3 case 2), not treated as a full clear. The generic byte-range erase
+   machinery (`.ansi_fill_range`/`.ansi_erase_range`) is commented out (not
+   deleted) in `terminal_ansi.asm`, alongside the `K` dispatch entry and
+   `.disp_erase_line` -- restorable by uncommenting.
+
+4. **Readline overwrite mode is NOT implemented** (2.4.1 decision 5 assumed
+   both insert and overwrite would exist as a per-call local toggle).
+   `:readline` always inserts; the Insert key (0x0f) is simply an
+   unrecognized control code and is ignored. This was a real deletion in
+   `terminal_input.asm`, not a comment-out -- restoring it means
+   re-implementing the toggle and the overwrite-write branch (the last
+   commit with a working copy, in the now-deleted
+   `os/util/termtest/40-t_readline.asm`, is `6def9fd`).
+
+5. **Readline history (2.4.3) is disabled**, not deleted -- every
+   history-related line in `terminal_input.asm` (the `$rl_history_*` VAR
+   block, the Up/Down key dispatch, the `.rl_history_*`/`.rl_hist_*`
+   handlers) is commented out with a leading `#` and restorable verbatim.
+   `:ptmr_clk_set` (`os/bios/lib/prog_timer.asm`, zero consumers) was cut to
+   make ROM room for item 6 below instead of restoring history.
+
+6. **`:readline`'s `AH` flags byte gained a source-selector that 2.4.1 never
+   specified.** The spec's `AH` layout was bit 0 = echo only (bits 1-7
+   reserved). The shipped contract is: bit 0 = echo, bit 1 = accept
+   keyboard input, bit 2 = accept UART input (OR both together to accept
+   either) -- added so the interactive shell stays drivable over the
+   `serrun` serial link, not just the physical keyboard. Passing neither bit
+   1 nor bit 2 hangs the poll loop forever (caller bug, not a runtime
+   error). See `terminal_input.asm`'s `:readline` header for the full
+   contract.
+
+7. **`terminal.h` (2.5.1), the single unified C header, was never created.**
+   The C-callable surface is split across `terminal_output.h`
+   (`printf`/`print`/`print_raw`/`putchar`/`putchar_raw`), the new
+   `terminal_input.h` (`readline`, `RL_ECHO`/`RL_KEYBOARD`/`RL_UART`), and
+   `cursor.h` (`cursor_init`/`cursor_off`/`cursor_on` only -- no
+   `cursor_goto`/`cursor_save`/`cursor_restore`, since goto has no C wrapper
+   and save/restore don't exist per item 2). `term_set_flags`/
+   `term_get_flags` wrappers were skipped in favor of the plain `extern
+   uint8_t term_flags` pattern 2.5.1 itself suggested as the cheaper
+   alternative. `readline()`'s C signature also differs from 2.5.1's literal
+   `uint8_t readline(...)`: it returns `uint16_t`, packed
+   `(status << 8) | length`, the same convention `kb_readbuf()` already uses
+   for its own two-byte return -- 2.5.1's comment already implied a status
+   byte was readable somewhere, which a bare `uint8_t` return can't provide.
+   Direct-framebuffer macros (`TERM_CHAR_BASE` etc.) were likewise never
+   added to a header; use `%display_chars%`/`%display_color%` from
+   assembly, or hand-cast pointers in C as `os/util/vidplay` does.
+
+8. **Tab, keyboard buffer size** (Part 3 decisions 6, 8): unchanged from the
+   spec -- still out of scope, still not implemented/changed.
