@@ -67,18 +67,16 @@ static uint16_t se_free_kib;
 
 static void memstat_show_main_ram(void) {
     // Color escapes ESC[NNm\0, selected by an if-chain below rather than a
-    // 2D array + runtime index: this compiler has no general '*' operator
-    // (so a hand-rolled offset isn't an option), and c_compiler/codegen.py's
-    // visit_ArrayDecl builds a multi-dim array's array_dims innermost-first
-    // (it recurses into node.type before appending its own node.dim), so
-    // char[7][6]'s dims end up [6,7] instead of [7,6] -- ArrayRef's stride
-    // computation (array_dims[1:]) then multiplies by the wrong dimension
-    // (confirmed: a char s_col_strs[7][6] indexed as s_col_strs[n] emitted
-    // 7 ALUOP16O adds, i.e. stride 7, corrupting every row after row 0).
-    // Flagged as a compiler bug; not fixed here since it's out of this
-    // ANSI-migration task's scope. SGR mapping (TERMINAL_REFACTOR.md's
-    // foreground table, shade/color -> SGR): old @31->94, @37->97, @33->96,
-    // @35->95, @25->35, @36->93, @26->33.
+    // 2D array + runtime index. Originally written this way to work around
+    // a c_compiler/codegen.py bug (visit_ArrayDecl built a 2D array's
+    // array_dims innermost-first instead of outer-first, corrupting the
+    // row stride for any non-square 2D array) -- that bug is now fixed
+    // (see codegen.py and the test_2d_array_row_stride regression test in
+    // os/cctest/cctest8/main.c), but this file wasn't reverted back to a
+    // real 2D array since the if-chain works fine and touching tested code
+    // for style alone isn't worth the risk. SGR mapping
+    // (TERMINAL_REFACTOR.md's foreground table, shade/color -> SGR): old
+    // @31->94, @37->97, @33->96, @35->95, @25->35, @36->93, @26->33.
     static char s_col_free[6] = {27,'[','9','4','m',0};
     static char s_col_segs[6] = {27,'[','9','7','m',0};
     static char s_col_segf[6] = {27,'[','9','6','m',0};
