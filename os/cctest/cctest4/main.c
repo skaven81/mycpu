@@ -95,9 +95,9 @@ void test_putchar() {
     putchar('O');
     putchar('K');
     putchar(0x0a);
-    printf("putchar_direct: ");
-    putchar_direct('O');
-    putchar_direct('K');
+    printf("putchar_raw: ");
+    putchar_raw('O');
+    putchar_raw('K');
     putchar(0x0a);
 }
 

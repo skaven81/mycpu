@@ -12,11 +12,21 @@
 # Configure the port /dev/ttyUSBx baud-n81, with no flow control.
 
 # TODO 2024-01-07
-#  * cursor_goto_rowcol doesn't work, needs to be fixed (see clearscreen)
 #  * send control chars properly so ctrl+c, backspace, etc. are sent properly
-#  * load parameters and handle colors and cursor movement commands
 #  * still have a lot of random lockups, maybe related.
-#  * @<color> codes terminal_output don't match ANSI colors, but maybe that's OK
+#
+# 2026-08-22: the hand-rolled VT220 escape parser (.receive_vt220 and its
+# .rx_vt220_* handlers) was replaced by feeding received bytes straight to
+# the BIOS's own :putchar with $term_flags bit 1 (ANSI) set -- the BIOS now
+# has a real CSI parser (TERMINAL_REFACTOR.md 2.2.3), so this tool no longer
+# needs its own incomplete one (most of the TODOs above this note, plus a
+# confirmed bug: the old 'D' cursor-left handler called :cursor_right).
+# `console raw` still exists and now maps to leaving $term_flags at 0x00
+# (no ANSI bit): ESC bytes print as literal glyphs instead of being
+# interpreted, same intent as before. A bare LF (0x0a) is still dropped
+# unconditionally in both modes -- most senders pair it with CR, and
+# processing both would double-advance the line (CR moves to column 0,
+# LF alone advances the row).
 
 :cmd_console
 
@@ -36,6 +46,7 @@ ALUOP_ADDR %A%+%AL% $console_vars+1
 # $console_vars[2] - IRQ1 lo
 # $console_vars[3] - IRQ5 hi
 # $console_vars[4] - IRQ5 lo
+# $console_vars[5] - saved $term_flags (restored on exit)
 
 # Get our first argument (argv[1])
 LDI_BL 0x00                     # default to not raw mode
@@ -59,13 +70,27 @@ LD_DL $console_vars+1           # D at $console_vars[0]
 
 ALUOP_ADDR_D %B%+%BL%           # Store raw mode flag at $console_vars[0]
 
-# Print startup banner
+# Save the current $term_flags at $console_vars[5], for restoration on exit.
+LD_AL $term_flags
+LD_CH $console_vars
+LD_CL $console_vars+1
+INCR_C
+INCR_C
+INCR_C
+INCR_C
+INCR_C
+ALUOP_ADDR_C %A%+%AL%
+
+# Print startup banner, and set $term_flags for this session: ANSI mode
+# on (0x02) unless raw was requested (0x00) -- see the file header note.
 ALUOP_FLAGS %B%+%BL%
 JNZ .startup_raw
 LDI_C .start_vt220
+ST $term_flags 0x02
 JMP .print_banner
 .startup_raw
 LDI_C .start_raw
+ST $term_flags 0x00
 .print_banner
 CALL :print
 
@@ -152,6 +177,9 @@ ST_TD %IRQ5addr%        # restore IRQ5 hi from $console_vars[3]
 INCR_D
 LDA_D_TD
 ST_TD %IRQ5addr%+1      # restore IRQ5 lo from $console_vars[4]
+INCR_D
+LDA_D_AL
+ALUOP_ADDR %A%+%AL% $term_flags   # restore $term_flags from $console_vars[5]
 UMASKINT
 
 .exit
@@ -178,185 +206,16 @@ CALL :uart_sendchar
 POP_BL
 RET
 
-### Takes a received character in AL, and prints the appropriate
-### data to the screen, interpreting codes as necessary.  If `raw`
-### parameter was provided, skips the code interpretation
+### Takes a received character in AL and prints it via :putchar, which
+### honors $term_flags as set at startup (ANSI mode, or raw/0x00) -- see
+### the file header note. A bare LF (0x0a) is dropped unconditionally.
 .receive_vt220
 ALUOP_PUSH %B%+%BL%
-PUSH_CH
-PUSH_CL
-PUSH_DH
-PUSH_DL
-
-# Ignore \r (linefeed) chars
 LDI_BL '\n'
 ALUOP_FLAGS %A&B%+%AL%+%BL%
-JNE .not_linefeed
-JMP .exit_receive_vt220
-
-# Check raw mode - jump straight
-# to "print it" if in raw mode
-.not_linefeed
-LD_DH $console_vars
-LD_DL $console_vars+1
-LDA_D_BL # BL contains raw mode flag $console_vars[0]
-ALUOP_FLAGS %B%+%BL%
-JZ .vt220_mode                  # if raw mode == 0 (off), do VT220 handling
-CALL :putchar                   # otherwise, just print the char
-JMP .exit_receive_vt220         # and go back to the console handler loop
-
-.vt220_mode
-# Is it an escape char?
-LDI_BL 0x1b # esc
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JNE .not_esc
-# If esc, read another char
-.receive_vt220_readbuf
-CALL :uart_bufsize              # buffer size in AL
-ALUOP_FLAGS %A%+%AL%
-JZ .receive_vt220_readbuf
-CALL :uart_readbuf              # next char in AL
-LDI_BL '['
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JNE .not_esc
-# We have received esc-[ and so we now need to receive
-# the rest of the escape sequence. the first parameter,
-# if present, goes into CL. The second parameter, if present,
-# goes into CH. The terminating code (a letter) ends up in AL.
-.receive_vt220_readesc
-CALL :uart_bufsize              # buffer size in AL
-ALUOP_FLAGS %A%+%AL%
-JZ .receive_vt220_readesc
-CALL :uart_readbuf              # next char in AL
-
-# See if the char terminates the sequence
-LDI_BL 'A'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .rx_vt220_cursor_up
-LDI_BL 'B'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .rx_vt220_cursor_down
-LDI_BL 'C'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .rx_vt220_cursor_right
-LDI_BL 'D'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .rx_vt220_cursor_left
-LDI_BL 'E'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .exit_receive_vt220 # ignore cursor next line
-LDI_BL 'F'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .exit_receive_vt220 # ignore cursor previous line
-LDI_BL 'G'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .exit_receive_vt220 # ignore cursor horizontal absolute
-LDI_BL 'H'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .rx_vt220_cursor_goto
-LDI_BL 'J'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .rx_vt220_clear
-LDI_BL 'K'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .rx_vt220_erase_line
-LDI_BL 'S'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .exit_receive_vt220 # ignore scroll up
-LDI_BL 'T'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .exit_receive_vt220 # ignore scroll down
-LDI_BL 'f'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .rx_vt220_cursor_goto # similar behavior
-LDI_BL 'm'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .rx_vt220_setcolor
-LDI_BL 'i'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .exit_receive_vt220 # ignore AUX port
-LDI_BL 'n'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .exit_receive_vt220 # ignore device status report
-LDI_BL 'h'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .exit_receive_vt220 # ignore `CSI ? nnnn h` private sequence (xterm/VT220)
-LDI_BL 'l'
-ALUOP_FLAGS %A&B%+%AL%+%BL%
-JEQ .exit_receive_vt220 # ignore `CSI ? nnnn l` private sequence (xterm/VT220)
-
-# If it's a semicolon then toggle to second parameter
-# TODO
-
-# If it's not a terminating char, and it's numeric,
-# collect the char into a parameter
-# TODO
-JMP .receive_vt220_readesc
-
-# If it's none of these, then it's an invalid escape sequence, so print the
-# char and move on.
-JMP .not_esc
-
-####
-# VT220 ANSI code handlers
-.rx_vt220_cursor_up
-CALL :cursor_up
-JMP .exit_receive_vt220
-
-.rx_vt220_cursor_down
-CALL :cursor_down
-JMP .exit_receive_vt220
-
-.rx_vt220_cursor_right
-CALL :cursor_right
-JMP .exit_receive_vt220
-
-.rx_vt220_cursor_left
-CALL :cursor_right
-JMP .exit_receive_vt220
-
-.rx_vt220_cursor_goto
-# TODO
-JMP .exit_receive_vt220
-
-.rx_vt220_clear
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %A%+%AL%
-LDI_AH 0x00 # char to fill with
-LDI_AL %white%
-CALL :clear_screen
-LDI_AL 0x00
-#CALL :cursor_goto_rowcol
-CALL :cursor_init
-# TODO 0 (default) clears from cursor to end of screen
-# TODO 1 clears from cursor to beginning of screen
-# TODO 2 or 3 clears entire screen and moves cursor to 1,1
-POP_AL
-POP_AH
-JMP .exit_receive_vt220
-
-.rx_vt220_erase_line
-# TODO 0 (default) clear from cursor to the end of the line
-# TODO 1 clear from cursor to beginning of the line
-# TODO 2 clear entire line
-JMP .exit_receive_vt220
-
-.rx_vt220_setcolor
-# TODO
-JMP .exit_receive_vt220
-
-###
-# if we received something that wasn't an escape sequence,
-# print it and move on.
-.not_esc
+JEQ .exit_receive_vt220
 CALL :putchar
-JMP .exit_receive_vt220
-
 .exit_receive_vt220
-POP_DL
-POP_DH
-POP_CL
-POP_CH
 POP_BL
 RET
 

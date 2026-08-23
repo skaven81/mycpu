@@ -92,6 +92,18 @@ class SpecialFunctions():
         self.emit(f"POP_CL", "Restore C after print")
         self.emit(f"POP_CH", "Restore C after print")
 
+    def custom_FuncCall_print_raw(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=str -> CALL :print_raw -> no return
+        # C: void print_raw(char *str)
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        self.emit(f"PUSH_CH", "Save C before print_raw")
+        self.emit(f"PUSH_CL", "Save C before print_raw")
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='C')
+        self.emit(f"CALL {func.asm_name()}")
+        # no return value for print_raw, nothing to pop
+        self.emit(f"POP_CL", "Restore C after print_raw")
+        self.emit(f"POP_CH", "Restore C after print_raw")
+
     def custom_FuncCall_halt(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: HLT (no inputs, no return)
         # C: void halt(void)
@@ -177,9 +189,9 @@ class SpecialFunctions():
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Print character in AL")
 
-    def custom_FuncCall_putchar_direct(self, node, mode, func, dest_reg='A', **kwargs):
-        # ASM: AL=char -> CALL :putchar_direct -> no return
-        # C: void putchar_direct(char c)
+    def custom_FuncCall_putchar_raw(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: AL=char -> CALL :putchar_raw -> no return
+        # C: void putchar_raw(char c)
         arg_nodes = self.visit(node.args, mode='return_nodes')
         rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
         self.emit(f"CALL {func.asm_name()}", "Print character directly in AL")

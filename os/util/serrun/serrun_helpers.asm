@@ -127,8 +127,8 @@ RET
 # restore it later.
 #
 # The BIOS boot default at IRQ5 is now :uart_irq_dr_buf itself
-# (os/bios/00-main.asm, changed so the shell's :input can accept UART
-# bytes -- see terminal_input.asm's %input_source_uart% option), so in the
+# (os/bios/00-main.asm, changed so the shell's :readline can accept UART
+# bytes -- see terminal_input.asm's AH bit 2 source-selector), so in the
 # common case this just reinstalls the handler that was already there. It
 # is still necessary, not a no-op in general: IRQ5 could have been
 # repointed by whatever ran before serrun (any other UART consumer, or a

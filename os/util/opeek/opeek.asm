@@ -75,7 +75,7 @@ LDI_C .peek_pfx
 CALL :printf
 ALUOP_PUSH %A%+%AL%
 ALUOP_AL %B%+%BL%                       # AL = byte
-CALL :putchar_direct
+CALL :putchar_raw
 POP_AL
 LDI_C .peek_end
 CALL :print
