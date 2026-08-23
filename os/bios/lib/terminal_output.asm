@@ -241,12 +241,28 @@ RET
 # is left mid-sequence when the string ends, flushes the buffered escape
 # characters and resets it (2.2.3 case 4).
 #
+# Clears the cursor bit at the CURRENT position before printing anything
+# (see the comment above the final :cursor_display_sync call below for
+# why this is needed), then syncs it at the new position once at the end,
+# per 2.3.2's design (goto/movement functions no longer auto-clear).
+#
 # Inputs:
 #  C - address of string to print
 :print
 ALUOP_PUSH %A%+%AL%
 PUSH_CH
 PUSH_CL
+LD_AL $crsr_on             # save on/off state across the transient clear
+ALUOP_PUSH %A%+%AL%
+CALL :cursor_off           # clears the bit at wherever the LAST sync (a
+                            # previous :print call, or boot) left it --
+                            # :print is the only place that ever syncs, so
+                            # without this, every call bakes a NEW stray
+                            # mark at its own end position and nothing
+                            # ever erases the one before it
+POP_AL
+ALUOP_ADDR %A%+%AL% $crsr_on   # restore on/off state (display stays off
+                                # until the final sync below re-applies it)
 .print_loop
 LDA_C_AL
 ALUOP_FLAGS %A%+%AL%
