@@ -83,26 +83,79 @@ class SpecialFunctions():
     def custom_FuncCall_print(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: C=str -> CALL :print -> no return
         # C: void print(char *str)
+        # The str pointer is routed through A + the heap rather than
+        # generated directly into C: a local (stack-frame) variable's
+        # address requires a D-register frame computation whose result can
+        # only be moved out through A/B/T (MOV never targets C), so a
+        # direct dest_reg='C' rvalue generation fails to assemble whenever
+        # str is a local array/variable (see custom_FuncCall_strtoi for the
+        # same workaround, established first).
         arg_nodes = self.visit(node.args, mode='return_nodes')
-        self.emit(f"PUSH_CH", "Save C before printf")
-        self.emit(f"PUSH_CL", "Save C before printf")
-        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='C')
+        self.emit(f"ALUOP_PUSH %A%+%AH%", "Save A before print")
+        self.emit(f"ALUOP_PUSH %A%+%AL%", "Save A before print")
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL :heap_push_A", "Stage str ptr on heap")
+        self.emit(f"PUSH_CH", "Save C before print")
+        self.emit(f"PUSH_CL", "Save C before print")
+        self.emit(f"CALL :heap_pop_C", "Load str ptr into C")
         self.emit(f"CALL {func.asm_name()}")
         # no return value for print, nothing to pop
         self.emit(f"POP_CL", "Restore C after print")
         self.emit(f"POP_CH", "Restore C after print")
+        self.emit(f"POP_AL", "Restore A after print")
+        self.emit(f"POP_AH", "Restore A after print")
 
     def custom_FuncCall_print_raw(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: C=str -> CALL :print_raw -> no return
         # C: void print_raw(char *str)
+        # See custom_FuncCall_print above for why the pointer is routed
+        # through A + the heap instead of a direct dest_reg='C' generation.
         arg_nodes = self.visit(node.args, mode='return_nodes')
+        self.emit(f"ALUOP_PUSH %A%+%AH%", "Save A before print_raw")
+        self.emit(f"ALUOP_PUSH %A%+%AL%", "Save A before print_raw")
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL :heap_push_A", "Stage str ptr on heap")
         self.emit(f"PUSH_CH", "Save C before print_raw")
         self.emit(f"PUSH_CL", "Save C before print_raw")
-        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='C')
+        self.emit(f"CALL :heap_pop_C", "Load str ptr into C")
         self.emit(f"CALL {func.asm_name()}")
         # no return value for print_raw, nothing to pop
         self.emit(f"POP_CL", "Restore C after print_raw")
         self.emit(f"POP_CH", "Restore C after print_raw")
+        self.emit(f"POP_AL", "Restore A after print_raw")
+        self.emit(f"POP_AH", "Restore A after print_raw")
+
+    def custom_FuncCall_readline(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=buf, AL=maxlen, AH=flags -> CALL :readline -> AL=length
+        #      entered, AH=status (0=Enter, 1=Ctrl+C abort)
+        # C: uint16_t readline(char *buf, uint8_t maxlen, uint8_t flags)
+        #    Return is packed AH=status/AL=length, the same convention
+        #    kb_readbuf uses for AH=key-flags/AL=char -- mask/shift in C
+        #    to pull them apart (e.g. `n & 0xff` for length, `n >> 8` for
+        #    status).
+        # The buf pointer is routed through A + the heap rather than
+        # generated directly into C (see custom_FuncCall_print/strtoi):
+        # a local array's address needs a D-register frame computation
+        # that can only reach A/B/T, never C directly. A itself is not
+        # preserved across the call -- it's fully consumed as input
+        # (flags/maxlen) regardless of dest_reg, same as malloc_blocks.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_var = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit(f"CALL :heap_push_A", "Stage buf ptr on heap")
+        self.emit(f"PUSH_CH", "Save C before readline")
+        self.emit(f"PUSH_CL", "Save C before readline")
+        self.emit(f"CALL :heap_pop_C", "Load buf ptr into C")
+        rvalue_var = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A', dest_var=Variable(typespec=TypeSpec('unsigned char', 'unsigned char'), name='const', qualifiers=['const'], is_virtual=True))
+        # flags is in AL
+        self.emit(f"ALUOP_AH %A%+%AL%", "Copy flags to AH")
+        rvalue_var = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A', dest_var=Variable(typespec=TypeSpec('unsigned char', 'unsigned char'), name='const', qualifiers=['const'], is_virtual=True))
+        # maxlen is now in AL, flags remains in AH
+        self.emit(f"CALL {func.asm_name()}", "Read a line into the buffer in C (AL=maxlen, AH=flags)")
+        self.emit(f"POP_CL", "Restore C after readline")
+        self.emit(f"POP_CH", "Restore C after readline")
+        if dest_reg != 'A':
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
 
     def custom_FuncCall_halt(self, node, mode, func, dest_reg='A', **kwargs):
         # ASM: HLT (no inputs, no return)
