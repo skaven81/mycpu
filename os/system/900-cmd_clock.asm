@@ -271,23 +271,21 @@ CALL :strtoi8
 RET
 
 .read_n_bcd
-LDI_AL %input_source_kb%+%input_source_uart%
-CALL :input                         # get user input (keyboard or UART)
-LDI_AL '\n'                         # input doesn't wrap to the next line,
-CALL :putchar                       # so do that now
-LDI_AL 0                            # left mark = 0
-LDI_BL 1                            # right mark = 1
-CALL :cursor_mark_getstring         # D now points at a null-terminated copy of the user's input
-LDA_D_AL                            # get first char into AL
-ALUOP_FLAGS %A%+%AL%                # ...is null?
-JZ .read_no_input                   # ...then skip and set month
-LDI_AL 'x'                          # Prepend '0x' to string in D
-CALL :strprepend                    # |
+LDI_C .read_n_bcd_buf
+LDI_AL 5                            # up to 4 digits + null terminator
+LDI_AH 0x07                         # bit0 echo, bit1 keyboard, bit2 UART
+CALL :readline                      # AL=length (0=blank Enter or Ctrl+C); buffer
+                                     # at C null-terminated; C preserved
+ALUOP_FLAGS %A%+%AL%                # AL==0 -> user entered nothing
+JZ .read_no_input
+LDI_D .read_n_bcd_buf               # Prepend '0x' to the buffer in place so
+LDI_AL 'x'                          # :strtoi/:strtoi8 parse the typed digits
+CALL :strprepend                    # as hex (this is how BCD entry works here)
+LDI_D .read_n_bcd_buf               # |
 LDI_AL '0'                          # |
-CALL :strprepend                    # |
-PUSH_DH                             # Copy D to C
-POP_CH                              # |
-PUSH_DL                             # |
-POP_CL                              # |
+CALL :strprepend                    # C still points at .read_n_bcd_buf for the caller
 .read_no_input
 RET
+
+.read_n_bcd_buf "\0\0\0\0\0\0\0\0"  # 8 bytes: readline writes up to 4 digits +
+                                     # null, then strprepend adds "0x" in place

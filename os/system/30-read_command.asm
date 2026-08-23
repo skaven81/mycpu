@@ -25,15 +25,6 @@ PUSH_CL
 PUSH_DH
 PUSH_DL
 
-# Read input from the user; result will be in cursor marks 0 and 1.
-# Accept both keyboard and UART so the shell is drivable remotely over
-# serial (the whole point of the serrun workflow) as well as locally.
-LDI_AL %input_source_kb%+%input_source_uart%
-CALL :input
-# input doesn't wrap to the next line, so do that now
-LDI_AL '\n'
-CALL :putchar
-
 # Allocate memory for storing the user's input (1 segment = 128 bytes)
 LDI_AL 1
 CALL :calloc_segments            # A = input buffer address
@@ -43,9 +34,21 @@ ALUOP_ADDR_C %A%+%AH%           # write hi byte
 INCR_C
 ALUOP_ADDR_C %A%+%AL%           # write lo byte
 
+# Read a line of input directly into the buffer (:readline edits the
+# caller-supplied buffer in place -- no marks, no separate copy step).
+# Accept both keyboard and UART so the shell is drivable remotely over
+# serial (the whole point of the serrun workflow) as well as locally.
+# :readline itself echoes the trailing newline, so no manual putchar here.
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%                # C = input buffer address
+LDI_AL 128                       # maxlen incl. null terminator (1 segment)
+LDI_AH 0x07                      # bit0 echo, bit1 keyboard, bit2 UART
+CALL :readline                   # AL=length (0=blank Enter or Ctrl+C), AH=status
+
 # Allocate argv pointer array (4 blocks = 64 bytes = up to 31 args + null)
 # TODO: add overflow detection after strsplit -- if argc > 31, print a
 # warning and truncate to avoid writing past the end of the argv array.
+ALUOP_PUSH %A%+%AL%              # save readline's returned length across calloc_blocks
 LDI_AL 4
 CALL :calloc_blocks              # A = argv array address
 # Write argv array address to :shell_argv_ptr
@@ -53,19 +56,12 @@ LDI_C :shell_argv_ptr
 ALUOP_ADDR_C %A%+%AH%           # write hi byte
 INCR_C
 ALUOP_ADDR_C %A%+%AL%           # write lo byte
+POP_AL                           # restore readline's returned length
 
-# Check if mark 1 == mark 0. If so, the user didn't enter
-# any input at all and we return with argc=0.
-LDI_AL 0
-CALL :cursor_get_mark            # offset of mark 0 in A
-ALUOP_BH %A%+%AH%
-ALUOP_BL %A%+%AL%               # offset of mark 0 now in B
-LDI_AL 1
-CALL :cursor_get_mark            # offset of mark 1 in A
-ALUOP_FLAGS %A&B%+%AL%+%BL%     # AL==BL?
-JNE .process_input               # if unequal, OK to proceed
-ALUOP_FLAGS %A&B%+%AH%+%BH%     # AH==BH?
-JNE .process_input               # if unequal, OK to proceed
+# If length == 0 (blank Enter or Ctrl+C), the user didn't enter any
+# input at all and we return with argc=0.
+ALUOP_FLAGS %A%+%AL%
+JNE .process_input
 
 # Empty input: set argc=0 and write null pair to argv array start
 LDI_C :shell_argc
@@ -83,31 +79,20 @@ ALUOP_ADDR_C %zero%              # write lo byte of null ptr
 JMP .read_command_done
 
 .process_input
-# Load input buffer address into D for cursor_mark_getstring
-LDI_C :shell_input_ptr
-LDA_C_AH
-INCR_C
-LDA_C_AL                         # A = input buffer address
-ALUOP_DH %A%+%AH%
-ALUOP_DL %A%+%AL%                # D = input buffer address
-LDI_AL 0                         # left mark = 0
-LDI_BL 1                         # right mark = 1
-CALL :cursor_mark_getstring      # copies display chars to buffer at D
-                                  # D restored to input buffer start by heap_pop_all
-
 # Set up for strsplit: C = source (input buffer), D = dest (argv array)
-# D currently = input buffer start (restored by cursor_mark_getstring)
-# Push D, load argv array into D via C, then pop input buffer into C
-PUSH_DH
-PUSH_DL
 LDI_C :shell_argv_ptr
 LDA_C_AH
 INCR_C
 LDA_C_AL                         # A = argv array address
 ALUOP_DH %A%+%AH%
 ALUOP_DL %A%+%AL%                # D = argv array address
-POP_CL
-POP_CH                            # C = input buffer start
+
+LDI_C :shell_input_ptr
+LDA_C_AH
+INCR_C
+LDA_C_AL                         # A = input buffer address
+ALUOP_CH %A%+%AH%
+ALUOP_CL %A%+%AL%                # C = input buffer start (source)
 
 LDI_AH ' '                       # split on spaces
 LDI_AL 2                          # allocate 2 blocks (32 bytes) for each token
