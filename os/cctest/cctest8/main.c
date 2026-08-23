@@ -10,6 +10,9 @@ extern void exec_chain(char *path);
 //   - Partial array/struct initialization (fewer initializers than size)
 //   - 3D array access (visit_ArrayRef with 3 levels)
 //   - 2D array of uint16_t (multi-dim with word-size elements)
+//   - 2D array row-stride correctness with asymmetric dimensions
+//     (regression test for a real bug found 2026-08-22, see
+//     test_2d_array_row_stride)
 //   - 16-bit compound shift assignment (uint16_t <<= / >>=)
 //   - Chained assignment (a = b = c = 42)
 //   - Compound assignment via arrow operator (ptr->field += val)
@@ -163,6 +166,61 @@ void test_2d_word_array(void) {
 }
 
 // ============================================================================
+// Test: 2D array row stride correctness (asymmetric dimensions)
+// ============================================================================
+// Regression test for a codegen bug in visit_ArrayDecl (c_compiler/codegen.py):
+// it built a 2D array's array_dims innermost-dimension-first instead of
+// outer-first, because it recurses into node.type (pycparser nests the
+// INNER ArrayDecl there) before appending its own node.dim. visit_ArrayRef's
+// row-stride computation assumes array_dims[0] is the outer (row-count)
+// dimension and multiplies the element size by everything in
+// array_dims[1:] to get one row's byte size -- with dims reversed, a
+// grid[3][5] computed a stride of 3 bytes/row instead of 5, so writes to
+// later rows silently corrupted earlier rows.
+//
+// A SQUARE array (unlike test_2d_word_array's mat[3][4]) can't catch this
+// -- a self-consistent reversed stride still round-trips a single
+// write-then-read at the same index, since both use the identical (wrong)
+// address formula. This test uses asymmetric dimensions (3 rows x 5 cols)
+// and RUNTIME (non-constant) indices, fully populates every cell with a
+// value unique to its position in row-major traversal order, then
+// re-reads every cell and checks it against that same expected sequence.
+// A wrong stride makes a later row's write land inside an earlier row's
+// territory, which THIS catches even though a single-cell round-trip
+// would not.
+void test_2d_array_row_stride(void) {
+    uint8_t grid[3][5];
+    uint8_t r;
+    uint8_t c;
+    uint8_t counter;
+
+    counter = 1;
+    r = 0;
+    while (r < 3) {
+        c = 0;
+        while (c < 5) {
+            grid[r][c] = counter;
+            counter++;
+            c++;
+        }
+        r++;
+    }
+
+    counter = 1;
+    r = 0;
+    while (r < 3) {
+        c = 0;
+        while (c < 5) {
+            total_tests++;
+            if (grid[r][c] != counter) { fail("2d_stride: grid[r][c]==expected"); }
+            counter++;
+            c++;
+        }
+        r++;
+    }
+}
+
+// ============================================================================
 // Test: 16-bit compound shift assignment
 // ============================================================================
 void test_compound_shift_u16(void) {
@@ -233,6 +291,7 @@ void main(void) {
     test_ptr_subtraction();
     test_partial_init();
     test_2d_word_array();
+    test_2d_array_row_stride();
     test_compound_shift_u16();
     test_chained_assign();
     test_compound_via_arrow();

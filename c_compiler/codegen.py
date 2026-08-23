@@ -1005,7 +1005,17 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             new_var.is_array = True
             new_var.qualifiers.extend(node.dim_quals)
             if node.dim:
-                new_var.array_dims.append(self.visit(node.dim, mode='get_value', **kwargs)[0])
+                # pycparser nests a multi-dim declarator inner-dimension-first
+                # (char arr[7][6] is ArrayDecl(dim=7, type=ArrayDecl(dim=6,
+                # type=TypeDecl))), and we recurse into node.type BEFORE
+                # reaching this point, so the inner dimension is already in
+                # new_var.array_dims by the time we get here. Insert at the
+                # front (not append) so the dimension at THIS level -- which
+                # is always the outer one relative to whatever the recursion
+                # already collected -- ends up first. array_dims must stay in
+                # outer-to-inner (source declaration) order: visit_ArrayRef's
+                # row-stride computation (array_dims[1:]) depends on it.
+                new_var.array_dims.insert(0, self.visit(node.dim, mode='get_value', **kwargs)[0])
             if len(new_var.array_dims) > 2:
                 raise NotImplementedError(f"Arrays with more than 2 dimensions are not supported (got {len(new_var.array_dims)} dimensions)")
             return new_var
