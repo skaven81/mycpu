@@ -28,4 +28,6 @@ extern struct fs_handle drive_1_fs_handle;
 extern uint8_t fat16_get_current_drive_number();
 extern uint16_t fat16_get_current_directory_cluster(struct fs_handle *h);
 extern uint8_t fat16_handle_get_ataid(struct fs_handle *h);
-extern void fat16_print(struct fs_handle *h);
+// fat16_print() was evicted from the BIOS to os/lib/fat16_print.asm +
+// fat16_print.h -- include that header (after this one) in any ODY that
+// needs it; it is no longer BIOS-resident.

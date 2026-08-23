@@ -13,23 +13,8 @@ ST16 $heap_ptr 0xf000
 RET
 
 ######
-# Initialize a stack frame. The value in AL (or BL) is the number
+# Initialize a stack frame. The value in BL is the number
 # of bytes to allocate for local variables.
-:heap_advance_AL
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %B%+%BL%
-LD_BH $heap_ptr
-LD_BL $heap_ptr+1
-LDI_AH 0x00                         # so we can do 16-bit addition
-ALUOP16O_B %ALU16_A+B%                    # advance the heap pointer
-ALUOP_ADDR %B%+%BH% $heap_ptr       
-ALUOP_ADDR %B%+%BL% $heap_ptr+1     # Save advanced heap pointer
-POP_BL
-POP_BH
-POP_AH
-RET
-
 :heap_advance_BL
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
@@ -46,23 +31,8 @@ POP_AH
 RET
 
 ######
-# Destroy a stack frame. The value in AL (or BL) is the number
+# Destroy a stack frame. The value in BL is the number
 # of bytes to deallocate for local variables.
-:heap_retreat_AL
-ALUOP_PUSH %A%+%AH%
-ALUOP_PUSH %B%+%BH%
-ALUOP_PUSH %B%+%BL%
-LD_BH $heap_ptr
-LD_BL $heap_ptr+1
-LDI_AH 0x00                         # so we can do 16-bit subtraction
-ALUOP16O_B %ALU16_B-A%               # advance the heap pointer
-ALUOP_ADDR %B%+%BH% $heap_ptr       
-ALUOP_ADDR %B%+%BL% $heap_ptr+1     # Save retreated heap pointer
-POP_BL
-POP_BH
-POP_AH
-RET
-
 :heap_retreat_BL
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%

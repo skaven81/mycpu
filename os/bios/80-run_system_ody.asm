@@ -216,24 +216,12 @@ JNZ .exec_search_known_drive    # AH != 0x00 -> boot drive is known
 .exec_search_drive_0
 
 LDI_C $drive_0_fs_handle
-ST_CH $current_fs_handle_ptr
-ST_CL $current_fs_handle_ptr+1
-LDI_C .sys_ody_path
-CALL :heap_push_C
-CALL :fat16_pathfind
-CALL :heap_pop_A                # A = dirent ptr, or 0x00xx/0x01xx on error
+CALL .try_pathfind_sysody
+ALUOP_FLAGS %B%+%BH%
+JNZ .exec_search_drive_1        # not found / ATA error -> try drive 1
 
-# Check for error: E flag set if AH == 0x01 (ATA error)
-LDI_BL 0x01
-ALUOP_FLAGS %A&B%+%AH%+%BL%
-JEQ .exec_search_drive_1
-# Check for not found: Z flag set if AH == 0x00
-ALUOP_FLAGS %A%+%AH%
-JZ .exec_search_drive_1
-
-# Found on drive 0; pop fs_handle ptr
-CALL :heap_pop_C                # C = fsh_ptr
-# Record the boot drive for subsequent iterations
+# Found on drive 0; A = dirent ptr, C = fsh_ptr.
+# Record the boot drive for subsequent iterations.
 ST_CH $boot_fs_handle_ptr
 ST_CL $boot_fs_handle_ptr+1
 JMP .exec_fallback_found
@@ -242,21 +230,12 @@ JMP .exec_fallback_found
 .exec_search_drive_1
 
 LDI_C $drive_1_fs_handle
-ST_CH $current_fs_handle_ptr
-ST_CL $current_fs_handle_ptr+1
-LDI_C .sys_ody_path
-CALL :heap_push_C
-CALL :fat16_pathfind
-CALL :heap_pop_A                # A = dirent ptr, or 0x00xx/0x01xx on error
+CALL .try_pathfind_sysody
+ALUOP_FLAGS %B%+%BH%
+JNZ .exec_sys_not_found         # not found / ATA error -> give up
 
-LDI_BL 0x01
-ALUOP_FLAGS %A&B%+%AH%+%BL%
-JEQ .exec_sys_not_found
-ALUOP_FLAGS %A%+%AH%
-JZ .exec_sys_not_found
-
-# Found on drive 1; pop fs_handle ptr
-CALL :heap_pop_C                # C = fsh_ptr
+# Found on drive 1; A = dirent ptr, C = fsh_ptr.
+# Record the boot drive for subsequent iterations.
 ST_CH $boot_fs_handle_ptr
 ST_CL $boot_fs_handle_ptr+1
 JMP .exec_fallback_found
@@ -268,6 +247,29 @@ LD_AH $boot_fs_handle_ptr
 LD_AL $boot_fs_handle_ptr+1
 ALUOP_CH %A%+%AH%
 ALUOP_CL %A%+%AL%
+CALL .try_pathfind_sysody
+ALUOP_FLAGS %B%+%BH%
+JNZ .exec_sys_not_found         # not found / ATA error -> give up
+
+# Found; A = dirent ptr, C = fsh_ptr.  $boot_fs_handle_ptr is already
+# recorded from a prior cold-boot search, so no bookkeeping needed here.
+JMP .exec_fallback_found
+
+####
+# .try_pathfind_sysody - point $current_fs_handle_ptr at a candidate
+# filesystem handle and search it for /SYSTEM.ODY.  Shared by the three
+# .exec_search_* call sites above; each caller decides its own failure
+# branch target and whether to record $boot_fs_handle_ptr on success.
+#
+# To use:
+#  1. Load C = fs_handle ptr to try
+#  2. CALL .try_pathfind_sysody
+#  3. Check BH: 0x00 = found (A = dirent ptr, C = fsh_ptr, heap balanced);
+#     0x01 = not found or ATA error (heap balanced, A/C undefined)
+# Side effects: $current_fs_handle_ptr is set to the tried handle
+# regardless of outcome (matches prior per-call-site behavior).
+###
+.try_pathfind_sysody
 ST_CH $current_fs_handle_ptr
 ST_CL $current_fs_handle_ptr+1
 LDI_C .sys_ody_path
@@ -275,14 +277,22 @@ CALL :heap_push_C
 CALL :fat16_pathfind
 CALL :heap_pop_A                # A = dirent ptr, or 0x00xx/0x01xx on error
 
+# Check for error: E flag set if AH == 0x01 (ATA error)
 LDI_BL 0x01
 ALUOP_FLAGS %A&B%+%AH%+%BL%
-JEQ .exec_sys_not_found
+JEQ .try_pathfind_notfound
+# Check for not found: Z flag set if AH == 0x00
 ALUOP_FLAGS %A%+%AH%
-JZ .exec_sys_not_found
+JZ .try_pathfind_notfound
 
+# Found; pop fs_handle ptr into C, report success
 CALL :heap_pop_C                # C = fsh_ptr
-JMP .exec_fallback_found
+LDI_BH 0x00
+RET
+
+.try_pathfind_notfound
+LDI_BH 0x01
+RET
 
 # Fallback pathfind succeeded; A = dirent ptr, C = fsh_ptr
 .exec_fallback_found

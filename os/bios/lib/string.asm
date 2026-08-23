@@ -73,43 +73,6 @@ POP_BH
 RET
 
 #######
-# Concatenates null-terminated strings referenced on the heap.
-#
-# After execution, the D register will point at the beginning
-# of the concatenated string, and AL will be zero.
-#
-# Inputs:
-#  D: Destination address
-#  AL: count of pointers to pop from heap
-#  heap: string pointer words
-
-:strcat
-PUSH_DH
-PUSH_DL
-PUSH_CH
-PUSH_CL
-
-ALUOP_FLAGS %A%+%AL%
-JZ .strcat_done
-.strcat_loop
-CALL :heap_pop_C
-# C now has the address of the string to concatenate
-# D has the destination address
-CALL :strcpy
-# D now points at the end of the concatenated string,
-# but has not written a null yet.
-ALUOP_AL %A-1%+%AL%
-JNZ .strcat_loop
-.strcat_done
-# Write the final null at the end of D
-ALUOP_ADDR_D %zero%
-POP_CL
-POP_CH
-POP_DL
-POP_DH
-RET
-
-#######
 # Compares two strings referenced in C and D.  The result
 # is returned in AL, and will be negative if C < D, positive
 # if C > D, or zero if C == D.

@@ -115,6 +115,19 @@ include their own dependencies -- order matters. Include `types.h` first,
 always** (`uint8_t/uint16_t/int8_t/int16_t`, `struct uint32 {hi,lo}`,
 `true/false/NULL` -- there is NO `bool`).
 
+**A header that declares a function taking a `struct X *` needs `X`'s
+DEFINING header included first -- this compiler has no incomplete/
+forward-declared struct type support, unlike real C.** Example:
+`os/lib/fat16_dirent_string.h` declares
+`extern char *fat16_dirent_string(struct fat16_dirent *dirent);` but does
+not itself define `struct fat16_dirent` (that struct stays BIOS-resident,
+defined in `os/bios/lib/fat16_dirent.h`). Including
+`fat16_dirent_string.h` before `fat16_dirent.h` fails with
+`SyntaxError: Struct type fat16_dirent used without declaration` --
+confirmed empirically against `c_compiler.py`. Always include the header
+that DEFINES a struct before any header that only references a pointer
+to it.
+
 | Header | Contents |
 |--------|----------|
 | `terminal_output.h` | `printf(char*,...)`, `print(char*)`, `print_raw(char*)`, `putchar(char)`, `putchar_raw(char)` -- honors `$term_flags` (raw/ANSI/edge modes) except `putchar_raw`/`print_raw`, which skip all of it for max throughput |
@@ -130,13 +143,32 @@ always** (`uint8_t/uint16_t/int8_t/int16_t`, `struct uint32 {hi,lo}`,
 | `shell_argv.h` | `shell_get_argv_n(uint8_t)` -> `char*` (SYSTEM.ODY built-ins ONLY) |
 | `trace.h` | `trace()`, `trace_begin/end()`, `trace_0()..trace_7()` |
 | `fat16_*.h` (8 files) | fs handles, dirent parsing, dirwalk, pathfind, readfile, cluster math -- most need `fat16_util.h` (+ `types.h`) first |
+| `fat16_print.h` | `fat16_print(struct fs_handle *h)` -- print a human-readable FAT16 fs descriptor; needs `fat16_util.h` first for `struct fs_handle` |
+| `ata_identify_string.h` | `ata_identify_string(uint8_t drive_id)` -> `char*` -- full "model+firmware+capacity" ATA drive identity string, malloc'd (caller must `free()`) |
 | `uart.h` | `uart_readbuf()` -> byte (0x00 if empty), `uart_bufsize()` -> byte, `uart_sendchar(uint8_t)` (blocking) |
 | `keyboard.h` | `kb_readbuf()` -> word (AH=key flags, AL=char, 0x0000 if empty), `KB_KEYFLAG_BREAK` |
+
+`trace.h`, `fat16_print.h`, `ata_identify_string.h`, and
+`fat16_dirent_string.h` (declares `fat16_dirent_string(struct fat16_dirent
+*dirent)` -- needs `fat16_dirent.h` first, see the struct-type note above)
+are **split-library headers**: their `.asm`+`.h` pair lives under
+`os/lib/`, not `os/bios/lib/`, and must be symlinked into a consumer's
+build directory before `#include` can find it. Once symlinked, `#include`
+and calling convention work identically to any other BIOS header -- see
+skill **ody-asm**, "Where code should live" for the eviction/symlink
+mechanics.
 
 **No header exists** for math.asm, memcpy.asm, memfill.asm, timer.asm,
 heap.asm, system.asm -- these do NOT follow the C calling convention and
 have no `custom_FuncCall_*` handler either; do not declare them `extern`
-yourself.
+yourself. The same logic applies to a split-library file evicted with a
+non-standard calling convention: `os/lib/string_ext.h` (the `:strcat`
+function, evicted from `string.asm`) deliberately has NO `extern`
+declaration, because its convention -- a heap-pushed pointer count in AL
+plus a destination address passed directly in register D -- does not fit
+a plain C signature. Call it from a hand-written `.asm` helper instead
+(see the header's own comment for the exact contract); a future eviction
+with a similarly non-standard convention would face the same restriction.
 
 **`c_compiler/special_functions.py` is meant to grow -- it is not a fixed
 list of "only these can be called from C".** When a register-convention

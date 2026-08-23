@@ -1,3 +1,69 @@
+2026-08-23: BIOS ROM byte-budget audit and eviction (claude)
+============================================================
+
+The BIOS had hit its 16384-byte ceiling exactly (16384/16384, zero
+margin), blocking further terminal I/O work. Audited the whole ROM by
+diffing consecutive symbol addresses in bios.sym to get a per-function
+byte footprint, then cross-referencing every symbol against every
+caller in os/system/, os/util/, os/lib/, and the code c_compiler/
+actually emits, to find functions with few or zero live consumers.
+
+Recovered 1484 bytes (16384 -> 14900) across six changes: deleted two
+heap-frame helpers (:heap_advance_AL/:heap_retreat_AL) that had no
+caller anywhere; evicted :strcat to a new os/lib/string_ext.asm (zero
+current consumers, kept available rather than deleted, matching the
+existing os/lib/trace.asm precedent -- source lives outside the ROM
+and gets symlinked into whichever ODY's build needs it); evicted
+:fat16_print (804 bytes, sole consumer os/system/900-cmd_mount.asm)
+and :fat16_dirent_string (371 bytes, consumers in both os/system/ and
+os/util/pathfind/) the same way; replaced the verbose
+:ata_identify_string (full model/firmware/capacity decode) with a
+slim :ata_boot_identify for the boot banner, evicting the verbose
+version to os/lib/ for if it's ever needed again -- the boot banner
+now prints "ATA0: present" instead of the full identify string, a
+deliberate trade; and collapsed the exec loop's three near-identical
+SYSTEM.ODY drive-search blocks (80-run_system_ody.asm) into one shared
+.try_pathfind_sysody routine.
+
+Two real bugs turned up during this, both worth remembering. First,
+grep is not sufficient proof of "zero callers" on this project:
+:signed_invert_b looked dead by every static search, but
+c_compiler/codegen.py builds `CALL :signed_invert_{dest_reg.lower()}`
+as a string at codegen time for signed 16-bit negation, so it's a
+live, invisible-to-grep dependency -- caught only because the full
+`make all` failed on cctest6 after the eviction, and reverted cleanly.
+Second, evicting :fat16_print left a stale `extern` for it sitting in
+fat16_util.h (not the header it actually belonged to) that would have
+silently miscompiled any future C file that happened to include that
+header and call it -- found by grepping every .h under os/bios/lib/
+for the symbol, not just the file being edited. Both lessons, plus the
+os/lib/ eviction pattern itself, are now written up in the ody-asm and
+ody-c skills so they don't have to be rediscovered.
+
+Also designed and built a shared prolog/epilog helper pair
+(:push_abc/:pop_cbad_ret) to replace the repeated 12-byte-prolog +
+9-byte-epilog full-register-save idiom found in several BIOS
+functions. Getting the epilog order right required tracing the actual
+microcode: CALL pushes the return address as PCL-then-PCH, and
+JMP_D/CALL_D are the only register-indirect branches in the
+instruction set, so the trick has to round-trip the return address
+through D -- which means D ends up at the *bottom* of the saved-
+register frame instead of the top, and the correct unwind order is
+C,B,A,D, the reverse of the hand-written idiom. Applied it to
+:fat16_localize_ody, :fat16_pathfind, and :fat16_readfile and it
+worked (verified against the microcode a second time, independently,
+before it touched anything), but net yield was only 17 bytes against
+a real increase in how much a reader has to hold in their head to
+safely touch those three functions. Not a good trade at this margin,
+so it was rolled back before flashing -- the three functions are back
+to their plain hand-written prolog/epilog, and callframe.asm was
+deleted entirely.
+
+Flashed to EEPROM and rebuilt the SD card; cctest suite passes on
+real hardware. Final size 14900/16384, leaving headroom for the
+terminal I/O features this was blocked on.
+
+
 2026-08-02: Odyssey Console: video + serial GUI with an agent control surface (claude)
 =======================================================================================
 

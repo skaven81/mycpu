@@ -1,0 +1,284 @@
+# vim: syntax=asm-mycpu
+
+#####
+# fat16_dirent_string - render a human-readable directory listing line
+# for a FAT16 directory entry
+#
+# Evicted from the BIOS ROM (was the tail of os/bios/lib/fat16_dirent.asm,
+# along with its private .get_timestamp_string helper) because its only
+# consumers are os/system/900-cmd_dir.asm and os/util/pathfind/pathfind.asm.
+# Symlink this file (and fat16_dirent_string.h) into any ODY build
+# directory that needs it. It calls only BIOS-resident functions
+# (:calloc_blocks, :free, :sprintf, :strcpy, :double_dabble_byte, plus the
+# standard :heap_push_*/:heap_pop_* helpers), so it links fine wherever it
+# is compiled in.
+#####
+
+####
+# Return a string containing the date and time of the provided FAT16 timestamp
+# To use:
+#  1. Push the address word of the first byte of the timestamp
+#  2. Call the function
+#  3. Pop the address word of the string
+#  4. Call :free to release the memory allocated for the string
+# Returned string will be in form YYYY-MM-DD HH:MM
+.get_timestamp_string
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+
+# Timestamp format (offset 0x0e, creation; offset 0x16, last write)
+# After fat16_dirent_parse, timestamps are big-endian:
+# | byte 0 (hi_t) | byte 1 (lo_t) | byte 2 (hi_d) | byte 3 (lo_d) |
+# |7|6|5|4|3|2|1|0|7|6|5|4|3|2|1|0|7|6|5|4|3|2|1|0|7|6|5|4|3|2|1|0|
+# |hour 0-23| min 0-59  |sec 0-29 | year 0-127  | 1-12  |day 1-31 |
+# | 5 bits  |  6 bits   | 5 bits  |  7 bits     |4 bits | 5 bits  |
+# seconds is at 2-second resolution, so must be multiplied by 2
+# year is after 1980, so 2024 is 44, 1980+44=2024
+
+# Strategy is to extract each component from the final string from
+# right to left, then use sprintf to generate the string, popping
+# the individual values from the heap.
+
+CALL :heap_pop_C                # timestamp address in C (byte 0 = hi_t)
+
+# minute
+LDA_C_AH                        # byte 0 = hi_t: [hhhhh|mmm], hour/min byte in AH
+ALUOP_AH %A<<1%+%AH%
+ALUOP_AH %A<<1%+%AH%
+ALUOP_AH %A<<1%+%AH%            # shift hour/min byte left 3 positions
+INCR_C                          # byte 1
+LDA_C_BH                        # byte 1 = lo_t: [mmm|sssss], min/sec byte in BH
+ALUOP_BH %B>>1%+%BH%
+ALUOP_BH %B>>1%+%BH%
+ALUOP_BH %B>>1%+%BH%
+ALUOP_BH %B>>1%+%BH%
+ALUOP_BH %B>>1%+%BH%            # shift min/sec byte right 5 positions
+ALUOP_AL %A+B%+%AH%+%BH%        # combine high and low bits into AL
+ALUOP_PUSH %B%+%BL%
+LDI_BL 0xc0                     # mask for top two bits
+ALUOP_AL %A&~B%+%AL%+%BL%       # clear the top two bits
+POP_BL
+CALL :double_dabble_byte        # AL converted to BCD across AH+AL
+CALL :heap_push_AL              # push minutes (tens and units) onto heap
+
+# hour
+DECR_C                          # byte 0
+LDA_C_AL                        # byte 0 = hi_t: [hhhhh|mmm]
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%
+ALUOP_AL %A>>1%+%AL%            # shift right three places to get hour
+CALL :double_dabble_byte        # AL converted to BCD across AH+AL
+CALL :heap_push_AL              # push hours (tens and units) onto heap
+
+# day
+INCR_C                          # byte 1
+INCR_C                          # byte 2
+INCR_C                          # byte 3
+LDA_C_AL                        # byte 3 = lo_d: [mmmm|ddddd], mon/day in AL
+LDI_BL 0x1f                     # mask for lower 5 bits
+ALUOP_AL %A&B%+%AL%+%BL%        # day in AL
+CALL :double_dabble_byte        # AL converted to BCD across AH+AL
+CALL :heap_push_AL              # push day (tens and units) onto heap
+
+# month
+LDA_C_BH                        # byte 3 = lo_d: [mmmm|ddddd], mon/day in BH
+DECR_C                          # byte 2
+LDA_C_AH                        # byte 2 = hi_d: [yyyyyyy|m], year/mon in AH
+LDI_BL 0x01
+ALUOP_AH %A&B%+%AH%+%BL%        # only last bit is used
+ALUOP_AH %A<<1%+%AH%
+ALUOP_AH %A<<1%+%AH%
+ALUOP_AH %A<<1%+%AH%            # shift month left 3 places
+ALUOP_BH %B>>1%+%BH%
+ALUOP_BH %B>>1%+%BH%
+ALUOP_BH %B>>1%+%BH%
+ALUOP_BH %B>>1%+%BH%
+ALUOP_BH %B>>1%+%BH%            # shift mon/day byte right 5 positions
+ALUOP_AL %A+B%+%AH%+%BH%        # combine into AL
+CALL :double_dabble_byte        # AL converted to BCD across AH+AL
+CALL :heap_push_AL              # push month (tens and units) onto heap
+
+# year
+LDA_C_AL                        # byte 2 = hi_d: [yyyyyyy|m], year/month in AL
+ALUOP_AL %A>>1%+%AL%            # shift right one position
+LDI_AH 0x00
+LDI_B 1980
+ALUOP16O_A %ALU16_A+B%           # AH now has year
+CALL :heap_push_A
+
+# allocate memory for return string
+LDI_AL 2                        # malloc 2 blocks = 32 bytes
+CALL :calloc_blocks             # zeroed memory address in A
+ALUOP_DH %A%+%AH%
+ALUOP_DL %A%+%AL%               # copy memory address into D
+
+LDI_C .timestamp_fmt_str        # format string in C
+CALL :sprintf
+
+CALL :heap_push_A               # push memory address to return
+
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+POP_BL
+POP_BH
+POP_AL
+POP_AH
+RET
+
+.timestamp_fmt_str "%U-%B-%B %B:%B\0"
+
+####
+# Return a null-terminated string describing the directory entry
+# To use:
+#  1. Push the address word of a FAT16 directory entry
+#  2. Call the function
+#  3. Pop the address word of the string
+#  4. Call :free to release the memory allocated for the string
+#
+# String will be formatted as such:
+#
+# FILENAME EXT YYYY-MM-DD HH:MM 65535      (for files <=64K in size)
+# FILENAME EXT YYYY-MM-DD HH:MM 0x00001234 (for files >64K in size)
+# DIR      EXT YYYY-MM-DD HH:MM <DIR>      (for directories)
+#
+# The string will be null-terminated not have a trailing newline.
+#
+# The filename and extension will be padded with spaces to maintain column widths.
+# The YYYY-MM-DD HH:MM will be the last write timestamp.
+# The size will be in decimal if <= 64k, otherwise a 32-bit hexadecimal number
+# For directory entries, the size will be "<DIR>"
+:fat16_dirent_string
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %B%+%BL%
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+
+CALL :heap_pop_C                # directory entry address in C
+MOV_CH_BH
+MOV_CL_BL                       # save directory entry address in B
+
+LDI_AL 3                        # malloc 3 blocks = 48 bytes
+CALL :calloc_blocks             # zeroed memory address in A
+ALUOP_DH %A%+%AH%
+ALUOP_DL %A%+%AL%               # copy memory address into D
+CALL :heap_push_A               # push memory address because we need to return it
+
+## Filename + extension
+
+# copy the first 8 bytes of the directory entry to the target string
+MEMCPY4_C_D
+MEMCPY4_C_D
+# add a space to the target string
+LDI_AL ' '
+ALUOP_ADDR_D %A%+%AL%
+INCR_D
+# copy the next 3 bytes of the directory entry to the target string
+MEMCPY_C_D
+MEMCPY_C_D
+MEMCPY_C_D
+
+# add a space to the target string
+LDI_AL ' '
+ALUOP_ADDR_D %A%+%AL%
+INCR_D
+
+## modify date
+LDI_A 0x0016                    # offset 0x16 = last write time
+ALUOP16O_A %ALU16_A+B%                # A contains address of last write time
+CALL :heap_push_A
+CALL .get_timestamp_string      # 32-byte string address on top of heap
+CALL :heap_pop_C
+CALL :heap_push_C               # save copy of timestamp string address
+CALL :strcpy                    # copy string from C (timestamp) to destination string in D
+CALL :heap_pop_A                # restore timestamp string address to A
+CALL :free                      # free the timestamp string
+
+# add a space to the target string
+LDI_AL ' '
+ALUOP_ADDR_D %A%+%AL%
+INCR_D
+
+## attribute byte
+ALUOP_PUSH %B%+%BL%
+LDI_A 0x000b                    # offset 0x0b = attribute byte
+ALUOP16O_A %ALU16_A+B%                # A contains address of attribute byte
+LDA_A_BL                        # attribute byte in BL
+LDI_AL 0x10                     # bit 4 = directory
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+POP_BL
+JZ .dirent_string_file          # process as a file (append size) if not a directory
+
+# <DIR>
+LDI_C .dirent_dir
+CALL :strcpy
+JMP .dirent_string_done
+
+.dirent_string_file
+# Read file size directly from BE-parsed entry
+# B = directory entry base, D = output string position
+PUSH_DH
+PUSH_DL
+ALUOP_AH %B%+%BH%
+ALUOP_AL %B%+%BL%              # A = dirent base
+LDI_B 0x001c
+ALUOP16O_A %ALU16_A+B%         # A points to file size (BE: MSB first)
+LDA_A_DH                       # byte 0 = MSB -> DH
+ALUOP16O_A %ALU16_A+1%
+LDA_A_DL                       # byte 1 -> DL
+ALUOP16O_A %ALU16_A+1%
+LDA_A_BH                       # byte 2 -> BH
+ALUOP16O_A %ALU16_A+1%
+LDA_A_BL                       # byte 3 = LSB -> BL
+# D = high word, B = low word of file size
+MOV_DH_AH
+MOV_DL_AL                      # A = high word
+POP_DL
+POP_DH                         # D = output string position restored
+# A = high word, B = low word
+ALUOP_FLAGS %A%+%AH%
+JNZ .dirent_string_bigsize
+ALUOP_FLAGS %A%+%AL%
+JNZ .dirent_string_bigsize
+
+# handle as <64k
+CALL :heap_push_B
+LDI_C .dirent_size
+CALL :sprintf                   # append decimal size to string at D
+JMP .dirent_string_done
+
+# handle as >64k
+.dirent_string_bigsize
+CALL :heap_push_BL
+CALL :heap_push_BH
+CALL :heap_push_AL
+CALL :heap_push_AH
+LDI_C .dirent_bigsize
+CALL :sprintf                   # append hex size to string at D
+
+.dirent_string_done
+# return string address is already on heap, so just return
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+POP_BL
+POP_BH
+POP_AL
+POP_AH
+RET
+
+.dirent_size "%U\0"
+.dirent_bigsize "0x%x%x%x%x\0"
+.dirent_dir "<DIR>\0"

@@ -249,6 +249,70 @@ only when proven:
    Propose the swap to the owner with the usage counts -- eviction is a
    BIOS change and carries the same reflash/recompile cost.
 
+   **Eviction mechanics -- the `os/lib/` split-library pattern.** An
+   approved eviction candidate's `.asm` (and `.h`, if it has a clean C
+   calling convention) moves out of `os/bios/lib/` into `os/lib/`, which
+   is NOT part of the BIOS build -- it is instead symlinked (a relative
+   symlink) into the build directory of every ODY that actually needs it,
+   so the code compiles INTO that consumer instead of living in shared
+   ROM. Five real examples: `os/lib/trace.asm`+`.h`,
+   `os/lib/string_ext.asm`+`.h`, `os/lib/fat16_print.asm`+`.h`,
+   `os/lib/ata_identify_string.asm`+`.h`, and
+   `os/lib/fat16_dirent_string.asm`+`.h` (this last one brought its own
+   private local helper, `.get_timestamp_string`, along with it -- a split
+   library takes every helper the evicted function needs, not just the
+   public entry point).
+
+   - **Naming**: use the evicted function's own name as the filename when
+     that name is already distinctive on its own -- `fat16_print.asm`
+     (`:fat16_print`, evicted from `fat16_mount.asm`),
+     `ata_identify_string.asm` (`:ata_identify_string`, evicted from
+     `ata.asm`), `fat16_dirent_string.asm` (`:fat16_dirent_string`,
+     evicted from `fat16_dirent.asm`). Use `<parentfile>_ext.asm` when the
+     function is carved out of a larger multi-function file that KEEPS its
+     own name and stays BIOS-resident: `string_ext.asm` holds `:strcat`,
+     carved out of `os/bios/lib/string.asm`, which remains in the BIOS
+     with its other functions -- naming the evicted file `strcat.asm`
+     would have obscured which file it came from.
+   - **Symlinking**: create the symlink FROM the consumer's build
+     directory, pointing back at `os/lib/`; the `../` count depends on how
+     deep that directory is. From `os/system/` (one level under `os/`):
+     `ln -s ../lib/fat16_print.asm fat16_print.asm` (real form seen in the
+     tree: `os/system/fat16_print.asm -> ../lib/fat16_print.asm`). From
+     `os/util/<name>/` (two levels under `os/`):
+     `ln -s ../../lib/trace.asm trace.asm` (real form:
+     `os/util/ptmrtest/trace.asm -> ../../lib/trace.asm`). Symlink the
+     `.h` alongside the `.asm` whenever one exists. The build's
+     auto-discovery of `.asm`/`.c` files in a directory follows a symlink
+     exactly like a real file, so nothing else needs registering.
+   - **Zero consumers is a legitimate end state, not an error.** `trace.h`
+     (kept as documentation/future-proofing), `string_ext.asm`/`.h`, and
+     `ata_identify_string.asm`/`.h` all currently have zero consumers and
+     are not symlinked anywhere. Evicting "for future availability" is
+     fine -- symlink it into a consumer only once one actually needs it.
+   - **Calls back INTO the BIOS still just work.** Evicted code can freely
+     `CALL` any BIOS-resident function (`:heap_push_*`, `:printf`, `:free`,
+     `:strcpy`, etc.) -- those addresses are already in `bios.sym` at
+     assembly time like any other ODY code. No special handling needed on
+     that front; only the EVICTED function's own callers need the symlink.
+   - **WARNING -- grep the obvious `.asm` consumers is not enough before
+     evicting.** Two ways this bit in this session:
+     - `c_compiler/codegen.py` can dynamically CONSTRUCT a `CALL :funcname`
+       string rather than spelling it out literally, so a plain grep for
+       `:funcname` can miss a live dependency -- this is what blocked an
+       eviction attempt on `:signed_invert_b` (a live dependency of signed
+       16-bit negation codegen). Read the codegen source for the symbol
+       name, don't just grep it.
+     - A header anywhere under `os/bios/lib/*.h` can carry a stale
+       `extern` for a function that's about to move -- this happened for
+       `fat16_print` via a stray declaration left in `fat16_util.h`.
+     Before moving anything, grep ALL of: `os/system/` and `os/util/`
+     (`.asm` and `.c`/headers), `c_compiler/codegen.py`,
+     `c_compiler/special_functions.py`, and every `.h` under
+     `os/bios/lib/` -- not just the obvious `.asm` consumers. Replace a
+     stale header declaration with a comment pointing at the new
+     `os/lib/` location (see `fat16_util.h`'s comment for the pattern).
+
    **Editing an EXISTING BIOS library follows the same iterate-in-ODY
    rule**: copy the library source into a test ODY, iterate and verify on
    hardware there (renaming its globals/labels if they collide with the
