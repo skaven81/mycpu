@@ -162,7 +162,17 @@ ALUOP_ADDR_D %A%+%AL%                 # buf[0] = 0 (empty string so far)
 ###
 # Poll loop. Checks the enabled source(s) per $rl_source (bit 1 = keyboard,
 # bit 2 = UART) -- see :readline's header for the full contract.
+#
+# Cursor visibility: shown (synced on) here at the top, on every re-entry
+# to this loop -- i.e. once per handled keystroke, since every handler
+# below finishes with a jump back here, plus redundantly on each idle
+# spin iteration while waiting for a key (harmless: re-syncing the same
+# already-correct position is a no-op write, and there's nothing else
+# for the CPU to do while blocked on human input anyway). Cleared again
+# in .rl_poll_have_char, right when a keystroke actually arrives and
+# before any handler can move the cursor -- see that label's comment.
 .rl_poll
+CALL :cursor_on
 LD_AL $rl_source
 LDI_BL 0x02
 ALUOP_FLAGS %A&B%+%AL%+%BL%
@@ -184,6 +194,10 @@ JMP .rl_poll_have_char
 .rl_poll_have_kb
 CALL :kb_readbuf                      # AH=keyflags, AL=char
 .rl_poll_have_char
+CALL :cursor_off                      # clear the idle mark before any
+                                       # handler below can move the cursor
+                                       # (AH/AL preserved -- cursor_off is
+                                       # fully callee-save)
 
 LDI_BL %kb_keyflag_BREAK%
 ALUOP_FLAGS %A&B%+%AH%+%BL%
