@@ -36,9 +36,16 @@ LDI_AH  0x00
 LDI_AL  %white%
 CALL :clear_screen
 
-# Initialize the cursor so we can start printing to the screen
+# Initialize the cursor, but keep it OFF through the whole non-interactive
+# boot sequence (cursor_init defaults it on) -- boot mixes :print/:printf
+# calls with bare :putchar('\n') calls throughout, and :print only clears
+# its OWN previous mark, not one stranded by an intervening bare putchar
+# (see :print's header). With the cursor off, every one of those sync
+# calls is a no-op, so nothing accumulates. :readline's poll loop turns
+# it back on the moment the shell's first prompt actually starts reading
+# input -- no explicit "turn it on" step is needed here.
 CALL :cursor_init
-CALL :cursor_display_sync
+ST $crsr_on 0x00
 
 # Print our OS intro banner and newline
 LDI_C .hello_banner

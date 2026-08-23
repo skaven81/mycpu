@@ -18,6 +18,15 @@ VAR global byte $term_render_color
 VAR global byte $term_current_color
 VAR global 128 $printf_buf
 
+# Shared single-character string for callers that would otherwise print a
+# lone trailing newline via a bare :putchar call -- :putchar never syncs
+# the cursor, so a bare call after a :print/:printf leaves that call's
+# cursor mark stranded (see :print's header). Using :print here instead,
+# even for one character, keeps every visible cursor move going through
+# :print's clear-before/sync-after discipline. One shared copy avoids every
+# consumer declaring its own "\n\0" data label.
+:str_nl "\n\0"
+
 ######
 # Print a single character from AL at the current cursor location, then
 # advance the cursor. Honors $term_flags (2.2.1/2.2.2).

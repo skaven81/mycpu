@@ -34,8 +34,8 @@ CALL :printf                            # print the KB tested
 ALUOP_BH %B+1%+%BH%                     # increment page
 JNO .extram_loop
 LDI_AL '\n'
-CALL :putchar
-CALL :cursor_on
+CALL :putchar                           # cursor stays off -- boot invariant
+                                         # (00-main.asm); no re-sync needed
 RET
 
 .extram_error
