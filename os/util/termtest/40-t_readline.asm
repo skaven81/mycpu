@@ -743,8 +743,27 @@ CALL .rl_hist_addr                    # D = destination slot
 # isn't interrupt-safe: TD is microcode scratch clobbered by IRQ entry).
 LD_CH $t_rl_buf
 LD_CL $t_rl_buf+1
-LD_AL $t_rl_len                       # :memcpy count-1 == len (count is len+1)
+
+# Copy min(len, entry_sz-1) raw characters, then always write our own null
+# terminator afterward -- never rely on copying the source's own trailing
+# null, because when len is clamped down, the source byte at that offset
+# is a real character, not a null. entry_sz is a caller-managed global
+# (Symbol Contract, 2.4.3) with no library-enforced relationship to
+# $t_rl_maxlen, so a caller that configures entry_sz smaller than
+# maxlen+1 would otherwise have a max-length line overflow this :memcpy
+# into the next history slot; truncating here matches this file's
+# existing maxlen-truncation philosophy for the input buffer itself.
+LD_AL $t_rl_len
+LD_BL $t_rl_history_entry_sz
+ALUOP_BL %B-1%+%BL%                   # BL = entry_sz - 1 (max chars that fit)
+ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff len < entry_sz-1 (already safe)
+JO .rl_hist_append_len_safe
+ALUOP_AL %B%+%BL%                     # clamp: AL = entry_sz - 1 (safe char count)
+.rl_hist_append_len_safe
+ALUOP_AL %A-1%+%AL%                   # :memcpy count-1 == (safe char count) - 1
 CALL :memcpy
+ALUOP_ADDR_D %zero%                   # explicit null at dest + safe char count
+                                       # (:memcpy's documented D postcondition)
 
 LD_AL $t_rl_history_write_idx
 ALUOP_AL %A+1%+%AL%

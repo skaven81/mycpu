@@ -446,6 +446,83 @@ LD_AL $t_rl_history_count
 LDI_C .tn_empty_count
 CALL :tt_assert_eq
 
+# --- entry_sz clamp: a slot smaller than the typed line must truncate the
+#     recorded entry, not overflow into the next slot (regression test for
+#     the entry_sz-vs-line-length mismatch found in code review 2026-08-22:
+#     entry_sz has no library-enforced relationship to $t_rl_maxlen, so a
+#     caller can configure a slot too small for a max-length line) ---
+
+ST $t_rl_history_capacity 0x02
+ST $t_rl_history_entry_sz 0x04       # fits only 3 chars + null
+ST $t_rl_history_count 0x00
+ST $t_rl_history_write_idx 0x00
+
+# Seed slot 1 (history_buf+4, the first byte after slot 0) with a sentinel:
+# an unclamped copy of "hello\0" (6 bytes) into 4-byte slot 0 would stomp
+# this exact byte.
+LD_DH $t_rl_history_buf
+LD_DL $t_rl_history_buf+1
+INCR_D
+INCR_D
+INCR_D
+INCR_D
+LDI_AL 0xaa
+ALUOP_ADDR_D %A%+%AL%
+
+CALL :t_cursor_init
+LDI_C .seq_pop_hello
+LDI_AL 6
+CALL :kb_inject
+LDI_C .h_buf
+LDI_AL 16
+LDI_AH 0x01
+CALL :t_readline
+
+LD_DH $t_rl_history_buf
+LD_DL $t_rl_history_buf+1
+INCR_D
+INCR_D
+INCR_D
+INCR_D
+LDA_D_AL
+LDI_AH 0xaa
+LDI_C .tn_entrysz_sentinel
+CALL :tt_assert_eq
+
+# Recall (Up, then Ctrl+C so it doesn't itself append -- same reasoning as
+# the circular-eviction checks above): the screen should show the
+# entry_sz-clamped "hel", not the full "hello".
+CALL :t_cursor_init
+ST %display_chars%+3 'Z'             # sentinel: must survive if recall
+                                      # correctly stops after 3 chars
+LDI_C .seq_1up_ctrlc
+LDI_AL 2
+CALL :kb_inject
+LDI_C .h_buf
+LDI_AL 16
+LDI_AH 0x01
+CALL :t_readline
+
+LDI_AH 'h'
+LD_AL %display_chars%
+LDI_C .tn_entrysz_c0
+CALL :tt_assert_eq
+LDI_AH 'e'
+LD_AL %display_chars%+1
+LDI_C .tn_entrysz_c1
+CALL :tt_assert_eq
+LDI_AH 'l'
+LD_AL %display_chars%+2
+LDI_C .tn_entrysz_c2
+CALL :tt_assert_eq
+LDI_AH 'Z'
+LD_AL %display_chars%+3
+LDI_C .tn_entrysz_c3
+CALL :tt_assert_eq
+
+ST $t_rl_history_capacity 0x04       # restore for any test added after this
+ST $t_rl_history_entry_sz 0x10
+
 # --- Disabled ($t_rl_history_buf == 0): Up/Down are no-ops; typed text is
 #     unaffected on both the buffer and the screen ---
 
@@ -517,6 +594,8 @@ RET
 .seq_empty_enter       0x00 0x0d
 .seq_hi_up_down_enter  0x00 'h' 0x00 'i' 0x00 0x12 0x00 0x11 0x00 0x0d
 
+.seq_pop_hello  0x00 'h' 0x00 'e' 0x00 'l' 0x00 'l' 0x00 'o' 0x00 0x0d
+
 .seq_1up_ctrlc  0x00 0x12 0x02 'c'
 .seq_2up_ctrlc  0x00 0x12 0x00 0x12 0x02 'c'
 .seq_3up_ctrlc  0x00 0x12 0x00 0x12 0x00 0x12 0x02 'c'
@@ -564,6 +643,11 @@ RET
 .tn_circ4_c1 "circ4_c1\0"
 .tn_circ4_c2 "circ4_c2\0"
 .tn_empty_count "empty_count\0"
+.tn_entrysz_sentinel "entrysz_sentinel\0"
+.tn_entrysz_c0 "entrysz_c0\0"
+.tn_entrysz_c1 "entrysz_c1\0"
+.tn_entrysz_c2 "entrysz_c2\0"
+.tn_entrysz_c3 "entrysz_c3\0"
 .tn_dis_len "dis_len\0"
 .tn_dis_buf0 "dis_buf0\0"
 .tn_dis_buf1 "dis_buf1\0"

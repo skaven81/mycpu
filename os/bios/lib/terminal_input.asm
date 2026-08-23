@@ -20,11 +20,23 @@
 # marks is consulted so previous inputs can be retrieved.
 #
 # Inputs:
-#  none
+#  AL - source selector: %input_source_kb% (0x01) to accept keyboard
+#       keystrokes, %input_source_uart% (0x02) to accept UART bytes, OR
+#       them together (0x03) to accept either. A UART byte is reported
+#       with keyflags AH=0x00 (no CTRL/ALT/etc -- a raw serial byte has no
+#       keyflag channel), so e.g. Ctrl+C cannot be sent as a byte 0x03 from
+#       a serial terminal; it must arrive as the literal byte 0x03 and is
+#       handled here as an ordinary ignored control character, same as any
+#       other sub-0x20 byte outside the handled set. Passing 0x00 (neither
+#       source enabled) hangs in the poll loop forever -- that's a caller
+#       bug, not a runtime error this function detects.
 # Outputs:
 #  cursor marks 0 and 1 will be set to mark the user's input
 
+VAR global byte $input_source
+
 :input
+ALUOP_ADDR %A%+%AL% $input_source
 CALL :heap_push_all
 
 # Store our current cursor position at mark 0 and mark 1
@@ -36,10 +48,27 @@ CALL :cursor_save_mark
 ###
 # Start collecting input
 .input_loop
+LD_AL $input_source
+LDI_BL %input_source_kb%
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JZ .input_skip_kb               # keyboard source not requested
 CALL :kb_bufsize                # bufsize into AL
 ALUOP_FLAGS %A%+%AL%
-JZ .input_loop                  # go back to polling if buffer is empty
+JNZ .input_have_kb              # keyboard has a keystroke waiting, use it
+.input_skip_kb
+LD_AL $input_source
+LDI_BL %input_source_uart%
+ALUOP_FLAGS %A&B%+%AL%+%BL%
+JZ .input_loop                  # uart source not requested either, keep polling
+CALL :uart_bufsize              # otherwise check the serial port
+ALUOP_FLAGS %A%+%AL%
+JZ .input_loop                  # empty, go back to polling
+CALL :uart_readbuf              # received byte into AL
+LDI_AH 0x00                     # no keyflags for serial input
+JMP .input_have_char
+.input_have_kb
 CALL :kb_readbuf                # buffered keyflags into AH and keystroke into AL
+.input_have_char
 
 ###
 # If a break event, do nothing

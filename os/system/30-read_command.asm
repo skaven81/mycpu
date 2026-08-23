@@ -25,7 +25,10 @@ PUSH_CL
 PUSH_DH
 PUSH_DL
 
-# Read input from the user; result will be in cursor marks 0 and 1
+# Read input from the user; result will be in cursor marks 0 and 1.
+# Accept both keyboard and UART so the shell is drivable remotely over
+# serial (the whole point of the serrun workflow) as well as locally.
+LDI_AL %input_source_kb%+%input_source_uart%
 CALL :input
 # input doesn't wrap to the next line, so do that now
 LDI_AL '\n'

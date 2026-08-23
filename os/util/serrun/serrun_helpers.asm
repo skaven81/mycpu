@@ -126,14 +126,17 @@ RET
 # installed there (into $serrun_saved_irq5) so :uart_rx_disable can
 # restore it later.
 #
-# The BIOS boot default at IRQ5 is :uart_clear_dr (os/bios/00-main.asm),
-# which reads and discards every received byte without ever writing it
-# into the RAM ring buffer -- uart_bufsize()/uart_readbuf() will report
-# "empty" forever, no matter what arrives on the wire, until the buffering
-# handler is installed.  This must run before serrun's rendezvous loop.
-# Matches the save/install pattern in
-# os/util/console/20-cmd_console.asm (the only other program that reads
-# from the UART).
+# The BIOS boot default at IRQ5 is now :uart_irq_dr_buf itself
+# (os/bios/00-main.asm, changed so the shell's :input can accept UART
+# bytes -- see terminal_input.asm's %input_source_uart% option), so in the
+# common case this just reinstalls the handler that was already there. It
+# is still necessary, not a no-op in general: IRQ5 could have been
+# repointed by whatever ran before serrun (any other UART consumer, or a
+# future handler), and this is what guarantees the buffering handler is in
+# place -- and lets :uart_rx_disable restore exactly what was there
+# beforehand -- regardless of what the boot default happens to be. Matches
+# the save/install pattern in os/util/console/20-cmd_console.asm (the only
+# other program that reads from the UART).
 #
 # To use: call with no arguments (heap-convention: no args, no return)
 #

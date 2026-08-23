@@ -177,6 +177,11 @@
 %kb_keyflag_CAPSLOCK%    0x40
 %kb_keyflag_SCROLLLOCK%  0x80
 
+# :input source-selector bits (AL parameter): which of the keyboard/UART
+# to accept keystrokes from, OR together for both. See terminal_input.asm.
+%input_source_kb%    0x01
+%input_source_uart%  0x02
+
 # Timer clock (all data in BCD)
 %tmr_clk_sec%           0xc080
 %tmr_clk_min%           0xc081

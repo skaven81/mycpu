@@ -271,7 +271,8 @@ CALL :strtoi8
 RET
 
 .read_n_bcd
-CALL :input                         # get user input
+LDI_AL %input_source_kb%+%input_source_uart%
+CALL :input                         # get user input (keyboard or UART)
 LDI_AL '\n'                         # input doesn't wrap to the next line,
 CALL :putchar                       # so do that now
 LDI_AL 0                            # left mark = 0

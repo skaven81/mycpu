@@ -46,7 +46,10 @@ LD_AL $input_count
 CALL :heap_push_AL
 CALL :printf
 
-LDI_AL 128              # only allow up to 128 chars of input
+LDI_AL %input_source_kb%+%input_source_uart%  # exercise both sources (128
+                             # was never a real parameter here -- :input
+                             # has no max-length input, this test predates
+                             # the source-selector option)
 CALL :input
 LDI_AL 0x0d             # enter
 CALL :putchar           # wrap cursor to next line
