@@ -1,9 +1,8 @@
 # vim: syntax=asm-mycpu
 
-# ANSI escape-sequence state machine (TERMINAL_REFACTOR.md 2.2.3), including
-# SGR and the 256-color palette quantization (2.2.3.1). Replaces the old
-# @-code color parser entirely -- there is no @-code handling anywhere in
-# the new terminal subsystem.
+# ANSI escape-sequence state machine, including SGR (color/attribute)
+# handling. Replaces the old @-code color parser entirely -- there is no
+# @-code handling anywhere in this terminal subsystem.
 #
 # :putchar (terminal_output.asm) does the ESC-detection and calls
 # :ansi_feed for every character while $ansi_state != 0. This file owns
@@ -13,19 +12,17 @@
 # print burst), so these routines favor clarity and code size over
 # instruction count -- liberal callee-save, no register-sharing tricks.
 #
-# Hardware-proven as os/util/termtest/35-t_ansi.asm (t_-prefixed), with one
-# cut made during the Phase 2 ROM-budget gate: the transferred terminal
-# subsystem came in 1427 bytes over the 16 KiB BIOS budget, and 256-color
-# SGR (38;5;n / 48;5;n) was one of the owner's chosen cuts (along with
-# ESC[s/ESC[u save/restore in cursor.asm) -- .sgr_apply_256color,
-# .sgr_cube_to_color, and the .sgr_gray_table/.sgr_cube_shade tables from
-# the Phase 1 prototype are gone; the semicolon-time lookahead that used to
-# distinguish the truecolor form (;2;r;g;b, always dropped) from the
-# 256-color form (;5;n, previously handled) now drops both uniformly,
-# since neither is implemented. The 16-color SGR codes (30-37/90-97) and
-# everything else in 2.2.3 are otherwise unchanged. .sgr_color_table (the
-# 16-color lookup) is a genuinely read-only constant and stays as label
-# data -- ROM residency is exactly right for that.
+# 256-color/truecolor SGR (`38;5;n` / `38;2;r;g;b` and the `48;...`
+# background forms) is NOT implemented -- dropped to help fit the 16 KiB
+# ROM budget, along with ESC[s/ESC[u save-restore in cursor.asm. Both the
+# 256-color-palette form and the truecolor form are recognized only far
+# enough to be silently discarded as a whole sequence (see the 38/48
+# lookahead in .ansi_semicolon below) rather than mis-dispatched -- e.g.
+# without that, "38;5;9" would apply code 5 (blink on) as a side effect of
+# a color code the parser doesn't actually support. The 16-color SGR codes
+# (30-37/90-97) and every non-SGR sequence are fully implemented.
+# .sgr_color_table (the 16-color lookup) is a genuinely read-only constant
+# and stays as label data -- ROM residency is exactly right for that.
 VAR global byte $ansi_state
 VAR global 8 $ansi_param_buf
 VAR global byte $ansi_param_count
@@ -135,9 +132,8 @@ LD_BL $ansi_discard
 ALUOP_FLAGS %B%+%BL%
 JNZ .ansi_semicolon_discarding
 
-# 38/48 lookahead (2.2.3.1, reduced scope -- see terminal_ansi.asm's file
-# header): 256-color/truecolor are NOT implemented (Phase 2 ROM-budget
-# cut), so ANY parameter immediately following 38 or 48 begins an
+# 38/48 lookahead: 256-color/truecolor SGR are not implemented (see this
+# file's header), so ANY parameter immediately following 38 or 48 begins an
 # extended color spec this parser doesn't support. Drop the whole
 # sequence silently (valid-but-unsupported) rather than mis-dispatching
 # its sub-parameters as if they were independent SGR codes -- e.g.
@@ -216,8 +212,8 @@ RET
 ######
 # Flushes the buffered raw characters in $ansi_seq_buf to the screen
 # via :putchar_raw (bypassing the parser), then resets it. Used both
-# for parser error recovery and by :print when a string ends mid-
-# sequence (2.2.3 case 4).
+# for parser error recovery and by :print when a string ends mid-sequence
+# (an ESC or an incomplete CSI sequence right before the terminating null).
 :ansi_flush
 ALUOP_PUSH %A%+%AL%
 ALUOP_PUSH %B%+%BL%
@@ -436,7 +432,7 @@ RET
 #######
 ## Erases a range of the display, chars filled with 0x00 and colors
 ## filled per :ansi_get_erase_color, sharing the range across both
-## framebuffers (2.2.3 J/K commands).
+## framebuffers. Used by the J/K erase commands.
 ##
 ## Inputs:
 ##  A - start offset within the display page (0-3839)
@@ -470,8 +466,9 @@ RET
 ######
 # Executes the command selected by the final byte in AL, using the
 # parameters already stored in $ansi_param_buf/_count and $ansi_private.
-# Unrecognized final bytes are a silent no-op (2.2.3 "valid but
-# unsupported").
+# A syntactically valid but unrecognized/unsupported final byte is a
+# silent no-op -- the sequence has already been consumed by the parser,
+# it just doesn't do anything.
 #
 # Inputs:
 #  AL - final byte
@@ -506,10 +503,10 @@ JEQ .disp_gotorc
 LDI_BL 0x4a                          # 'J' (mode-2 full clear only; see
 ALUOP_FLAGS %AxB%+%AL%+%BL%          # .disp_erase_screen)
 JEQ .disp_erase_screen
-# 'K' (erase-line) is CUT/DISABLED (Phase 2 ROM-budget gate, same as J's
-# partial modes below) -- restore by uncommenting this dispatch entry and
-# .disp_erase_line, and the .ansi_fill_range/.ansi_erase_range helpers
-# above (also commented).
+# 'K' (erase-line) is CUT/DISABLED, same as J's partial modes below --
+# both were dropped to help fit the 16 KiB ROM budget. Restore by
+# uncommenting this dispatch entry and .disp_erase_line, and the
+# .ansi_fill_range/.ansi_erase_range helpers above (also commented).
 #LDI_BL 0x4b                          # 'K'
 #ALUOP_FLAGS %AxB%+%AL%+%BL%
 #JEQ .disp_erase_line
@@ -596,19 +593,20 @@ JMP .disp_done
 
 # J (erase-screen), mode 2 (full clear) ONLY -- modes 0/1 (cursor-to-end,
 # start-to-cursor, via .ansi_erase_range) are CUT/DISABLED, along with all
-# of K (erase-line), for the Phase 2 ROM-budget gate. A full clear is
+# of K (erase-line), to help fit the 16 KiB ROM budget. A full clear is
 # cheap: the ROM already has :clear_screen for exactly this, so mode 2
-# just computes the erase-fill color (2.2.3's rule) and calls it directly,
-# instead of going through the generic (now-removed) byte-range erase
-# machinery. Modes 0/1 are silently ignored (2.2.3 "valid but
-# unsupported"), not treated as a full clear -- a script expecting a
-# partial erase should not have its whole screen wiped instead.
+# just computes the erase-fill color and calls it directly, instead of
+# going through the generic (now-removed) byte-range erase machinery.
+# Modes 0/1 are silently ignored as an unsupported-but-valid mode value,
+# not treated as a full clear -- a script expecting a partial erase should
+# not have its whole screen wiped instead.
 .disp_erase_screen
 CALL .ansi_get_mode
 LDI_BL 2
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JNE .disp_done
-CALL .ansi_get_erase_color            # BL = fill color per 2.2.3's rule
+CALL .ansi_get_erase_color            # BL = fill color (see
+                                       # .ansi_get_erase_color's header)
 LDI_AH 0x00
 ALUOP_AL %B%+%BL%
 CALL :clear_screen
@@ -742,12 +740,12 @@ ALUOP_FLAGS %A-B%+%AL%+%BL%           # O set iff index < count
 JNO .sgr_apply_pending
 CALL .sgr_get_param                   # AL = param[index]
 CALL .sgr_apply_code                  # 38/48 fall through as ignored codes
-                                      # (256-color/truecolor not implemented
-                                      # -- see file header; the parser
-                                      # already dropped anything WITH a
-                                      # following param, so a bare 38/48
-                                      # reaching here has no sub-params to
-                                      # misinterpret)
+                                      # (256-color/truecolor isn't
+                                      # implemented -- see file header; the
+                                      # parser already dropped anything
+                                      # WITH a following param, so a bare
+                                      # 38/48 reaching here has no
+                                      # sub-params to misinterpret)
 LD_AL $ansi_sgr_index
 ALUOP_ADDR %A+1%+%AL% $ansi_sgr_index        # index++
 JMP .sgr_loop
@@ -802,8 +800,9 @@ RET
 # Applies one simple SGR code: 0/39 reset, 5/25 blink, and the
 # foreground colors 30-37/90-97. Codes 1 (bold) and 22 (normal) only
 # record themselves in $ansi_sgr_pending_shade -- .sgr_apply_pending
-# applies the shade change after the parameter loop finishes. Everything
-# else is silently ignored per 2.2.3's ignored-code table.
+# applies the shade change after the parameter loop finishes. Every other
+# code (background colors, underline, italic, etc.) is silently ignored --
+# this terminal has no independent background color or those attributes.
 #
 # Inputs:
 #  AL - SGR code (0-255)

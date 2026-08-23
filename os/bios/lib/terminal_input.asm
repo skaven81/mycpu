@@ -1,11 +1,10 @@
 # vim: syntax=asm-mycpu
 
-# Buffer-based line editor (TERMINAL_REFACTOR.md 2.4). Replaces the ROM's
-# marks-based :input entirely -- :readline edits a caller-supplied RAM
-# buffer directly, with no marks, no cursor_save_mark/cursor_get_mark, and
-# no $input_flags.
+# Buffer-based line editor. Replaces the ROM's old marks-based :input
+# entirely -- :readline edits a caller-supplied RAM buffer directly, with
+# no marks and no separate input-flags state.
 #
-# Design (2.4.1/2.4.2):
+# Design:
 #  - Caller owns the buffer (C), gives its size incl. null terminator (AL),
 #    and an echo flag (AH bit 0). Returns AL=length, AH=status (0=Enter,
 #    1=Ctrl+C).
@@ -20,37 +19,26 @@
 #    incrementally, and this naturally reproduces the wrap-at-column-64
 #    behavior typed text gets from :putchar (.rl_seek). Known limitation: if
 #    the input scrolls the screen (crosses the bottom edge), $rl_start_addr
-#    goes stale and repositioning after that point would be wrong -- out of
-#    scope for the tested cases (Task 5).
-#  - Echo (2.4.1 decision 3): every screen-touching primitive (.rl_seek,
-#    .rl_echo_putchar) silently no-ops when $rl_echo is 0, so buffer edits
-#    happen identically whether or not echo is on.
-#  - Insert vs overwrite (2.4.1 decision 5) is CUT/DELETED (Phase 2
-#    ROM-budget gate, the owner's final cut after history/256-color
-#    SGR/ANSI save-restore/the Insert-key toggle -- unlike those, this one
-#    is a real delete, not a comment-out: the owner asked for the toggle
-#    key deleted first, found that left the dead $rl_insert mode-check and
-#    overwrite-mode branch still compiled in, and asked for those deleted
-#    too). :readline now always inserts; there is no overwrite mode. The
-#    hardware-proven Phase 1 insert/overwrite toggle is still intact and
-#    tested in os/util/termtest/40-t_readline.asm/80-tests_readline.asm if
-#    this ever needs to come back -- re-port from there rather than trying
-#    to reconstruct it from history, since this cut removed the code
-#    outright.
-#  - History (2.4.3, Task 6) is CUT/DISABLED (Phase 2 ROM-budget gate: the
-#    transferred terminal subsystem came in 1427 bytes over the 16 KiB BIOS
-#    budget; this was the owner's chosen third cut, after 256-color SGR and
-#    ANSI save/restore). Every history-related line below is commented out
-#    with '#', NOT deleted -- restore it verbatim by removing the leading
-#    '#' from: the $rl_history_* VAR block, the $rl_history_browse_idx reset
-#    in :readline's prologue, the Up/Down key dispatch in the poll loop, the
+#    goes stale and repositioning after that point would be wrong.
+#  - Echo: every screen-touching primitive (.rl_seek, .rl_echo_putchar)
+#    silently no-ops when $rl_echo is 0, so buffer edits happen identically
+#    whether or not echo is on.
+#  - Insert vs overwrite: overwrite mode is CUT/DELETED, to help fit the
+#    16 KiB ROM budget. :readline now always inserts; there is no overwrite
+#    mode, and the Insert key (0x0f) is simply an unrecognized control code
+#    that's ignored. This was a real delete, not a comment-out -- restoring
+#    it means re-implementing the mode toggle and the overwrite-write branch
+#    from scratch (or pulling the last commit that had it, `6def9fd`, which
+#    still carried a working hardware-proven copy in the now-deleted
+#    os/util/termtest/40-t_readline.asm).
+#  - History is CUT/DISABLED, to help fit the 16 KiB ROM budget. Every
+#    history-related line below is commented out with '#', NOT deleted --
+#    restore it verbatim by removing the leading '#' from: the
+#    $rl_history_* VAR block, the $rl_history_browse_idx reset in
+#    :readline's prologue, the Up/Down key dispatch in the poll loop, the
 #    .rl_history_up/.rl_history_down/.rl_hist_down_clear handlers, the
-#    :.rl_history_append call in .rl_enter, and the whole "history helpers"
-#    section at the end of the file (.rl_hist_check onward). This was
-#    hardware-proven working (42/42) in
-#    os/util/termtest/40-t_readline.asm/85-tests_history.asm before this
-#    cut -- that Phase 1 code is untouched and is the reference for
-#    restoring this. Original design notes, preserved for restoration:
+#    .rl_history_append call in .rl_enter, and the whole "history helpers"
+#    section at the end of the file (.rl_hist_check onward). Design:
 #    entirely caller-managed via the $rl_history_* globals. $rl_history_buf
 #    ==0 disables history (every history helper starts with .rl_hist_check
 #    and no-ops). Enter with non-empty input appends to the circular buffer
@@ -67,14 +55,12 @@
 #    typical shell history UX). Down past the newest entry (browse_idx back
 #    to 0) clears the line instead of loading an entry.
 #
-# Hardware-proven as os/util/termtest/40-t_readline.asm (t_-prefixed); this
-# is a mechanical prefix-strip transfer, no logic changes, EXCEPT: the
-# kb/UART/both source-selector the legacy :input gained in an earlier
-# revision (Phase 1's :t_readline never had it -- its spec only specified
-# keyboard input) was ported into the poll loop here at Task 9, once the
-# owner noticed the shell-over-serrun use case would otherwise regress.
-# :ptmr_clk_set (os/bios/lib/prog_timer.asm, 56 bytes, zero consumers) was
-# commented out to make ROM room for this addition.
+# The kb/UART/both source-selector (AH bits 1-2, see :readline's header
+# below) was added after the rest of this file was already in place, once
+# it became clear that a shell driven purely by keyboard-source readline
+# couldn't be driven remotely over the serrun serial link. :ptmr_clk_set
+# (os/bios/lib/prog_timer.asm, 56 bytes, zero consumers) was cut to make
+# ROM room for the addition.
 
 VAR global word $rl_buf
 VAR global byte $rl_maxlen
@@ -93,7 +79,7 @@ VAR global word $rl_tmp_dest
 VAR global byte $rl_ret_len
 VAR global byte $rl_ret_status
 
-# History (2.4.3). $rl_history_buf==0 (the default) disables history --
+# History. $rl_history_buf==0 (the default) disables history --
 # every helper checks it via .rl_hist_check. The caller (the shell, or any
 # other consumer) allocates history_buf and fills in capacity/entry_sz to
 # enable it.
@@ -290,7 +276,7 @@ JMP .rl_return
 
 ###
 # Backspace: move left (no-op at buffer start), then remove the char now
-# under the cursor and redraw the tail (2.4.2).
+# under the cursor and redraw the tail.
 .rl_backspace
 LD_AL $rl_pos
 ALUOP_FLAGS %A%+%AL%
@@ -665,7 +651,7 @@ JMP .rl_shiftr_loop
 RET
 
 #######
-## --- history helpers (2.4.3) ---
+## --- history helpers ---
 #
 #######
 ## Tests whether history is enabled.
@@ -763,8 +749,8 @@ RET
 ## terminator afterward -- never rely on copying the source's own trailing
 ## null, because when len is clamped down, the source byte at that offset
 ## is a real character, not a null. entry_sz is a caller-managed global
-## (Symbol Contract, 2.4.3) with no library-enforced relationship to
-## $rl_maxlen, so a caller that configures entry_sz smaller than maxlen+1
+## with no library-enforced relationship to $rl_maxlen, so a caller that
+## configures entry_sz smaller than maxlen+1
 ## would otherwise have a max-length line overflow this :memcpy into the
 ## next history slot; truncating here matches this file's existing
 ## maxlen-truncation philosophy for the input buffer itself.

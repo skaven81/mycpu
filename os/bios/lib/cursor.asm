@@ -1,28 +1,17 @@
 # vim: syntax=asm-mycpu
 
-# Cursor movement functions
+# Cursor movement functions.
 #
-# TERMINAL_REFACTOR.md 2.3. Replaces the marks-based cursor system (removed
-# entirely -- $crsr_marks, :cursor_save_mark*, :cursor_get_mark,
-# :cursor_clear_mark, :cursor_mark_*, :cursor_scroll_marks,
-# :cursor_shift_marks, :cursor_mark_getstring, $input_flags are all gone).
-#
-# Sync is split from movement (2.3.2): :cursor_left/right/up/down and
+# Sync is split from movement: :cursor_left/right/up/down and
 # :cursor_goto_* update position state ONLY -- they never touch the color
 # framebuffer or the cursor glyph. Callers that need the cursor glyph
 # visible at the new position must call :cursor_display_sync themselves.
 # :cursor_on/:cursor_off are the exception: they are explicit visibility
 # requests, so they still sync immediately.
 #
-# ESC[s / ESC[u save/restore (2.3.3) are NOT implemented -- cut during the
-# Phase 2 ROM-budget gate (the transferred terminal subsystem came in 1427
-# bytes over the 16 KiB BIOS budget; this was one of the owner's chosen
-# cuts, along with 256-color SGR in terminal_ansi.asm). The Phase 1
-# hardware-proven :t_cursor_save/:t_cursor_restore in
-# os/util/termtest/20-t_cursor.asm are unaffected by this cut.
-#
-# Hardware-proven as os/util/termtest/20-t_cursor.asm (t_-prefixed); this
-# is a mechanical prefix-strip transfer aside from that cut.
+# ESC[s / ESC[u save/restore are NOT implemented -- the terminal subsystem
+# came in over the 16 KiB ROM budget, and dropping save/restore was one of
+# the cuts made to fit.
 
 VAR global byte $crsr_row
 VAR global byte $crsr_col
@@ -30,6 +19,11 @@ VAR global byte $crsr_on
 VAR global word $crsr_addr_chars
 VAR global word $crsr_addr_color
 
+######
+# Resets cursor state to the top-left corner, cursor on, with the
+# chars/color framebuffer pointers pointing at the start of the display.
+# Does not touch the framebuffer itself -- call :cursor_display_sync after
+# if the cursor glyph needs to appear.
 :cursor_init
 ST $crsr_row 0x00
 ST $crsr_col 0x00
@@ -54,7 +48,8 @@ JMP :cursor_display_sync
 # Updates the color framebuffer at the current cursor location to set or
 # clear the cursor bit, based on the cursor-on flag. This is the only
 # place that touches the color framebuffer for cursor display -- movement
-# and goto functions no longer do this automatically (2.3.2).
+# and goto functions do not do this automatically, so callers that need
+# the glyph visible at a new position must call this explicitly.
 :cursor_display_sync
 PUSH_DL
 PUSH_DH
@@ -251,7 +246,7 @@ RET
 # Moves the cursor to an absolute addr (or offset). Position state only:
 # updates crsr_row/col/addr_chars/addr_color. Does NOT touch the color
 # framebuffer and does NOT sync the cursor glyph -- call
-# :cursor_display_sync explicitly afterward if needed (2.3.2).
+# :cursor_display_sync explicitly afterward if needed.
 #
 # Inputs:
 #  A - address/offset (top four bits are ignored)
@@ -293,10 +288,9 @@ RET
 # Moves the cursor to an absolute row,col position. Position state only
 # (see :cursor_goto_addr).
 #
-# :cursor_conv_rowcol and :cursor_conv_addr are exact inverses (that is
-# their whole contract, verified by the Task 1 round-trip tests), so
-# rather than duplicate :cursor_goto_addr's address-computation body here
-# a second time, convert to an offset and tail-call it -- it derives
+# :cursor_conv_rowcol and :cursor_conv_addr are exact inverses, so rather
+# than duplicate :cursor_goto_addr's address-computation body here a
+# second time, convert to an offset and tail-call it -- it derives
 # row/col right back via :cursor_conv_addr, reproducing this call's own
 # AH/AL exactly. This is a cold path (goto calls are rare relative to
 # putchar), so the extra conversion round-trip costs nothing that matters.

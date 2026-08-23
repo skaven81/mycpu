@@ -1,18 +1,23 @@
 # vim: syntax=asm-mycpu
 
-# Terminal output functions (TERMINAL_REFACTOR.md 2.2). Replaces the
-# @-code-based output core: $term_flags (2.2.1) is a single unified control
-# byte (0x00 is the fast/default case) replacing the four separate control
-# variables ($term_color_enabled, $term_print_raw plus the two kept here).
-# Color now comes from ANSI SGR (terminal_ansi.asm) or from setting
-# $term_render_color/$term_current_color directly (2.2.4), not @-codes.
-# :putchar_raw replaces :putchar_direct.
+# Terminal output functions.
 #
-# Hardware-proven as os/util/termtest/30-t_termout.asm (t_-prefixed); this
-# is a mechanical prefix-strip transfer, no logic changes. See that file's
-# original header for the performance-critical register-convention notes
-# (fast-path save discipline, chars/color address relationship) -- they
-# still apply verbatim here.
+# $term_flags is a single unified control byte -- 0x00 is the fast/default
+# case (plain output, no ANSI parsing, no raw mode, default edge behavior).
+# Non-default behavior is controlled bit by bit:
+#  bit 0 - raw mode: control characters (BS/DEL/CR/LF) print as glyphs
+#          instead of being handled specially
+#  bit 1 - ANSI mode: ESC starts feeding the CSI parser (terminal_ansi.asm)
+#  bit 2 - no-wrap: at the right edge, stay at column 63 instead of
+#          wrapping to column 0 of the next row
+#  bit 3 - no-newline: at the right edge, don't advance to the next row
+#  bit 4 - no-scroll: at the bottom row, don't scroll -- overwrite in place
+#  bit 5 - wrap-to-top: when no-scroll is set and the bottom is reached,
+#          wrap back to row 0 instead of clamping at row 59
+# Color rendering is controlled separately by $term_render_color (nonzero
+# enables writing $term_current_color to the color framebuffer alongside
+# every character) and set via ANSI SGR (terminal_ansi.asm) or by writing
+# $term_current_color directly.
 VAR global byte $term_flags
 VAR global byte $term_render_color
 VAR global byte $term_current_color
@@ -29,7 +34,7 @@ VAR global 128 $printf_buf
 
 ######
 # Print a single character from AL at the current cursor location, then
-# advance the cursor. Honors $term_flags (2.2.1/2.2.2).
+# advance the cursor. Honors $term_flags (see the bit layout above).
 #
 # Inputs:
 #  AL - character to print
@@ -247,13 +252,16 @@ RET
 
 ######
 # Prints a null-terminated string at C via :putchar. If the ANSI parser
-# is left mid-sequence when the string ends, flushes the buffered escape
-# characters and resets it (2.2.3 case 4).
+# is left mid-sequence when the string ends (e.g. the string ended right
+# after an ESC or partway through a CSI sequence), flushes the buffered
+# escape characters as literal glyphs and resets the parser.
 #
 # Clears the cursor bit at the CURRENT position before printing anything
 # (see the comment above the final :cursor_display_sync call below for
-# why this is needed), then syncs it at the new position once at the end,
-# per 2.3.2's design (goto/movement functions no longer auto-clear).
+# why this is needed), then syncs it at the new position once at the end --
+# cursor movement functions (:cursor_left/right/up/down, :cursor_goto_*)
+# never touch the color framebuffer themselves, so :print is the one place
+# that keeps the visible cursor glyph in sync with position.
 #
 # Inputs:
 #  C - address of string to print
@@ -463,10 +471,11 @@ RET
 
 ######
 # Flag-driven cursor advance for the slow path: honors $term_flags
-# bits 2-5 for right-edge and bottom-edge behavior (2.2.1). Away from
-# the right edge every advance is identical to the default one, so this
-# just delegates -- slow-path characters cost only three instructions
-# more than fast-path ones until the cursor is actually at col 63.
+# bits 2-5 for right-edge and bottom-edge behavior (see the bit layout in
+# this file's header). Away from the right edge every advance is
+# identical to the default one, so this just delegates -- slow-path
+# characters cost only three instructions more than fast-path ones until
+# the cursor is actually at col 63.
 #
 # Inputs:
 #  D - address of the character cell just written (same contract as
@@ -503,9 +512,9 @@ RET
 ######
 # Given the current row in AH, computes the row after a "move to next
 # row" event (newline, or a right-edge wrap that advances rows),
-# honoring $term_flags bits 4-5 for bottom-edge behavior and calling
-# :term_scroll when scrolling is wanted. Shared by
-# .cursor_advance_edge and .putchar_newline.
+# honoring $term_flags bits 4-5 for bottom-edge behavior (see the bit
+# layout in this file's header) and calling :term_scroll when scrolling
+# is wanted. Shared by .cursor_advance_edge and .putchar_newline.
 #
 # Inputs:
 #  AH - current row (0-59)
@@ -525,8 +534,8 @@ LD_AH $term_flags
 LDI_BL 0x10                          # bit 4: no-scroll
 ALUOP_FLAGS %A&B%+%AH%+%BL%
 JNZ .rab_noscroll
-CALL :term_scroll                    # default: scroll (regardless of
-LDI_AH 0x3b                          # bit 5 -- see spec 2.2.1 note)
+CALL :term_scroll                    # default: scroll (bit 5/wrap-to-top
+LDI_AH 0x3b                          # only applies when no-scroll is set)
 JMP .rab_done
 .rab_noscroll
 LDI_BL 0x20                          # bit 5: wrap-to-top (AH still flags)
