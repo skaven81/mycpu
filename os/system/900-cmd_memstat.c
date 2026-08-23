@@ -66,24 +66,26 @@ static uint16_t se_alloc_kib;
 static uint16_t se_free_kib;
 
 static void memstat_show_main_ram(void) {
-    // Color escapes ESC[NNm\0, selected by an if-chain below rather than a
-    // 2D array + runtime index. Originally written this way to work around
-    // a c_compiler/codegen.py bug (visit_ArrayDecl built a 2D array's
-    // array_dims innermost-first instead of outer-first, corrupting the
-    // row stride for any non-square 2D array) -- that bug is now fixed
-    // (see codegen.py and the test_2d_array_row_stride regression test in
-    // os/cctest/cctest8/main.c), but this file wasn't reverted back to a
-    // real 2D array since the if-chain works fine and touching tested code
-    // for style alone isn't worth the risk. SGR mapping
-    // (TERMINAL_REFACTOR.md's foreground table, shade/color -> SGR): old
-    // @31->94, @37->97, @33->96, @35->95, @25->35, @36->93, @26->33.
-    static char s_col_free[6] = {27,'[','9','4','m',0};
-    static char s_col_segs[6] = {27,'[','9','7','m',0};
-    static char s_col_segf[6] = {27,'[','9','6','m',0};
-    static char s_col_blks[6] = {27,'[','9','5','m',0};
-    static char s_col_blkf[6] = {27,'[','3','5','m',0};
-    static char s_col_syss[6] = {27,'[','9','3','m',0};
-    static char s_col_sysf[6] = {27,'[','3','3','m',0};
+    // Color escape table: 7 rows of ESC[NNm\0 (6 bytes each, since every
+    // mapped SGR code below is exactly 2 digits), indexed 0-6. 0=free,
+    // 1=seg-struct, 2=seg-fill, 3=blk-struct, 4=blk-fill, 5=sysody-struct,
+    // 6=sysody-fill. SGR mapping (TERMINAL_REFACTOR.md's foreground table,
+    // shade/color -> SGR): old @31->94, @37->97, @33->96, @35->95, @25->35,
+    // @36->93, @26->33. This used to be an if-chain of named arrays to work
+    // around a c_compiler/codegen.py bug (visit_ArrayDecl built a 2D
+    // array's array_dims innermost-first instead of outer-first,
+    // corrupting the row stride for any non-square 2D array) -- fixed now
+    // (see codegen.py and test_2d_array_row_stride in os/cctest/cctest8/
+    // main.c), so this is a real 2D array again.
+    static char s_col_strs[7][6] = {
+        {27,'[','9','4','m',0},
+        {27,'[','9','7','m',0},
+        {27,'[','9','6','m',0},
+        {27,'[','9','5','m',0},
+        {27,'[','3','5','m',0},
+        {27,'[','9','3','m',0},
+        {27,'[','3','3','m',0}
+    };
     // Read BIOS globals
     s_range_start = malloc_range_start;
     s_num_segs    = malloc_segments;
@@ -222,13 +224,7 @@ static void memstat_show_main_ram(void) {
         }
 
         if (s_cur_color ^ s_last_color) {
-            if (s_cur_color == 0)      printf("%s", s_col_free);
-            else if (s_cur_color == 1) printf("%s", s_col_segs);
-            else if (s_cur_color == 2) printf("%s", s_col_segf);
-            else if (s_cur_color == 3) printf("%s", s_col_blks);
-            else if (s_cur_color == 4) printf("%s", s_col_blkf);
-            else if (s_cur_color == 5) printf("%s", s_col_syss);
-            else                       printf("%s", s_col_sysf);
+            printf("%s", s_col_strs[s_cur_color]);
             s_last_color = s_cur_color;
         }
         emit_ch(s_ch);
