@@ -75,8 +75,8 @@ LDI_AL 0x0f                     # Bits to clear in AL
 ALUOP_BL %A|B%+%AL%+%BL%        # set bits in BL
 POP_AL                          # Restore AL
 
-# Turn color rendering on
-ST $term_color_enabled 0x01
+# Turn on ANSI mode so the row formats' embedded SGR escapes are honored
+ST $term_flags 0x02
 
 # Print start and end addresses
 CALL :heap_push_BL
@@ -144,9 +144,12 @@ JMP .do_print
 .use_row_format1
 LDI_C .row_format1
 .do_print
-ST $term_print_raw 0x01
+ST $term_flags 0x03      # raw+ANSI: literal control bytes in the ASCII
+                          # column print as glyphs, while the row format's
+                          # embedded SGR escapes still get parsed
 CALL :printf
-ST $term_print_raw 0x00
+ST $term_flags 0x02      # back to ANSI-only for the newline putchar below
+                          # (raw off, so '\n' actually advances the line)
 # Print the newline
 ALUOP_PUSH %A%+%AL%
 LDI_AL '\n'
@@ -169,8 +172,9 @@ ALUOP16O_B %ALU16_B-A%
 POP_BH
 POP_BL
 JNO .process_range_loop
-# Turn color rendering off
-ST $term_color_enabled 0x00
+# Turn ANSI mode and color rendering back off
+ST $term_flags 0x00
+ST $term_render_color 0x00
 JMP .program_exit
 
 .abort_bad_start_address
@@ -212,5 +216,18 @@ RET
 .bad_end_addr_str "Error: %s is not a valid end address. strtoi flags: 0x%x\n\0"
 .bad_range_str "Error: %s is not a valid range specifier. strtoi flags: 0x%x\n\0"
 .start_end_str "Dump of 0x%x%x - 0x%x%x\n\0"
-.row_format1 "@350x%x%x@37|@33%x@36%x@33%x@36%x @33%x@36%x@33%x@36%x @33%x@36%x@33%x@36%x @33%x@36%x@33%x@36%x@37|@33%c@36%c@33%c@36%c @33%c@36%c@33%c@36%c @33%c@36%c@33%c@36%c @33%c@36%c@33%c@36%c@37|\0"
-.row_format2 "@250x%x%x@37|@23%x@26%x@23%x@26%x @23%x@26%x@23%x@26%x @23%x@26%x@23%x@26%x @23%x@26%x@23%x@26%x@37|@23%c@26%c@23%c@26%c @23%c@26%c@23%c@26%c @23%c@26%c@23%c@26%c @23%c@26%c@23%c@26%c@37|\0"
+# ANSI SGR equivalents of the old @-codes (shade/color -> SGR per
+# TERMINAL_REFACTOR.md's foreground table): @35->95 (light magenta),
+# @37->97 (light white), @33->96 (light cyan), @36->93 (light yellow) for
+# the bright (xxx0) rows; @25->35 (magenta), @23->36 (cyan), @26->33
+# (yellow) for the dim (xxx8/odd-block) rows -- separators stay bright
+# white (97) in both, matching the original. Unlike the old @-codes (which
+# alternated color per BYTE within the hex/ascii columns), each column
+# here is a single SGR color applied once and left to cover all 16
+# bytes/chars -- expanding the original's per-byte alternation into ANSI
+# escapes would run every row format past $printf_buf's 128-byte cap
+# (measured ~244 bytes expanded, vs. this design's 100). Row-level
+# bright/dim alternation (the actual point of row_format1 vs row_format2)
+# is unaffected.
+.row_format1 0x1b "[95m0x%x%x" 0x1b "[97m|" 0x1b "[96m%x%x%x%x %x%x%x%x %x%x%x%x %x%x%x%x" 0x1b "[97m|" 0x1b "[93m%c%c%c%c %c%c%c%c %c%c%c%c %c%c%c%c" 0x1b "[97m|\0"
+.row_format2 0x1b "[35m0x%x%x" 0x1b "[97m|" 0x1b "[36m%x%x%x%x %x%x%x%x %x%x%x%x %x%x%x%x" 0x1b "[97m|" 0x1b "[33m%c%c%c%c %c%c%c%c %c%c%c%c %c%c%c%c" 0x1b "[97m|\0"

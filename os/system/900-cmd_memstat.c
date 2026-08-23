@@ -9,14 +9,17 @@ extern uint16_t malloc_range_start;
 extern uint8_t  malloc_segments;
 extern uint16_t exec_loop_program_ptr;
 extern uint8_t  extmalloc_ledger[32];  // 32-byte bitmap: 1 bit per page
-extern uint8_t  term_color_enabled;
-extern uint8_t  term_current_color;  // current color byte (set by print @XX codes)
+extern uint8_t  term_flags;          // bit 1 = ANSI mode (replaces term_color_enabled)
+extern uint8_t  term_current_color;  // current color byte (set by ANSI SGR)
 extern uint16_t crsr_addr_color;     // address of cursor in color framebuffer
 
 // Assembly helpers (defined in 900a-cmd_memstat_helpers.asm)
 // emit_ch: heap_push_AL(c) then CALL; callee retreats 1 byte. Writes
 //          the character and then writes term_current_color to color memory.
+// emit_sgr: heap_push_AL(sgr) then CALL; callee retreats 1 byte. Prints
+//           ESC[<sgr>m -- requires term_flags ANSI bit set (see cmd_memstat).
 extern void emit_ch(uint8_t c);
+extern void emit_sgr(uint8_t sgr);
 extern void memstat_sep_d(void);
 extern void memstat_sep_s(void);
 
@@ -41,7 +44,6 @@ static uint16_t s_alloc_total;
 static uint16_t s_alloc_remaining;
 static uint16_t s_segs16;
 static uint16_t s_b16;
-static uint16_t s_col_off;
 static uint8_t  s_num_segs;
 static uint8_t  s_b;
 static uint8_t  s_in_alloc;
@@ -64,18 +66,26 @@ static uint16_t se_alloc_kib;
 static uint16_t se_free_kib;
 
 static void memstat_show_main_ram(void) {
-    // Color escape table: 7 entries of "@XX\0" (4 bytes each), indexed 0-6.
-    // 0=free, 1=seg-struct, 2=seg-fill, 3=blk-struct, 4=blk-fill,
-    // 5=sysody-struct, 6=sysody-fill.
-    static char s_col_strs[28] = {
-        '@','3','1',0,
-        '@','3','7',0,
-        '@','3','3',0,
-        '@','3','5',0,
-        '@','2','5',0,
-        '@','3','6',0,
-        '@','2','6',0
-    };
+    // Color escapes ESC[NNm\0, selected by an if-chain below rather than a
+    // 2D array + runtime index: this compiler has no general '*' operator
+    // (so a hand-rolled offset isn't an option), and c_compiler/codegen.py's
+    // visit_ArrayDecl builds a multi-dim array's array_dims innermost-first
+    // (it recurses into node.type before appending its own node.dim), so
+    // char[7][6]'s dims end up [6,7] instead of [7,6] -- ArrayRef's stride
+    // computation (array_dims[1:]) then multiplies by the wrong dimension
+    // (confirmed: a char s_col_strs[7][6] indexed as s_col_strs[n] emitted
+    // 7 ALUOP16O adds, i.e. stride 7, corrupting every row after row 0).
+    // Flagged as a compiler bug; not fixed here since it's out of this
+    // ANSI-migration task's scope. SGR mapping (TERMINAL_REFACTOR.md's
+    // foreground table, shade/color -> SGR): old @31->94, @37->97, @33->96,
+    // @35->95, @25->35, @36->93, @26->33.
+    static char s_col_free[6] = {27,'[','9','4','m',0};
+    static char s_col_segs[6] = {27,'[','9','7','m',0};
+    static char s_col_segf[6] = {27,'[','9','6','m',0};
+    static char s_col_blks[6] = {27,'[','9','5','m',0};
+    static char s_col_blkf[6] = {27,'[','3','5','m',0};
+    static char s_col_syss[6] = {27,'[','9','3','m',0};
+    static char s_col_sysf[6] = {27,'[','3','3','m',0};
     // Read BIOS globals
     s_range_start = malloc_range_start;
     s_num_segs    = malloc_segments;
@@ -115,8 +125,16 @@ static void memstat_show_main_ram(void) {
         }
     }
 
-    printf("@37Main RAM@r @17base:@36 0x%X @17segs:@36 %u @17total:@36 %U@17 B (1 char=16B)@r\n",
-           s_range_start, s_num_segs, s_total_bytes);
+    emit_sgr(97); print("Main RAM"); emit_sgr(0);
+    print(" ");
+    emit_sgr(90); print("base:"); emit_sgr(93);
+    printf(" 0x%X ", s_range_start);
+    emit_sgr(90); print("segs:"); emit_sgr(93);
+    printf(" %u ", s_num_segs);
+    emit_sgr(90); print("total:"); emit_sgr(93);
+    printf(" %U", s_total_bytes);
+    emit_sgr(90); print(" B (1 char=16B)"); emit_sgr(0);
+    print("\n");
 
     s_in_alloc        = 0;
     s_alloc_total     = 0;
@@ -206,38 +224,59 @@ static void memstat_show_main_ram(void) {
         }
 
         if (s_cur_color ^ s_last_color) {
-            s_col_off = s_cur_color;
-            s_col_off = s_col_off & 0x00FF;
-            s_col_off = s_col_off << 2;
-            printf("%s", &s_col_strs[s_col_off]);
+            if (s_cur_color == 0)      printf("%s", s_col_free);
+            else if (s_cur_color == 1) printf("%s", s_col_segs);
+            else if (s_cur_color == 2) printf("%s", s_col_segf);
+            else if (s_cur_color == 3) printf("%s", s_col_blks);
+            else if (s_cur_color == 4) printf("%s", s_col_blkf);
+            else if (s_cur_color == 5) printf("%s", s_col_syss);
+            else                       printf("%s", s_col_sysf);
             s_last_color = s_cur_color;
         }
         emit_ch(s_ch);
     }
-    print("@r\n");
+    emit_sgr(0);
+    print("\n");
     extpage_d_pop();
     if (s_cur_free > s_max_free) s_max_free = s_cur_free;
 
     s_used_bytes = s_total_bytes - s_free_bytes;
     memstat_sep_s();
-    printf("@17Used:@36 %U@17 B  Free:@36 %U@17 B  Total:@36 %U@17 B  Allocs:@36 %U@r\n",
-           s_used_bytes, s_free_bytes, s_total_bytes, s_alloc_count);
-    printf("@17Largest free:@36 %U@17 B", s_max_free);
+    emit_sgr(90); print("Used:"); emit_sgr(93);
+    printf(" %U", s_used_bytes);
+    emit_sgr(90); print(" B  Free:"); emit_sgr(93);
+    printf(" %U", s_free_bytes);
+    emit_sgr(90); print(" B  Total:"); emit_sgr(93);
+    printf(" %U", s_total_bytes);
+    emit_sgr(90); print(" B  Allocs:"); emit_sgr(93);
+    printf(" %U", s_alloc_count);
+    emit_sgr(0);
+    print("\n");
+    emit_sgr(90); print("Largest free:"); emit_sgr(93);
+    printf(" %U", s_max_free);
+    emit_sgr(90); print(" B");
     if (s_sysody_bytes) {
-        printf("   @36SYSTEM.ODY: %U@17 B (reclaim)@r", s_sysody_bytes);
+        print("   ");
+        emit_sgr(93); print("SYSTEM.ODY: ");
+        printf("%U", s_sysody_bytes);
+        emit_sgr(90); print(" B (reclaim)");
     }
-    print("@r\n");
+    emit_sgr(0);
+    print("\n");
 }
 
 static void memstat_show_ext_ram(void) {
     memstat_sep_d();
-    print("@37Extended RAM@r 256 pages x 4 KiB = 1024 KiB @17(1 char=1 page)@r\n");
+    emit_sgr(97); print("Extended RAM"); emit_sgr(0);
+    print(" 256 pages x 4 KiB = 1024 KiB ");
+    emit_sgr(90); print("(1 char=1 page)"); emit_sgr(0);
+    print("\n");
 
     se_alloc_count = 0;
 
     // Page 0 is always the zero-page scratch page (not allocatable).
     // Handle it explicitly to avoid a per-iteration branch in the main loop.
-    print("@34");
+    emit_sgr(91);
     emit_ch(0xB2);
     se_last_color = 2;
     se_bit_mask   = 0x40;   // page 1's bit (already past page 0)
@@ -256,8 +295,8 @@ static void memstat_show_ext_ram(void) {
         }
 
         if (se_cur_color ^ se_last_color) {
-            if (se_cur_color) print("@35");
-            else              print("@31");
+            if (se_cur_color) emit_sgr(95);
+            else              emit_sgr(94);
             se_last_color = se_cur_color;
         }
         emit_ch(se_ch);
@@ -267,7 +306,8 @@ static void memstat_show_ext_ram(void) {
         se_page++;
     } while (se_page);
 
-    print("@r\n");
+    emit_sgr(0);
+    print("\n");
 
     // KiB values: zero-extend uint8_t count to uint16_t, mask garbage high
     // byte, then shift left by 2 (multiply by 4).
@@ -279,32 +319,59 @@ static void memstat_show_ext_ram(void) {
     se_free_kib  = se_free_kib & 0x00FF;
     se_free_kib  = se_free_kib << 2;
     memstat_sep_s();
-    printf("@17Alloc:@36 %u@17 pg (%U@17 KiB)  Free:@36 %u@17 pg (%U@17 KiB)  Zero-pg:@34 1@r\n",
-           se_alloc_count, se_alloc_kib, se_ext_free, se_free_kib);
+    emit_sgr(90); print("Alloc:"); emit_sgr(93);
+    printf(" %u", se_alloc_count);
+    emit_sgr(90); print(" pg (");
+    emit_sgr(93);
+    printf("%U", se_alloc_kib);
+    emit_sgr(90); print(" KiB)  Free:"); emit_sgr(93);
+    printf(" %u", se_ext_free);
+    emit_sgr(90); print(" pg (");
+    emit_sgr(93);
+    printf("%U", se_free_kib);
+    emit_sgr(90); print(" KiB)  Zero-pg:"); emit_sgr(91);
+    print(" 1");
+    emit_sgr(0);
+    print("\n");
 }
 
 static void memstat_show_legend(void) {
     memstat_sep_d();
-    print("@37Legend (main):@r  ");
-    print("@37"); emit_ch('['); print("@33"); emit_ch(0xB2); print("@37"); emit_ch(']'); print("@r=seg  ");
-    print("@35"); emit_ch('['); print("@25"); emit_ch(0xB1); print("@35"); emit_ch(']'); print("@r=blk  ");
-    print("@35"); emit_ch(0x07); print("@r=1blk  ");
-    print("@36"); emit_ch(0xF9); print("@r=sys  ");
-    print("@31"); emit_ch(0xB0); print("@r=free\n");
-    print("@37Legend (ext):@r   ");
-    print("@35"); emit_ch(0xDB); print("@r=ext-alloc  ");
-    print("@34"); emit_ch(0xB2); print("@r=zero-pg  ");
-    print("@31"); emit_ch(0xB0); print("@r=free\n");
+    emit_sgr(97); print("Legend (main):"); emit_sgr(0);
+    print("  ");
+    emit_sgr(97); emit_ch('[');
+    emit_sgr(96); emit_ch(0xB2);
+    emit_sgr(97); emit_ch(']');
+    emit_sgr(0); print("=seg  ");
+    emit_sgr(95); emit_ch('[');
+    emit_sgr(35); emit_ch(0xB1);
+    emit_sgr(95); emit_ch(']');
+    emit_sgr(0); print("=blk  ");
+    emit_sgr(95); emit_ch(0x07);
+    emit_sgr(0); print("=1blk  ");
+    emit_sgr(93); emit_ch(0xF9);
+    emit_sgr(0); print("=sys  ");
+    emit_sgr(94); emit_ch(0xB0);
+    emit_sgr(0); print("=free\n");
+    emit_sgr(97); print("Legend (ext):"); emit_sgr(0);
+    print("   ");
+    emit_sgr(95); emit_ch(0xDB);
+    emit_sgr(0); print("=ext-alloc  ");
+    emit_sgr(91); emit_ch(0xB2);
+    emit_sgr(0); print("=zero-pg  ");
+    emit_sgr(94); emit_ch(0xB0);
+    emit_sgr(0); print("=free\n");
 }
 
 void cmd_memstat(void) {
-    term_color_enabled = 1;
+    term_flags = 0x02;      // ANSI mode on for the whole command
     memstat_sep_d();
-    print("@37     Wire Wrap Odyssey -- Memory Status@r\n");
+    emit_sgr(97); print("     Wire Wrap Odyssey -- Memory Status"); emit_sgr(0);
+    print("\n");
     memstat_sep_d();
     memstat_show_main_ram();
     memstat_show_ext_ram();
     memstat_show_legend();
     memstat_sep_d();
-    term_color_enabled = 0;
+    term_flags = 0x00;
 }

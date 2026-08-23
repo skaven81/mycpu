@@ -15,16 +15,16 @@ LDI_C .hex_str          # easier way to iterate through all 16 hex chars
 # Print the row header on the left
 ALUOP_PUSH %A%+%AL%     # save AL (current char
 LDA_C_AL                # get the next row header char
-CALL :putchar_direct
+CALL :putchar_raw
 LDI_AL '|'
-CALL :putchar_direct
+CALL :putchar_raw
 POP_AL                  # get AL (current char) back
 INCR_C                  # move to next row header char
 
 # Print 16 characters
 LDI_AH 0x10             # AH is our column counter
 .ascii_column_loop
-CALL :putchar_direct    # Print the character (AL)
+CALL :putchar_raw    # Print the character (AL)
 ALUOP_PUSH %A%+%AL%     # And then a space
 LDI_AL ' '              # |
 CALL :putchar           # |

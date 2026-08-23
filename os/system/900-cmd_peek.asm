@@ -71,7 +71,7 @@ LDI_C .simple_peek_pfx          # Print the prefix
 CALL :printf                    # |
 ALUOP_PUSH %A%+%AL%
 MOV_DL_AL                       # Put byte@A into AL
-CALL :putchar_direct            # Print it without doing anything with control chars
+CALL :putchar_raw            # Print it without doing anything with control chars
 POP_AL
 LDI_C .simple_peek_end          # Print the suffix
 CALL :print                     # |
@@ -104,7 +104,7 @@ LDI_C .simple_peek_pfx          # Print the prefix
 CALL :printf                    # |
 ALUOP_PUSH %A%+%AL%
 ALUOP_AL %B%+%BL%               # Put byte into AL
-CALL :putchar_direct            # Print it without doing anything with control chars
+CALL :putchar_raw            # Print it without doing anything with control chars
 POP_AL
 LDI_C .simple_peek_end          # Print suffix
 CALL :print                     # |
