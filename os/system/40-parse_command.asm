@@ -194,6 +194,7 @@ RET
 .cmd_120 "setserial\0"     :cmd_setserial
 .cmd_130 "type\0"          :cmd_type
 .cmd_140 "memstat\0"       :cmd_memstat
+.cmd_150 "term\0"          :cmd_term
 .cmd_end 0x00
 
 #####
