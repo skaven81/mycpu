@@ -10,8 +10,13 @@
 LDI_BL 0                                # primary master
 CALL :heap_push_BL
 CALL :ata_boot_identify                 # prints its own banner line
+LDI_AL ' '
+CALL :putchar
+
 
 LDI_BL 1                                # primary slave
 CALL :heap_push_BL
 CALL :ata_boot_identify                 # prints its own banner line
+LDI_AL '\n'
+CALL :putchar
 RET

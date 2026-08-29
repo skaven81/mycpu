@@ -18,7 +18,7 @@
 # To use this function:
 #  1. push a byte onto the heap: 0=master, 1=slave drive
 #  2. call the function
-# Prints directly; nothing is returned.
+# Prints directly *with no newline*; nothing is returned.
 :ata_boot_identify
 ALUOP_PUSH %A%+%AH%
 ALUOP_PUSH %A%+%AL%
@@ -72,8 +72,8 @@ POP_AL
 POP_AH
 RET
 
-.boot_present_str "ATA%u: present\n\0"
-.boot_not_detected_str "ATA%u: not detected\n\0"
+.boot_present_str "ATA%u: present\0"
+.boot_not_detected_str "ATA%u: not detected\0"
 
 # ata_identify - send the ID command to the drive and return
 # a 512-byte data frame containing the response. To use this
