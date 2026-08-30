@@ -9,7 +9,7 @@ CALL :uart_init_9600_8n1
 LDI_AH 0x00 # bcd seconds
 CALL :heap_push_AH
 LDI_AH 0x50 # bcd subseconds
-CALL :heap_push_AL
+CALL :heap_push_AH
 CALL :sleep # sleep for 0.5 sec
 # Now reset the UART ring buffer so any flushed bytes are discarded.
 CALL :uart_flush
