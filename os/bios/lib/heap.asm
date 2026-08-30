@@ -49,46 +49,62 @@ POP_AH
 RET
 
 ######
-# Push a byte onto the heap
-:heap_push_AH
-ALUOP_PUSH %A%+%AH%
-JMP .do_heap_push_byte
+# Push a byte onto the heap.
+#
+# The byte is routed through AL -- the caller's AL is saved on the hardware
+# stack and restored on the way out -- and written with a single
+# ALUOP_ADDR_D. No microcode scratch register (TD) is touched, so unlike the
+# old POP_TD / STA_D_TD form this needs no MASKINT window: a caller that
+# holds an outer MASKINT is no longer silently unmasked by pushing, and an
+# IRQ that does NOT itself use the heap can now land anywhere in here
+# harmlessly. (A heap-using ISR is still not safe against a mid-push main
+# line -- the $heap_ptr read-modify-write is not atomic -- same as the pop
+# path has always been.) Flags are not preserved (nor were they by the old
+# :heap_push_AL).
 :heap_push_AL
-ALUOP_PUSH %A%+%AL%
+ALUOP_PUSH %A%+%AL%     # save caller AL; it already holds the value to push
+JMP .do_heap_push_byte
+:heap_push_AH
+ALUOP_PUSH %A%+%AL%     # save caller AL (used as the transfer register)
+ALUOP_AL %A%+%AH%       # AL = value to push
 JMP .do_heap_push_byte
 :heap_push_BH
-ALUOP_PUSH %B%+%BH%
+ALUOP_PUSH %A%+%AL%
+ALUOP_AL %B%+%BH%
 JMP .do_heap_push_byte
 :heap_push_BL
-ALUOP_PUSH %B%+%BL%
+ALUOP_PUSH %A%+%AL%
+ALUOP_AL %B%+%BL%
 JMP .do_heap_push_byte
 :heap_push_CH
-PUSH_CH
+ALUOP_PUSH %A%+%AL%
+MOV_CH_AL
 JMP .do_heap_push_byte
 :heap_push_CL
-PUSH_CL
+ALUOP_PUSH %A%+%AL%
+MOV_CL_AL
 JMP .do_heap_push_byte
 :heap_push_DH
-PUSH_DH
+ALUOP_PUSH %A%+%AL%
+MOV_DH_AL
 JMP .do_heap_push_byte
 :heap_push_DL
-PUSH_DL
+ALUOP_PUSH %A%+%AL%
+MOV_DL_AL
 JMP .do_heap_push_byte
 
-.do_heap_push_byte
-MASKINT                 # Since we'll be using temp registers, we can't afford an IRQ
-POP_TD
+.do_heap_push_byte      # entry: AL = value to push; caller AL saved on hw stack
 PUSH_DH
 PUSH_DL
 LD_DH  $heap_ptr
 LD_DL  $heap_ptr+1
 INCR_D
-STA_D_TD
+ALUOP_ADDR_D %A%+%AL%   # [heap_ptr+1] = value -- single instruction, no TD
 ST_DH  $heap_ptr
 ST_DL  $heap_ptr+1
 POP_DL
 POP_DH
-UMASKINT
+POP_AL                  # restore caller AL
 RET
 
 ######

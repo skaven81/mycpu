@@ -163,6 +163,14 @@ POP_BL                      # absolute value back.
 RET
 
 ######
+# Flush the UART receive buffer by resetting the ring buffer pointers
+:uart_flush
+ST16 $uart_buf_ptr_write 0xcb00
+ST16 $uart_buf_ptr_read  0xcb00
+ST   $uart_rts_state 0x01
+RET
+
+######
 # Read a character into AL from the UART read buffer. If the
 # buffer is empty, returns 0x00. You have to use :uart_bufsize
 # to distinguish between a received NULL and an empty buffer.

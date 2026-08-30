@@ -4,6 +4,7 @@
 LDI_C .kb_init_banner
 CALL :print
 CALL :keyboard_init
+CALL :kb_flush
 LDI_C .ok_str
 CALL :print
 RET

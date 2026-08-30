@@ -78,8 +78,18 @@ ST $exec_direct_flags 0x00
 # Main exec loop - jump target for every loop iteration
 ###
 :exec_loop_top
-# Ensure interrupts are always enabled at the start of each exec iteration.
-# This is the boundary where normal (interrupts-on) program execution begins.
+# Restore the BIOS default interrupt subsystem before doing anything else
+# this iteration. A program may have installed its own IRQ vectors or
+# programmable-timer handlers and exited (or crashed) without restoring
+# them; re-establishing the known-good defaults here (:bios_irq_reset, in
+# 00-main.asm) keeps one misbehaving program from poisoning the next in the
+# chain. The keyboard/UART receive rings are intentionally left untouched so
+# type-ahead survives the transition. Interrupts stay masked across the
+# reset -- the vectors are transiently inconsistent mid-routine -- then this
+# is the one deliberate unmask: the boundary where interrupts-on program
+# execution resumes.
+MASKINT
+CALL :bios_irq_reset
 UMASKINT
 # Reset the heap to a clean slate before anything else this iteration
 CALL :heap_init

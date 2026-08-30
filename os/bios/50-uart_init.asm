@@ -5,15 +5,14 @@
 LDI_C .uart_init_banner
 CALL :print
 CALL :uart_init_9600_8n1
-# Unmask interrupts and flush any ready data
-UMASKINT
 # Pause 0.5s for serial to flush
 LDI_AH 0x00 # bcd seconds
 CALL :heap_push_AH
 LDI_AH 0x50 # bcd subseconds
 CALL :heap_push_AL
 CALL :sleep # sleep for 0.5 sec
-MASKINT
+# Now reset the UART ring buffer so any flushed bytes are discarded.
+CALL :uart_flush
 LDI_C .ok_str
 CALL :print
 RET

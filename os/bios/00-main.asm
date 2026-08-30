@@ -2,23 +2,24 @@
 
 NOP
 
-# Install default IRQ handlers.
+# Bring the interrupt subsystem to the BIOS default with interrupts masked,
+# before the first UMASKINT. :bios_irq_reset installs the eight IRQ vectors and
+# the programmable/watchdog timers; # the BIOS exec loop re-runs it before each
+# program it launches so a program that installs its own handlers and exits
+# without restoring them cannot poison the next program in the chain.
 MASKINT
-ST16    %IRQ0addr%  .noirq
-ST16    %IRQ1addr%  :kb_irq_buf
-ST16    %IRQ2addr%  :ptmr_isr_std
-ST16    %IRQ3addr%  :timer_clear_irq
-ST16    %IRQ4addr%  :uart_clear_usr_msr
-ST16    %IRQ5addr%  :uart_irq_dr_buf
-ST16    %IRQ6addr%  .noirq
-ST16    %IRQ7addr%  .noirq
+CALL :bios_irq_reset
 
-# Initialize the programmable timer. The :ptmr_isr has its
-# own handler addresses that need to be set before we
-# unmask interrupts.
-CALL :ptmr_init
+# Flush the keyboard and UART receive rings once, here at cold boot only.
+# These also serve to initialize the ring buffer vars to their default state
+# so they're safe to use.
+CALL :kb_flush
+CALL :uart_flush
 
-# Initialize the heap - this is needed for most commands to work (including :print)
+# Interrupt-driven state is now safe to service
+UMASKINT
+
+# Initialize the heap - needed for most commands to work (including :print)
 CALL :heap_init
 
 # Initialize terminal output/ANSI state. VAR globals are NOT zeroed at ODY
@@ -98,9 +99,6 @@ ST $rl_history_entry_sz 128
 ST $rl_history_count 0
 ST $rl_history_write_idx 0
 
-# Set up the timer in a known state
-CALL :timer_set_idle
-
 # Test extended RAM
 CALL :boot_extram_test
 
@@ -121,10 +119,6 @@ CALL :boot_mount_drives
 
 # OS Loader sequence
 CALL :boot_system_ody
-
-# Inert target for unused interrupts
-.noirq
-RETI
 
 .hello_banner "Odyssey OS v1.0\n\n\0"
 
