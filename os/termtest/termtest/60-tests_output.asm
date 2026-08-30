@@ -1,7 +1,7 @@
 # vim: syntax=asm-mycpu
 
 # Tests for the ROM's terminal output core, os/bios/lib/terminal_output.asm
-# (TERMINAL_REFACTOR.md 2.2, 2.3.1).
+# (:putchar / :print and the line-wrap and scroll behavior behind them).
 
 :tests_output_run
 LDI_C .suite_name
@@ -151,7 +151,7 @@ LD_AL $crsr_col
 LDI_C .tn_del_col
 CALL :tt_assert_eq
 
-# --- right-edge behavior matrix (2.2.1 bits 2-3), from (10,63) ---
+# --- right-edge behavior matrix ($term_flags bits 2-3), from (10,63) ---
 
 # (0,0) default: wrap col0 + next row
 CALL :cursor_init
@@ -223,7 +223,7 @@ CALL :tt_assert_eq
 
 ST $term_flags 0x00
 
-# --- bottom-edge behavior matrix (2.2.1 bits 4-5), from (59,63) ---
+# --- bottom-edge behavior matrix ($term_flags bits 4-5), from (59,63) ---
 
 # default (flags=0x00, fast path): scroll, land on (59,0)
 CALL :cursor_init

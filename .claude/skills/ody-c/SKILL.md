@@ -139,7 +139,7 @@ to it.
 | `strtoi.h` | `strtoi(char*, uint8_t *flags)`, `strtoi8(...)` -- clobber BL |
 | `extmalloc.h` | `extmalloc()`, `extfree`, `extpage_d_push/pop`, `extpage_e_push/pop` |
 | `clearscreen.h` | `clear_screen(char, uint8_t color)` |
-| `cursor.h` | `cursor_init/off/on()` -- no `goto`/`save`/`restore` (save/restore were cut from the ROM entirely; `cursor_goto` has no C wrapper, call the ASM `:cursor_goto_rowcol`/`:cursor_goto_addr` from a hand-written `.asm` helper if C needs it) |
+| `cursor.h` | `cursor_init/off/on()`, `cursor_save/restore()` (position save/restore, backs ANSI `ESC[s`/`ESC[u`) -- no `goto` wrapper; call the ASM `:cursor_goto_rowcol`/`:cursor_goto_addr` from a hand-written `.asm` helper if C needs it |
 | `shell_argv.h` | `shell_get_argv_n(uint8_t)` -> `char*` (SYSTEM.ODY built-ins ONLY) |
 | `trace.h` | `trace()`, `trace_begin/end()`, `trace_0()..trace_7()` |
 | `fat16_*.h` (8 files) | fs handles, dirent parsing, dirwalk, pathfind, readfile, cluster math -- most need `fat16_util.h` (+ `types.h`) first |

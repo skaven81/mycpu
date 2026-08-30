@@ -1,9 +1,7 @@
 # vim: syntax=asm-mycpu
 
-# Tests for the ROM's cursor library, os/bios/lib/cursor.asm
-# (TERMINAL_REFACTOR.md 2.3). ESC[s/ESC[u save/restore (:cursor_save/
-# :cursor_restore) were cut during the Phase 2 ROM-budget gate -- see
-# cursor.asm's header -- so there is no save/restore round-trip test here.
+# Tests for the ROM's cursor library, os/bios/lib/cursor.asm, including the
+# :cursor_save / :cursor_restore round-trip that backs ANSI ESC[s / ESC[u.
 
 :tests_cursor_run
 LDI_C .suite_name
@@ -170,7 +168,7 @@ LD_AL $crsr_addr_color+1
 LDI_C .tn_goto_acl_lo
 CALL :tt_assert_eq
 
-# --- goto must NOT touch the color framebuffer (2.3.2) ---
+# --- goto must NOT touch the color framebuffer ---
 
 CALL :cursor_init
 ST %display_color% 0x00
@@ -250,6 +248,42 @@ LD_AL $crsr_row
 LDI_C .tn_up_edge_row
 CALL :tt_assert_eq
 
+# --- :cursor_save / :cursor_restore round-trip (ANSI ESC[s / ESC[u) ---
+
+CALL :cursor_init
+LDI_AH 0x05
+LDI_AL 0x0a
+CALL :cursor_goto_rowcol
+CALL :cursor_save                   # remember (5,10)
+LDI_AH 0x14
+LDI_AL 0x1e
+CALL :cursor_goto_rowcol            # wander off to (20,30)
+CALL :cursor_restore
+LDI_AH 0x05
+LD_AL $crsr_row
+LDI_C .tn_saverestore_row
+CALL :tt_assert_eq
+LDI_AH 0x0a
+LD_AL $crsr_col
+LDI_C .tn_saverestore_col
+CALL :tt_assert_eq
+
+# :cursor_init zeros the saved slot, so a restore with no prior save
+# lands at (0,0) rather than a stale position
+CALL :cursor_init
+LDI_AH 0x09
+LDI_AL 0x09
+CALL :cursor_goto_rowcol
+CALL :cursor_restore
+LDI_AH 0x00
+LD_AL $crsr_row
+LDI_C .tn_restore_default_row
+CALL :tt_assert_eq
+LDI_AH 0x00
+LD_AL $crsr_col
+LDI_C .tn_restore_default_col
+CALL :tt_assert_eq
+
 CALL :tt_result
 RET
 
@@ -288,3 +322,7 @@ RET
 .tn_left_edge_col "left_edge_col\0"
 .tn_down_edge_row "down_edge_row\0"
 .tn_up_edge_row "up_edge_row\0"
+.tn_saverestore_row "saverestore_row\0"
+.tn_saverestore_col "saverestore_col\0"
+.tn_restore_default_row "restore_default_row\0"
+.tn_restore_default_col "restore_default_col\0"

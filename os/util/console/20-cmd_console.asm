@@ -17,10 +17,12 @@
 #
 # 2026-08-22: the hand-rolled VT220 escape parser (.receive_vt220 and its
 # .rx_vt220_* handlers) was replaced by feeding received bytes straight to
-# the BIOS's own :putchar with $term_flags bit 1 (ANSI) set -- the BIOS now
-# has a real CSI parser (TERMINAL_REFACTOR.md 2.2.3), so this tool no longer
-# needs its own incomplete one (most of the TODOs above this note, plus a
-# confirmed bug: the old 'D' cursor-left handler called :cursor_right).
+# the BIOS's own :putchar with $term_flags bit 1 (ANSI) set -- :putchar now
+# feeds a full CSI escape-sequence parser (os/bios/lib/terminal_ansi.asm)
+# that handles cursor movement, SGR color/attributes, and ESC[2J screen
+# clears directly, so this tool no longer needs its own incomplete one
+# (most of the TODOs above this note, plus a confirmed bug: the old 'D'
+# cursor-left handler called :cursor_right).
 # `console raw` still exists and now maps to leaving $term_flags at 0x00
 # (no ANSI bit): ESC bytes print as literal glyphs instead of being
 # interpreted, same intent as before. A bare LF (0x0a) is still dropped

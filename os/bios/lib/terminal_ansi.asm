@@ -13,16 +13,28 @@
 # instruction count -- liberal callee-save, no register-sharing tricks.
 #
 # 256-color/truecolor SGR (`38;5;n` / `38;2;r;g;b` and the `48;...`
-# background forms) is NOT implemented -- dropped to help fit the 16 KiB
-# ROM budget, along with ESC[s/ESC[u save-restore in cursor.asm. Both the
-# 256-color-palette form and the truecolor form are recognized only far
-# enough to be silently discarded as a whole sequence (see the 38/48
-# lookahead in .ansi_semicolon below) rather than mis-dispatched -- e.g.
-# without that, "38;5;9" would apply code 5 (blink on) as a side effect of
-# a color code the parser doesn't actually support. The 16-color SGR codes
-# (30-37/90-97) and every non-SGR sequence are fully implemented.
-# .sgr_color_table (the 16-color lookup) is a genuinely read-only constant
-# and stays as label data -- ROM residency is exactly right for that.
+# background forms) is deliberately NOT implemented. The Odyssey has no
+# background color and only 4 shades per channel, so faithfully mapping
+# the xterm-256 cube buys nothing the native color escape below doesn't
+# do more directly. All four forms are recognized just far enough to be
+# silently discarded as a whole sequence (see the 38/48 lookahead in
+# .ansi_semicolon below) rather than mis-dispatched -- e.g. without that,
+# "38;5;9" would apply code 5 (blink on) as a side effect.
+#
+# `ESC [ <v> p` (final byte 'p', ECMA-48 private-use range) is the
+# Odyssey-native color escape: it writes <v> (0-255) straight into
+# $term_current_color and enables color rendering -- an inline
+# equivalent of a direct color-plane write, reaching all 64 colors plus
+# the blink (0x80) and cursor (0x40) bits. Values > 255 are rejected as
+# an oversized parameter, same as anywhere else in the parser. Setting
+# the cursor bit this way leaves stray marks (see cursor_display_sync);
+# that is inherent to direct color writes, not specific to this escape.
+#
+# The 16-color SGR codes (30-37/90-97), the attribute codes
+# (0/1/5/22/25), ESC[s / ESC[u cursor save-restore, and every non-SGR
+# sequence are fully implemented. .sgr_color_table (the 16-color lookup)
+# is a genuinely read-only constant and stays as label data -- ROM
+# residency is exactly right for that.
 VAR global byte $ansi_state
 VAR global 8 $ansi_param_buf
 VAR global byte $ansi_param_count
@@ -519,6 +531,15 @@ JEQ .disp_l
 LDI_BL 0x6d                          # 'm'
 ALUOP_FLAGS %AxB%+%AL%+%BL%
 JEQ .disp_sgr
+LDI_BL 0x70                          # 'p' -- Odyssey native color (non-spec)
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JEQ .disp_setcolor
+LDI_BL 0x73                          # 's' -- save cursor position
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JEQ .disp_savecursor
+LDI_BL 0x75                          # 'u' -- restore cursor position
+ALUOP_FLAGS %AxB%+%AL%+%BL%
+JEQ .disp_restorecursor
 JMP .disp_done                       # unsupported final byte: no-op
 
 .disp_up
@@ -783,6 +804,25 @@ ALUOP_BL %A>>1%+%AL%
 LDI_AH 0x15
 ALUOP_BL %A&B%+%AH%+%BL%
 ALUOP_ADDR %A|B%+%AL%+%BL% $term_current_color
+JMP .disp_done
+
+# ESC[<v>p -- Odyssey-native color: write param[0] straight into the
+# current color byte (see this file's header). The final-byte handler
+# always stores the trailing accumulator, so a bare ESC[p arrives as a
+# single param of 0; anything > 255 was already rejected by the digit
+# accumulator, so param[0] is the whole value.
+.disp_setcolor
+LD_AL $ansi_param_buf+1
+CALL .sgr_set_color                   # AL -> $term_current_color; render on
+JMP .disp_done
+
+# ESC[s / ESC[u -- cursor position save/restore.
+.disp_savecursor
+CALL :cursor_save
+JMP .disp_done
+
+.disp_restorecursor
+CALL :cursor_restore
 JMP .disp_done
 
 .disp_done

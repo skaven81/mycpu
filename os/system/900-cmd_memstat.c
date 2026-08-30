@@ -70,8 +70,8 @@ static void memstat_show_main_ram(void) {
     // Color escape table: 7 rows of ESC[NNm\0 (6 bytes each, since every
     // mapped SGR code below is exactly 2 digits), indexed 0-6. 0=free,
     // 1=seg-struct, 2=seg-fill, 3=blk-struct, 4=blk-fill, 5=sysody-struct,
-    // 6=sysody-fill. SGR mapping (TERMINAL_REFACTOR.md's foreground table,
-    // shade/color -> SGR): old @31->94, @37->97, @33->96, @35->95, @25->35,
+    // 6=sysody-fill. SGR mapping (each old shade/color pair maps to one SGR
+    // foreground code): old @31->94, @37->97, @33->96, @35->95, @25->35,
     // @36->93, @26->33. This used to be an if-chain of named arrays to work
     // around a c_compiler/codegen.py bug (visit_ArrayDecl built a 2D
     // array's array_dims innermost-first instead of outer-first,

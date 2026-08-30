@@ -216,8 +216,8 @@ RET
 .bad_end_addr_str "Error: %s is not a valid end address. strtoi flags: 0x%x\n\0"
 .bad_range_str "Error: %s is not a valid range specifier. strtoi flags: 0x%x\n\0"
 .start_end_str "Dump of 0x%x%x - 0x%x%x\n\0"
-# ANSI SGR equivalents of the old @-codes (shade/color -> SGR per
-# TERMINAL_REFACTOR.md's foreground table): @35->95 (light magenta),
+# ANSI SGR equivalents of the old @-codes (each old shade/color pair maps
+# to one SGR foreground code): @35->95 (light magenta),
 # @37->97 (light white), @33->96 (light cyan), @36->93 (light yellow) for
 # the bright (xxx0) rows; @25->35 (magenta), @23->36 (cyan), @26->33
 # (yellow) for the dim (xxx8/odd-block) rows -- separators stay bright

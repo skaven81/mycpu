@@ -135,6 +135,14 @@ LD_AL .tt_total_count
 ALUOP_AL %A+1%+%AL%
 ALUOP_ADDR %A%+%AL% .tt_total_count
 
+LD_AL .tt_grand_pass
+ALUOP_AL %A+1%+%AL%
+ALUOP_ADDR %A%+%AL% .tt_grand_pass
+
+LD_AL .tt_grand_total
+ALUOP_AL %A+1%+%AL%
+ALUOP_ADDR %A%+%AL% .tt_grand_total
+
 POP_DL
 POP_DH
 POP_CL
@@ -186,6 +194,10 @@ LD_AL .tt_total_count
 ALUOP_AL %A+1%+%AL%
 ALUOP_ADDR %A%+%AL% .tt_total_count
 
+LD_AL .tt_grand_total
+ALUOP_AL %A+1%+%AL%
+ALUOP_ADDR %A%+%AL% .tt_grand_total
+
 POP_DL
 POP_DH
 POP_CL
@@ -218,6 +230,41 @@ CALL :ser_puts
 
 LDI_C .tt_newline
 CALL :ser_puts
+
+POP_DL
+POP_DH
+POP_CL
+POP_CH
+POP_AL
+RET
+
+######
+# Writes "<grand_pass>/<grand_total>" to the DISPLAY (not the UART), for
+# the end-of-run on-screen summary that 00-main.asm prints after every
+# suite has run. Uses the cross-suite grand counters, which accumulate for
+# the whole run (:tt_suite never resets them). Builds the string the same
+# way :tt_result does -- :sprintf into .hex_scratch -- but sends it through
+# :print instead of :ser_puts.
+#
+# Inputs: none (reads .tt_grand_pass / .tt_grand_total)
+# Outputs: none; the formatted string is drawn at the current cursor
+# Side effects: all registers preserved
+:tt_grand_result
+ALUOP_PUSH %A%+%AL%
+PUSH_CH
+PUSH_CL
+PUSH_DH
+PUSH_DL
+
+LD_AL .tt_grand_total
+CALL :heap_push_AL
+LD_AL .tt_grand_pass
+CALL :heap_push_AL
+LDI_C .tt_result_fmt
+LDI_D .hex_scratch
+CALL :sprintf
+LDI_C .hex_scratch
+CALL :print
 
 POP_DL
 POP_DH
@@ -313,3 +360,8 @@ RET
 .tt_newline "\n\0"
 .tt_pass_count "\0"
 .tt_total_count "\0"
+# Grand totals across every suite. :tt_suite resets the per-suite counters
+# above but NOT these. 1 byte each, so the ceiling is 255 passes / 255
+# total -- fine for the ~218 tests run today.
+.tt_grand_pass "\0"
+.tt_grand_total "\0"

@@ -1,16 +1,18 @@
 # vim: syntax=asm-mycpu
 
 # Tests for the ROM's SGR handling in terminal_ansi.asm's 'm' dispatch
-# (TERMINAL_REFACTOR.md 2.2.3 color table). Every test enables ANSI mode,
+# (the SGR-code-to-color-byte mapping). Every test enables ANSI mode,
 # resets the cursor to (0,0), sends an escape sequence immediately followed
 # by 'X' through :print, and checks the character/color bytes at the
 # framebuffer origin. Tests that need a known starting color set
-# $term_render_color/$term_current_color directly first (2.2.4's documented
-# direct-write pattern).
+# $term_render_color/$term_current_color directly first, which is a
+# supported way to seed the render color.
 #
-# 256-color quantization (2.2.3.1) is CUT/UNIMPLEMENTED (Phase 2 ROM-budget
-# gate -- see terminal_ansi.asm's header) -- see the note further down for
-# what that means for the tests in this file.
+# 256-color / truecolor SGR (38;5;n, 38;2;r;g;b, and the 48;... forms) is
+# deliberately not implemented -- see terminal_ansi.asm's header. All of it
+# is recognized and silently discarded; the tests further down lock that
+# discard behavior in. Odyssey code that wants the full 64-color space uses
+# ESC[<v>p instead (covered in 70-tests_ansi.asm).
 
 :tests_sgr_run
 LDI_C .suite_name
@@ -230,13 +232,11 @@ LDI_AH 0x2a
 LDI_C .tn_ignored_defbg
 CALL :tt_assert_eq
 
-# 256-color quantization (2.2.3.1) is CUT/UNIMPLEMENTED (Phase 2 ROM-budget
-# gate -- see terminal_ansi.asm's header): 38;5;n / 48;5;n are silently
-# discarded, same as 38;2 truecolor. The tests below cover that discard
-# behavior directly; there is no per-value quantization suite here since
-# the quantization code doesn't exist in ROM. The per-value quantization
-# tests this file used to have (hardware-proven before the cut) are
-# recoverable from this file's git history if the feature ever comes back.
+# 38;5;n / 48;5;n (and 38;2 truecolor) are recognized and silently
+# discarded as a whole sequence -- see terminal_ansi.asm's header for why
+# the xterm-256 mapping was not worth implementing. The tests below cover
+# that discard behavior directly. An earlier branch (git history) carried
+# a full per-value quantization suite; ESC[<v>p supersedes the need for it.
 
 # --- 48;5;n (256-color background): silently discarded, no color change ---
 

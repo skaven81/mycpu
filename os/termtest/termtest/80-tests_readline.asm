@@ -1,25 +1,20 @@
 # vim: syntax=asm-mycpu
 
-# Tests for the ROM's readline, os/bios/lib/terminal_input.asm
-# (TERMINAL_REFACTOR.md 2.4.1/2.4.2). Every test injects a scripted key
-# sequence via :kb_inject *before* calling :readline (which then consumes
-# it synchronously from the poll loop), and asserts the returned AL/AH plus
-# buffer and/or screen content.
+# Tests for the ROM's readline, os/bios/lib/terminal_input.asm. Every test
+# injects a scripted key sequence via :kb_inject *before* calling :readline
+# (which then consumes it synchronously from the poll loop), and asserts
+# the returned AL/AH plus buffer and/or screen content.
 #
-# AH (the flags input to :readline) grew a source-selector since Phase 1's
-# :t_readline: bit 0 = echo, bit 1 = accept keyboard, bit 2 = accept UART
-# (terminal_input.asm's header). Every test here drives input via
-# :kb_inject, so AH always has bit 1 set (0x03 for echo on, 0x02 for echo
-# off) -- passing the old Phase 1 value of just 0x01/0x00 (echo bit only,
-# no source bits) leaves $rl_source with neither source enabled and hangs
-# :readline's poll loop forever, since it never has a byte to read.
+# AH is the flags input to :readline: bit 0 = echo, bit 1 = accept
+# keyboard, bit 2 = accept UART (see terminal_input.asm's header). Every
+# test here drives input via :kb_inject, so AH always has bit 1 set (0x03
+# for echo on, 0x02 for echo off) -- a value of just 0x01/0x00 (echo bit
+# only, no source bits) leaves $rl_source with neither source enabled and
+# hangs :readline's poll loop forever, since it never has a byte to read.
 #
-# Insert/overwrite mode (2.4.1 decision 5) was CUT/DELETED during the
-# Phase 2 ROM-budget gate (see terminal_input.asm's header): :readline
-# always inserts, and the Insert key (0x0f) is simply an unrecognized
-# control code that gets ignored. History (2.4.3) was also cut (commented
-# out, not deleted) and isn't tested here at all -- see terminal_input.asm's
-# header for how to restore it.
+# :readline has no insert/overwrite toggle: it always inserts, and the
+# Insert key (0x0f) is simply an unrecognized control code that gets
+# ignored. There is no input history either, so it is not tested here.
 
 :tests_readline_run
 LDI_C .suite_name

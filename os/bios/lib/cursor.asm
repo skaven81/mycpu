@@ -9,15 +9,16 @@
 # :cursor_on/:cursor_off are the exception: they are explicit visibility
 # requests, so they still sync immediately.
 #
-# ESC[s / ESC[u save/restore are NOT implemented -- the terminal subsystem
-# came in over the 16 KiB ROM budget, and dropping save/restore was one of
-# the cuts made to fit.
+# :cursor_save / :cursor_restore back the ANSI ESC[s / ESC[u sequences --
+# a plain save/load of row+col through $crsr_saved_row/_col.
 
 VAR global byte $crsr_row
 VAR global byte $crsr_col
 VAR global byte $crsr_on
 VAR global word $crsr_addr_chars
 VAR global word $crsr_addr_color
+VAR global byte $crsr_saved_row
+VAR global byte $crsr_saved_col
 
 ######
 # Resets cursor state to the top-left corner, cursor on, with the
@@ -30,6 +31,8 @@ ST $crsr_col 0x00
 ST $crsr_on 0x01
 ST16 $crsr_addr_chars %display_chars%
 ST16 $crsr_addr_color %display_color%
+ST $crsr_saved_row 0x00
+ST $crsr_saved_col 0x00
 RET
 
 ######
@@ -302,3 +305,31 @@ RET
 CALL :cursor_conv_rowcol             # A = offset
 JMP :cursor_goto_addr                # tail call: stores row/col + both
                                       # framebuffer addresses, then RETs
+
+######
+# Saves the current cursor row/col into $crsr_saved_row/_col (ANSI
+# ESC[s). Position state only -- the cursor glyph is untouched.
+# All registers preserved.
+:cursor_save
+ALUOP_PUSH %A%+%AL%
+LD_AL $crsr_row
+ALUOP_ADDR %A%+%AL% $crsr_saved_row
+LD_AL $crsr_col
+ALUOP_ADDR %A%+%AL% $crsr_saved_col
+POP_AL
+RET
+
+######
+# Moves the cursor back to the row/col last saved by :cursor_save (ANSI
+# ESC[u); (0,0) if :cursor_save was never called since :cursor_init.
+# Position state only -- caller must :cursor_display_sync if the glyph
+# needs to follow. All registers preserved.
+:cursor_restore
+ALUOP_PUSH %A%+%AH%
+ALUOP_PUSH %A%+%AL%
+LD_AH $crsr_saved_row
+LD_AL $crsr_saved_col
+CALL :cursor_goto_rowcol
+POP_AL
+POP_AH
+RET

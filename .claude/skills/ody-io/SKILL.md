@@ -139,17 +139,25 @@ set one of two ways:
    colors, `ESC[0m` reset, `ESC[1m`/`ESC[22m` bold/normal, `ESC[5m`/`ESC[25m`
    blink on/off. No background colors (hardware has none) and no
    reverse-video. **256-color/truecolor SGR (`38;5;n`, `38;2;r;g;b`) is
-   recognized as valid grammar but NOT implemented** (cut to fit the 16 KiB
-   ROM budget) -- such a sequence is silently discarded as a whole unit, no
-   color change happens. Full sequence list, error-handling rules, and the
-   `$ansi_*` state machine: `os/bios/lib/terminal_ansi.asm`.
-2. **Direct framebuffer color writes** -- set `$term_current_color` and
+   recognized as valid grammar but deliberately NOT implemented** -- such a
+   sequence is silently discarded as a whole unit, no color change happens.
+   Full sequence list, error-handling rules, and the `$ansi_*` state
+   machine: `os/bios/lib/terminal_ansi.asm`.
+2. **`ESC[<v>p`** (out-of-spec, ANSI mode) -- writes `v` (`0-255`, decimal)
+   straight into `$term_current_color` and enables color rendering: an
+   inline direct color-plane write reaching all 64 colors plus the blink
+   (`0x80`) / cursor (`0x40`) bits. `ESC[p` = `0x00` (black), not a reset.
+   `v > 255` flushes the sequence like any oversized param. This is the way
+   to embed an exact 6-bit color in a `print`/`printf` string.
+3. **Direct framebuffer color writes** -- set `$term_current_color` and
    `$term_render_color` (nonzero enables writing the color byte alongside
-   every character) directly, or poke `%display_color%` cells by hand. This
-   is the only way to reach a color value ANSI can't name (e.g. exact 2-bit
-   shade control), and the recommended path for full-screen UIs and games
-   that bypass `putchar`/`print` entirely. See `os/bios/lib/terminal_output.asm`
-   for the `$term_flags`/`$term_render_color` contract.
+   every character) directly, or poke `%display_color%` cells by hand. The
+   recommended path for full-screen UIs and games that bypass
+   `putchar`/`print` entirely. See `os/bios/lib/terminal_output.asm` for the
+   `$term_flags`/`$term_render_color` contract.
+
+Cursor position can be saved/restored inline too: `ESC[s` / `ESC[u`
+(`:cursor_save` / `:cursor_restore`).
 
 Color byte format is unchanged: `[BLINK][CURSOR][Rfg 2b][Gfg 2b][Bfg 2b]`
 (64 distinct colors). `os/bios/lib/cursor.h`/`terminal_output.h` and skill

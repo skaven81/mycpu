@@ -1,8 +1,8 @@
 // Wire Wrap Odyssey -- term: inspect and twiddle $term_flags
 //
-// $term_flags is the unified terminal control byte (see
-// TERMINAL_REFACTOR.md 2.2.1). 0x00 is the default fast path: ctrl chars
-// on, ANSI off, right-edge wrap+newline, bottom-edge scroll. This command
+// $term_flags is the unified terminal control byte. 0x00 is the default
+// fast path: ctrl chars on, ANSI off, right-edge wrap+newline, bottom-edge
+// scroll. This command
 // lets the shell user read the current value, set it directly as a raw
 // hex/decimal byte, or toggle a single named bit on/off.
 //

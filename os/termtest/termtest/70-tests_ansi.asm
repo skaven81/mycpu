@@ -1,13 +1,12 @@
 # vim: syntax=asm-mycpu
 
 # Tests for the ROM's ANSI CSI state machine, os/bios/lib/terminal_ansi.asm
-# (TERMINAL_REFACTOR.md 2.2.3, non-SGR sequences). Every test enables ANSI
-# mode ($term_flags bit 1) and drives the parser through :print so the
+# (the non-SGR sequences; SGR 'm' has its own suite). Every test enables
+# ANSI mode ($term_flags bit 1) and drives the parser through :print so the
 # string-end flush path gets exercised too.
 #
-# ESC[s/ESC[u save/restore were cut during the Phase 2 ROM-budget gate (see
-# terminal_ansi.asm's and cursor.asm's headers), so there is no
-# save/restore test here.
+# Covers the two Odyssey-specific final bytes as well: ESC[<v>p
+# (Odyssey-native color) and ESC[s / ESC[u (cursor save/restore).
 
 :tests_ansi_run
 LDI_C .suite_name
@@ -93,10 +92,10 @@ LDI_AH 0x00
 LDI_C .tn_2j_cleared_end
 CALL :tt_assert_eq
 
-# --- erase line (K) is CUT/DISABLED (Phase 2 ROM-budget gate -- see
-# terminal_ansi.asm's dispatch-table comment by 'K'/.disp_erase_screen):
-# ESC[0K is now an unrecognized-but-valid final byte, a silent no-op per
-# 2.2.3's "valid but unsupported" rule -- the prepared row is untouched ---
+# --- erase line (K) is not implemented (see terminal_ansi.asm's
+# dispatch-table comment by 'K'/.disp_erase_screen): ESC[0K is an
+# unrecognized-but-valid final byte, treated as a silent no-op like any
+# other valid-but-unsupported sequence -- the prepared row is untouched ---
 
 CALL :cursor_init
 LDI_D %display_chars%
@@ -252,6 +251,77 @@ LD_AL $ansi_state
 LDI_C .tn_mid_state
 CALL :tt_assert_eq
 
+# --- ESC[<v>p : Odyssey-native color escape (non-spec, final byte 'p') ---
+
+CALL :cursor_init
+ST $term_flags 0x02
+ST $term_render_color 0x00
+ST $term_current_color 0x00
+LDI_C .seq_color48
+CALL :print                          # ESC[48p -> color byte 0x30, render on
+LDI_AH 0x30
+LD_AL $term_current_color
+LDI_C .tn_color48_val
+CALL :tt_assert_eq
+LDI_AH 0x01
+LD_AL $term_render_color
+LDI_C .tn_color48_render
+CALL :tt_assert_eq
+
+# bare ESC[p arrives as one param of 0 -> color byte 0x00 (black); it is
+# NOT a reset-to-white
+ST $term_current_color 0x2a
+LDI_C .seq_colorbare
+CALL :print
+LDI_AH 0x00
+LD_AL $term_current_color
+LDI_C .tn_colorbare_val
+CALL :tt_assert_eq
+
+# no masking: 0xff sets every bit including blink (0x80) and cursor (0x40)
+LDI_C .seq_color255
+CALL :print                          # ESC[255p -> 0xff
+LDI_AH 0xff
+LD_AL $term_current_color
+LDI_C .tn_color255_val
+CALL :tt_assert_eq
+
+# > 255 is an oversized parameter: whole sequence flushed, color unchanged,
+# parser back to state 0
+ST $term_current_color 0x15
+LDI_C .seq_color999
+CALL :print
+LDI_AH 0x15
+LD_AL $term_current_color
+LDI_C .tn_color999_unchanged
+CALL :tt_assert_eq
+LDI_AH 0x00
+LD_AL $ansi_state
+LDI_C .tn_color999_state
+CALL :tt_assert_eq
+
+# --- ESC[s / ESC[u : save and restore cursor position (parser path) ---
+
+CALL :cursor_init
+LDI_AH 0x07
+LDI_AL 0x0b
+CALL :cursor_goto_rowcol
+LDI_C .seq_savecur                    # ESC[s
+CALL :print
+LDI_AH 0x12
+LDI_AL 0x21
+CALL :cursor_goto_rowcol             # move to (18,33)
+LDI_C .seq_restcur                    # ESC[u
+CALL :print
+LDI_AH 0x07
+LD_AL $crsr_row
+LDI_C .tn_restcur_row
+CALL :tt_assert_eq
+LDI_AH 0x0b
+LD_AL $crsr_col
+LDI_C .tn_restcur_col
+CALL :tt_assert_eq
+
 CALL :tt_result
 RET
 
@@ -270,6 +340,12 @@ RET
 .seq_devstatus "X" 0x1b "[6n\0"
 .seq_param_overflow 0x1b "[1;2;3;4;5m\0"
 .seq_midterm "AB" 0x1b "[3\0"
+.seq_color48 0x1b "[48p\0"
+.seq_colorbare 0x1b "[p\0"
+.seq_color255 0x1b "[255p\0"
+.seq_color999 0x1b "[999p\0"
+.seq_savecur 0x1b "[s\0"
+.seq_restcur 0x1b "[u\0"
 
 .tn_5c_row "5c_row\0"
 .tn_5c_col "5c_col\0"
@@ -306,3 +382,11 @@ RET
 .tn_mid_bracket "mid_bracket\0"
 .tn_mid_three "mid_three\0"
 .tn_mid_state "mid_state\0"
+.tn_color48_val "color48_val\0"
+.tn_color48_render "color48_render\0"
+.tn_colorbare_val "colorbare_val\0"
+.tn_color255_val "color255_val\0"
+.tn_color999_unchanged "color999_unchanged\0"
+.tn_color999_state "color999_state\0"
+.tn_restcur_row "restcur_row\0"
+.tn_restcur_col "restcur_col\0"
