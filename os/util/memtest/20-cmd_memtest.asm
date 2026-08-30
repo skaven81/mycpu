@@ -69,7 +69,7 @@ ALUOP_AH %A+1%+%AH%                     # Increment 0-255 counter
 JNO .fill_test_k_loop                   # loop until AH overflows, 256 * 4 bytes = 1K
 
 LD_AH $crsr_row
-LD_AL 0
+LDI_AL 0x00
 CALL :cursor_goto_rowcol                # move cursor back to beginning of line
 
 CALL :heap_pop_A                        # restore K counter into A
@@ -108,7 +108,7 @@ ALUOP_ADDR %B%+%BH% 0xd000
 ALUOP_ADDR %B%+%BH% 0xdfff
 
 LD_AH $crsr_row
-LD_AL 0
+LDI_AL 0x00
 CALL :cursor_goto_rowcol                # move cursor back to beginning of line
 
 CALL :heap_push_BH                      # push page address onto heap for printing
@@ -130,7 +130,7 @@ ALUOP_FLAGS %A&B%+%AL%+%BH%
 JNE .pageaddr_error
 
 LD_AH $crsr_row
-LD_AL 0
+LDI_AL 0x00
 CALL :cursor_goto_rowcol                # move cursor back to beginning of line
 
 CALL :heap_push_BH                      # push page address onto heap for printing

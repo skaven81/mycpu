@@ -17,7 +17,7 @@ JNE .extram_error
 
 # move cursor back to beginning of line
 LD_AH $crsr_row
-LD_AL 0
+LDI_AL 0x00
 CALL :cursor_goto_rowcol
 
 # KB tested = (page address + 1) * 4
