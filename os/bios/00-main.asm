@@ -22,22 +22,13 @@ UMASKINT
 # Initialize the heap - needed for most commands to work (including :print)
 CALL :heap_init
 
-# Initialize terminal output/ANSI state. VAR globals are NOT zeroed at ODY
-# load (they overlay whatever the previous program left there), so this
-# explicit init is load-bearing -- a stray nonzero $ansi_state on first
-# boot corrupts the very first :print call (found during Phase 1 hardware
-# checkpointing, see terminal_ansi.asm).
+# Initialize terminal output/ANSI state.
 ST $term_flags 0x00             # fast path: no raw/ANSI/edge-behavior bits
 ST $term_render_color 0x00      # start out in reset mode (no color writes)
 ST $term_current_color %white%  # ensure color byte has a sane starting value
 CALL :ansi_reset
 
-# History disabled by default (same VAR-not-zeroed hazard as above -- a
-# stray nonzero $rl_history_buf would make the very first :readline call
-# anywhere treat garbage RAM as a history ring). SYSTEM.ODY's shell is the
-# only consumer that ever sets this nonzero, and only around its own
-# command-line :readline call (see read_command.asm). The backing storage
-# itself is reserved further below, once malloc/extmalloc are up.
+# History disabled by default 
 ST $rl_history_buf 0x00
 ST $rl_history_buf+1 0x00
 
@@ -57,15 +48,7 @@ CALL :clear_screen
 CALL :cursor_init
 ST $crsr_on 0x00
 
-# Print our OS intro banner and newline
-LDI_C .hello_banner
-CALL :print
-
-# Print blank line
-LDI_AL '\n'
-CALL :putchar
-
-# Initialize malloc space 0x6000 .. 0xafff
+# Initialize malloc space 0x6000 .. 0xafff.
 CALL :boot_malloc_init
 
 # Reserve one whole extended-memory page (32 entries x 128 bytes = 4096
@@ -99,11 +82,22 @@ ST $rl_history_entry_sz 128
 ST $rl_history_count 0
 ST $rl_history_write_idx 0
 
+# ATA init - required before :boot_banner because the ATA devices need to be
+# online and ready for commands for the boot banner to be loaded from the
+# boot sector.
+CALL :boot_ata_init
+
+# Paint the boot-sector banner.  Calls :extmalloc and reads LBA 0 from
+# drive 0, so must come after memory allocation is working, and the
+# ATA subsystem is initialized.
+CALL :boot_banner
+
+# Print OS intro banner
+LDI_C .hello_banner
+CALL :print
+
 # Test extended RAM
 CALL :boot_extram_test
-
-# ATA init
-CALL :boot_ata_init
 
 # KB init
 CALL :boot_kb_init
@@ -116,6 +110,11 @@ CALL :boot_print_status
 
 # Mount drives
 CALL :boot_mount_drives
+
+# Blank line between the last "Mounting ..." line and the exec loop's
+# first output (the SYSTEM.ODY shell prompt).
+LDI_AL '\n'
+CALL :putchar
 
 # OS Loader sequence
 CALL :boot_system_ody

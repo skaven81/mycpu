@@ -1,0 +1,11 @@
+PRISMBAN.ODY
+*.log
+*.sym
+*.hex
+*.opcodes
+__pycache__/
+# gen.py design-exploration debris -- only prismban.asm is a real output
+*.ans
+*.chr
+*.clr
+banners.h

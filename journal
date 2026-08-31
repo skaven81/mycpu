@@ -1,3 +1,66 @@
+2026-08-30: Colorful boot banner on startup (claude)
+====================================================
+
+I wanted the Odyssey to have a flashy startup sequence that showcases
+its ability to render color "graphics" so it's not just a boring text
+display on boot.
+
+The trouble is, a colorful multi-line banner printed on startup would
+require ~ 2KB (768 x 2 bytes for 12 rows of color glyphs, plus
+the code to render) and I can't spare the ROM space.  But there is
+a "secret" data store we can tap into -- the FAT16 boot record includes
+a 448 byte segment that is for the bootloader code.  We don't use it
+in the Odyssey, thus it's just wasted space in the boot sector.
+
+The new bootbanner/ directory contains the bits required to build
+an ODY that fits within the 448 byte bootloader segment, and
+some commands in the Makefile to inject it into the sd card's FAT16
+boot sector.
+
+448 bytes is a far cry from 2KB though -- and Claude did the heavy
+lifting here, coming up with some clever methods of encoding the
+characters and colors in a way to minimize code size.  Ultimately
+Claude was able to fit a 12-line "Wire Wrap Odyssey" block graphic
+into well under 448 bytes.
+
+The resulting ODY is loaded and called from the main boot sequence
+in the BIOS, by blindly reading LBA 0 from device 0 (the sd card)
+into an extended memory page, then checking whether there is an
+ODY signature at the boot loader segment offset.  If so, it's
+executed like any other ODY.  If anything in that sequence fails,
+it just ignores the boot banner bits and boots up without the
+banner.
+
+Several unrelated bugs were found along the way, the most glaring
+one being an incorrect LDI_AL that should have been LDI_AH, followed
+by a :heap_push_AL, which meant that garbage was being pushed onto
+the heap during UART init, which tickled crashes when running
+the boot banner. Claude also found four places where `LD_AL 0`
+was used instead of `LDI_AL 0` -- this only worked by chance,
+because address 0 just happens to be a NOP, opcode 0.
+
+Finally, it took an inordinate amount of debugging to finally
+get things stable -- ultimately it came down to a bad decision
+I made upfront to skip using :extmalloc to get the extended
+memory page for the boot sector.  Since the ATA and fat16 routines
+need extended memory to work, trying to run :boot_banner before
+the memory allocator and extended memory ledger were initialized,
+caused weird crashes and hangs that were difficult to reproduce.
+
+This was futher exacerbated by the fact that when the serial port
+is plugged into an active RS232-to-USB adapter, it backfeeds just
+enough voltage back into the board that it makes things like
+the reset button not work properly.  A full "cold" reset is only
+possible if the serial port is unplugged in addition to powering
+off the Odyssey.
+
+This was a fun diversion but ultimately it was just a distraction
+from what I really _should_ be working on, which is to finally
+get an implementation of Tetris working.  I now have all the
+pieces I need, with the recent addition of the piezo speaker and
+tone generation circuitry.
+
+
 2026-08-23: BIOS ROM byte-budget audit and eviction (claude)
 ============================================================
 
