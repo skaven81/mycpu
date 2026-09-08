@@ -1,3 +1,62 @@
+2026-09-07: Odyssey ANSI Studio -- a layer-based screen editor (claude)
+=====================================================================
+
+Hand-authoring color screens for the Odyssey has always been the slow
+part of building a TUI.  You either write VRAM dumps out by hand the
+way os/bootbanner/gen.py does, or you drive the terminal
+escape-by-escape and count columns in your head.  Odyssey ANSI Studio
+is a Linux desktop app (PySide6, run straight from a PEP 723 header
+with uv, the same way odyssey_console works) that lets me draw these
+screens directly and export them in whatever form the target program
+needs.
+
+It's a layer editor.  Every box, text window, and imported image is
+its own layer with a sparse cell grid and an (x,y) offset; layers
+never blend, they just stack, and the topmost layer with a non-empty
+glyph for a cell wins that cell's glyph AND its color.  The subtlety
+the whole compositor is built around is that an empty cell is not a
+space: empty is transparent and lets lower layers show through, a
+painted space is opaque and hides them.  That distinction is what
+makes it practical to drop a logo layer on top of a framed panel and
+have it just work.
+
+The cell model is the hardware's: 64x60, one CP437 glyph and one
+6-bit RGB color byte per cell, levels 0/85/170/255, a blink bit, no
+background color.  Designs save to a layer-preserving .oas project
+file (a zip of JSON plus embedded source images) and export to the
+Odyssey-native ESC[<v>p .ANS form, plus portable 16-color .ANS, raw
+split/interleaved binary, a banners.h-style C header, an assembler
+data file, and PNG.
+
+Claude did the build, working a seven-phase plan and then a long tail
+of follow-ups: box/text layers that stay editable forever and
+re-rasterize on change, image import with OKLab matching and
+Floyd-Steinberg dithering, an interactive crop rectangle, layer
+groups, on-canvas resize handles, a gradient tool.  The model, IO and
+tool layers carry no Qt dependency and are covered by 320 headless
+tests; the Qt widgets are just another caller.
+
+The screen eyedropper was the worst rabbit hole.  On Wayland
+QScreen.grabWindow returns black -- a sandboxed client can't read the
+framebuffer -- so it has to go through xdg-desktop-portal's
+Screenshot.PickColor, which GNOME's own picker services.  That part
+came together.  Reading the color back out of the portal's D-Bus
+reply did not.  After several rounds of "still not working" it turned
+out PySide6 6.11.2 genuinely cannot demarshal a QDBusArgument at all:
+asVariant() hands back an unconvertible pointer, and the
+begin-array/begin-map walkers are the write-side overloads, so
+calling them on a reply prints "write from a read-only object" and
+then aborts the process.  No amount of QtDBus was going to fix that.
+The working version speaks D-Bus with jeepney (a small pure-Python
+library) on a worker thread instead, predicting the portal's request
+object path so it can subscribe before the call and dodge the race.
+The gory version of that story is in IMPLEMENTATION_DETAILS.md so the
+next person doesn't reopen it.
+
+This is the first commit of the whole thing; it lived uncommitted on
+the odyssey-ansi-studio branch while it took shape.
+
+
 2026-08-30: Colorful boot banner on startup (claude)
 ====================================================
 
