@@ -232,14 +232,15 @@ needs to know beyond `width`/`height`:
 
 | Screen location (col,row) | Char byte offset (`row*64+col`) | Color byte offset (`+3840`) |
 |---|---|---|
-| (0,0) -- top-left | `0` | `3840` |
-| (63,0) -- end of row 0 | `63` | `3903` |
-| (0,1) -- start of row 1 | `64` | `3904` |
-| (32,30) -- roughly center | `1952` | `5792` |
-| (63,59) -- bottom-right, last cell | `3839` | `7679` |
+| (0,0) -- top-left | `0` (`0x0000`) | `3840` (`0x0F00`) |
+| (63,0) -- end of row 0 | `63` (`0x003F`) | `3903` (`0x0F3F`) |
+| (0,1) -- start of row 1 | `64` (`0x0040`) | `3904` (`0x0F40`) |
+| (32,30) -- roughly center | `1952` (`0x07A0`) | `5792` (`0x16A0`) |
+| (63,59) -- bottom-right, last cell | `3839` (`0x0EFF`) | `7679` (`0x1DFF`) |
 
-File size: **7680 bytes**, split point (char plane end / color plane start):
-**offset 3840** (`= width*height`), file end: **offset 7679**.
+File size: **7680 bytes** (`0x1E00`), split point (char plane end / color
+plane start): **offset 3840** (`0x0F00`, `= width*height`), file end:
+**offset 7679** (`0x1DFF`).
 
 **`layout="interleaved"`** -- there is no split point; each cell's two bytes
 are adjacent, char first then color, so a cell's byte pair starts at
@@ -247,17 +248,18 @@ are adjacent, char first then color, so a cell's byte pair starts at
 
 | Screen location (col,row) | Char byte offset (`2*(row*64+col)`) | Color byte offset (`+1`) |
 |---|---|---|
-| (0,0) -- top-left | `0` | `1` |
-| (63,0) -- end of row 0 | `126` | `127` |
-| (0,1) -- start of row 1 | `128` | `129` |
-| (32,30) -- roughly center | `3904` | `3905` |
-| (63,59) -- bottom-right, last cell | `7678` | `7679` |
+| (0,0) -- top-left | `0` (`0x0000`) | `1` (`0x0001`) |
+| (63,0) -- end of row 0 | `126` (`0x007E`) | `127` (`0x007F`) |
+| (0,1) -- start of row 1 | `128` (`0x0080`) | `129` (`0x0081`) |
+| (32,30) -- roughly center | `3904` (`0x0F40`) | `3905` (`0x0F41`) |
+| (63,59) -- bottom-right, last cell | `7678` (`0x1DFE`) | `7679` (`0x1DFF`) |
 
-File size: **7680 bytes** (same total as split), file end: **offset 7679**.
+File size: **7680 bytes** (`0x1E00`, same total as split), file end:
+**offset 7679** (`0x1DFF`).
 
-For a non-default document size, substitute `width*height` for `3840` (the
-plane size and split point) and `2*width*height` for `7680` (the total file
-size) throughout.
+For a non-default document size, substitute `width*height` for `3840`
+(`0x0F00`) (the plane size and split point) and `2*width*height` for `7680`
+(`0x1E00`) (the total file size) throughout.
 
 ### C header (`export_c_header`)
 
