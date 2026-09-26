@@ -233,6 +233,178 @@ class SpecialFunctions():
             self.emit("POP_AL", "Restore A")
             self.emit("POP_AH", "Restore A")
 
+    # ---- Memory copy/fill (register-based) ----
+
+    def custom_FuncCall_memcpy(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=src, D=dest, AL=count_m1 -> CALL :memcpy -> C/D advance
+        #      past the copied range; AL unchanged
+        # C: void memcpy(void *src, void *dest, uint8_t count_m1)
+        # Pointer args are routed through A+heap, never dest_reg='C' directly
+        # (see custom_FuncCall_strcpy). Args are evaluated right-to-left,
+        # matching C call-argument order; heap_pop_C/D/AL each preserve the
+        # rest of A internally, so no extra save/restore is needed around them.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_count = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage count_m1 on heap (byte)")
+        rvalue_dest = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage dest on heap")
+        rvalue_src = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage src on heap")
+        # Save C and D
+        self.emit("PUSH_CH", "Save C before memcpy")
+        self.emit("PUSH_CL", "Save C before memcpy")
+        self.emit("PUSH_DH", "Save D before memcpy")
+        self.emit("PUSH_DL", "Save D before memcpy")
+        # Pop staged values into registers (LIFO: src into C, dest into D, count into AL)
+        self.emit("CALL :heap_pop_C", "Load src into C")
+        self.emit("CALL :heap_pop_D", "Load dest into D")
+        self.emit("CALL :heap_pop_AL", "Load count_m1 into AL")
+        self.emit(f"CALL {func.asm_name()}")
+        # No return value; restore D, C
+        self.emit("POP_DL", "Restore D after memcpy")
+        self.emit("POP_DH", "Restore D after memcpy")
+        self.emit("POP_CL", "Restore C after memcpy")
+        self.emit("POP_CH", "Restore C after memcpy")
+
+    def custom_FuncCall_memcpy_blocks(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=src, D=dest, AL=blocks_m1 -> CALL :memcpy_blocks -> C/D
+        #      advance past the copied range (16-byte blocks); AL unchanged
+        # C: void memcpy_blocks(void *src, void *dest, uint8_t blocks_m1)
+        # See custom_FuncCall_memcpy for the argument-routing rationale.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_count = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage blocks_m1 on heap (byte)")
+        rvalue_dest = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage dest on heap")
+        rvalue_src = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage src on heap")
+        self.emit("PUSH_CH", "Save C before memcpy_blocks")
+        self.emit("PUSH_CL", "Save C before memcpy_blocks")
+        self.emit("PUSH_DH", "Save D before memcpy_blocks")
+        self.emit("PUSH_DL", "Save D before memcpy_blocks")
+        self.emit("CALL :heap_pop_C", "Load src into C")
+        self.emit("CALL :heap_pop_D", "Load dest into D")
+        self.emit("CALL :heap_pop_AL", "Load blocks_m1 into AL")
+        self.emit(f"CALL {func.asm_name()}")
+        self.emit("POP_DL", "Restore D after memcpy_blocks")
+        self.emit("POP_DH", "Restore D after memcpy_blocks")
+        self.emit("POP_CL", "Restore C after memcpy_blocks")
+        self.emit("POP_CH", "Restore C after memcpy_blocks")
+
+    def custom_FuncCall_memcpy_segments(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=src, D=dest, AL=segments_m1 -> CALL :memcpy_segments -> C/D
+        #      advance past the copied range (128-byte segments); AL unchanged
+        # C: void memcpy_segments(void *src, void *dest, uint8_t segments_m1)
+        # See custom_FuncCall_memcpy for the argument-routing rationale.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_count = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage segments_m1 on heap (byte)")
+        rvalue_dest = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage dest on heap")
+        rvalue_src = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage src on heap")
+        self.emit("PUSH_CH", "Save C before memcpy_segments")
+        self.emit("PUSH_CL", "Save C before memcpy_segments")
+        self.emit("PUSH_DH", "Save D before memcpy_segments")
+        self.emit("PUSH_DL", "Save D before memcpy_segments")
+        self.emit("CALL :heap_pop_C", "Load src into C")
+        self.emit("CALL :heap_pop_D", "Load dest into D")
+        self.emit("CALL :heap_pop_AL", "Load segments_m1 into AL")
+        self.emit(f"CALL {func.asm_name()}")
+        self.emit("POP_DL", "Restore D after memcpy_segments")
+        self.emit("POP_DH", "Restore D after memcpy_segments")
+        self.emit("POP_CL", "Restore C after memcpy_segments")
+        self.emit("POP_CH", "Restore C after memcpy_segments")
+
+    def custom_FuncCall_memfill(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=addr, AH=byte, AL=count_m1 -> CALL :memfill -> C advances
+        #      past the filled range; AH/AL unchanged
+        # C: void memfill(void *addr, uint8_t byte, uint8_t count_m1)
+        # addr is routed through A+heap, never dest_reg='C' directly (see
+        # custom_FuncCall_strcpy). Args are evaluated right-to-left, matching
+        # C call-argument order; heap_pop_C/AH/AL each preserve the rest of
+        # A internally, so no extra save/restore is needed around them.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_count = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage count_m1 on heap (byte)")
+        rvalue_byte = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage byte on heap (byte)")
+        rvalue_addr = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage addr on heap (word)")
+        # Save C (the only register memfill consumes as a pointer)
+        self.emit("PUSH_CH", "Save C before memfill")
+        self.emit("PUSH_CL", "Save C before memfill")
+        # Pop staged values into registers (LIFO: addr into C, byte into AH, count into AL)
+        self.emit("CALL :heap_pop_C", "Load addr into C")
+        self.emit("CALL :heap_pop_AH", "Load byte into AH")
+        self.emit("CALL :heap_pop_AL", "Load count_m1 into AL")
+        self.emit(f"CALL {func.asm_name()}")
+        self.emit("POP_CL", "Restore C after memfill")
+        self.emit("POP_CH", "Restore C after memfill")
+
+    def custom_FuncCall_memfill_half_blocks(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=addr, AH=byte, AL=halfblocks_m1 -> CALL :memfill_half_blocks
+        #      -> C advances past the filled range (8-byte half-blocks); AH/AL unchanged
+        # C: void memfill_half_blocks(void *addr, uint8_t byte, uint8_t halfblocks_m1)
+        # See custom_FuncCall_memfill for the argument-routing rationale.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_count = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage halfblocks_m1 on heap (byte)")
+        rvalue_byte = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage byte on heap (byte)")
+        rvalue_addr = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage addr on heap (word)")
+        self.emit("PUSH_CH", "Save C before memfill_half_blocks")
+        self.emit("PUSH_CL", "Save C before memfill_half_blocks")
+        self.emit("CALL :heap_pop_C", "Load addr into C")
+        self.emit("CALL :heap_pop_AH", "Load byte into AH")
+        self.emit("CALL :heap_pop_AL", "Load halfblocks_m1 into AL")
+        self.emit(f"CALL {func.asm_name()}")
+        self.emit("POP_CL", "Restore C after memfill_half_blocks")
+        self.emit("POP_CH", "Restore C after memfill_half_blocks")
+
+    def custom_FuncCall_memfill_blocks(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=addr, AH=byte, AL=blocks_m1 -> CALL :memfill_blocks -> C
+        #      advances past the filled range (16-byte blocks); AH/AL unchanged
+        # C: void memfill_blocks(void *addr, uint8_t byte, uint8_t blocks_m1)
+        # See custom_FuncCall_memfill for the argument-routing rationale.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_count = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage blocks_m1 on heap (byte)")
+        rvalue_byte = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage byte on heap (byte)")
+        rvalue_addr = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage addr on heap (word)")
+        self.emit("PUSH_CH", "Save C before memfill_blocks")
+        self.emit("PUSH_CL", "Save C before memfill_blocks")
+        self.emit("CALL :heap_pop_C", "Load addr into C")
+        self.emit("CALL :heap_pop_AH", "Load byte into AH")
+        self.emit("CALL :heap_pop_AL", "Load blocks_m1 into AL")
+        self.emit(f"CALL {func.asm_name()}")
+        self.emit("POP_CL", "Restore C after memfill_blocks")
+        self.emit("POP_CH", "Restore C after memfill_blocks")
+
+    def custom_FuncCall_memfill_segments(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: C=addr, AH=byte, AL=segments_m1 -> CALL :memfill_segments -> C
+        #      advances past the filled range (128-byte segments); AH/AL unchanged
+        # C: void memfill_segments(void *addr, uint8_t byte, uint8_t segments_m1)
+        # See custom_FuncCall_memfill for the argument-routing rationale.
+        arg_nodes = self.visit(node.args, mode='return_nodes')
+        rvalue_count = self.visit(arg_nodes[2], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage segments_m1 on heap (byte)")
+        rvalue_byte = self.visit(arg_nodes[1], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_AL", "Stage byte on heap (byte)")
+        rvalue_addr = self.visit(arg_nodes[0], mode='generate_rvalue', dest_reg='A')
+        self.emit("CALL :heap_push_A", "Stage addr on heap (word)")
+        self.emit("PUSH_CH", "Save C before memfill_segments")
+        self.emit("PUSH_CL", "Save C before memfill_segments")
+        self.emit("CALL :heap_pop_C", "Load addr into C")
+        self.emit("CALL :heap_pop_AH", "Load byte into AH")
+        self.emit("CALL :heap_pop_AL", "Load segments_m1 into AL")
+        self.emit(f"CALL {func.asm_name()}")
+        self.emit("POP_CL", "Restore C after memfill_segments")
+        self.emit("POP_CH", "Restore C after memfill_segments")
+
     # ---- Terminal output (register-based) ----
 
     def custom_FuncCall_putchar(self, node, mode, func, dest_reg='A', **kwargs):
