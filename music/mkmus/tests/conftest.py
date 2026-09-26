@@ -1,5 +1,5 @@
 """
-Pytest configuration for os/util/music tests.
+Pytest configuration for music/mkmus tests.
 Adds the parent directory to sys.path so modules can be imported directly.
 """
 import sys

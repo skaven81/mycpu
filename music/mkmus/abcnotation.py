@@ -3,7 +3,7 @@
 """Bounded ABC v2.1 subset parser for mkmus.py.
 
 Named abcnotation.py (not abc.py) deliberately: the stdlib has a module
-named 'abc' (Abstract Base Classes), and os/util/music/ sits on sys.path
+named 'abc' (Abstract Base Classes), and music/mkmus/ sits on sys.path
 for both direct execution and tests, so 'abc.py' here would shadow it.
 """
 
@@ -178,15 +178,18 @@ def _parse_note_length_frac(token: str, line: int) -> Fraction:
     return Fraction(numer, denom)
 
 
-def _resolve_tokens(tokens, unit_length, key_accidentals, bar_accidentals, pending_tie, line):
+def _resolve_tokens(tokens, unit_length, key_accidentals, bar_accidentals, pending_tie, line,
+                    bar_counter=None):
     """The one place note/rest/accidental/tie resolution logic lives.
-    bar_accidentals and pending_tie (a 1-element list used as a mutable
-    box) are owned by the caller, so state can be threaded across
-    multiple calls -- e.g. across a tune's several body lines."""
+    bar_accidentals, pending_tie and bar_counter (1-element lists used as
+    mutable boxes) are owned by the caller, so state can be threaded
+    across multiple calls -- e.g. across a tune's several body lines."""
     notes = []
     for kind, value in tokens:
         if kind == "bar":
             bar_accidentals.clear()
+            if bar_counter is not None:
+                bar_counter[0] += 1
             continue
         m = _NOTE_DECOMP_RE.match(value)
         if not m:
@@ -228,7 +231,8 @@ def _resolve_tokens(tokens, unit_length, key_accidentals, bar_accidentals, pendi
             notes.append(prev)
             pending_tie[0] = None
 
-        new_note = Note(freq=note_freq, beats=beats, comment="", line=line)
+        new_note = Note(freq=note_freq, beats=beats, comment="", line=line,
+                        bar=bar_counter[0] if bar_counter is not None else 0)
         if tie:
             pending_tie[0] = new_note
         else:
@@ -247,11 +251,85 @@ def _tokens_to_notes(tokens: list, unit_length: Fraction, key_accidentals: dict,
     return notes
 
 
-def _parse_body_line_notes(text, unit_length, key_accidentals, bar_accidentals, pending_tie, line):
+def _parse_body_line_notes(text, unit_length, key_accidentals, bar_accidentals, pending_tie, line,
+                           bar_counter=None):
     """Multi-line entry point used by parse_abc: tokenizes one body line
-    and resolves it against caller-owned, cross-line accidental/tie state."""
+    and resolves it against caller-owned, cross-line accidental/tie/bar
+    state."""
     tokens = _tokenize_body_line(text, line)
-    return _resolve_tokens(tokens, unit_length, key_accidentals, bar_accidentals, pending_tie, line)
+    return _resolve_tokens(tokens, unit_length, key_accidentals, bar_accidentals, pending_tie, line,
+                           bar_counter)
+
+
+def split_lyrics(text: str) -> list:
+    """Split a w: lyrics line into one entry per sounding note, following
+    the ABC v2.1 alignment symbols:
+      space      separates words
+      -          separates syllables within a word; the hyphen stays on
+                 the first syllable ("Twin-kle" -> "Twin-", "kle") so a
+                 word split across notes still reads as one word
+      _          holds the previous syllable for one more note (empty entry)
+      *          skips one note (empty entry)
+      ~          joins words onto a single note (shown as a space)
+      \\-         a literal hyphen that does not split syllables
+      |          bar alignment; ignored (notes are matched in order)
+    """
+    syllables = []
+    cur = ""
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and i + 1 < len(text) and text[i + 1] == "-":
+            cur += "-"
+            i += 2
+            continue
+        if ch.isspace() or ch == "|":
+            if cur:
+                syllables.append(cur)
+                cur = ""
+        elif ch == "-":
+            # A hyphen right after whitespace or a hold/skip ends nothing;
+            # attach it to the syllable in progress, if any.
+            if cur:
+                syllables.append(cur + "-")
+                cur = ""
+        elif ch in "_*":
+            if cur:
+                syllables.append(cur)
+                cur = ""
+            syllables.append("")
+        elif ch == "~":
+            cur += " "
+        else:
+            cur += ch
+        i += 1
+    if cur:
+        syllables.append(cur)
+    return syllables
+
+
+def format_lyrics_inline(notes: list) -> None:
+    """Rewrite the w:-assigned syllable comments in place so that printing
+    every comment back to back, with nothing added between them, shows the
+    lyrics as running text with one line per bar. A syllable's trailing
+    hyphen is dropped (the word continues on the next syllable). A word
+    belongs to the bar its first syllable is sung in; its last syllable
+    gets a trailing space, or a newline when the next word starts in a
+    different bar (or there is no next word)."""
+    sung = [n for n in notes if n.comment]
+    words = []  # each a list of syllable notes
+    for note in sung:
+        if not words or not words[-1][-1].comment.endswith("-"):
+            words.append([])
+        words[-1].append(note)
+    for i, word in enumerate(words):
+        for syll in word[:-1]:
+            syll.comment = syll.comment[:-1]
+        last = word[-1]
+        if last.comment.endswith("-"):  # dangling hyphen at end of lyrics
+            last.comment = last.comment[:-1]
+        nxt = words[i + 1] if i + 1 < len(words) else None
+        last.comment += " " if nxt is not None and nxt[0].bar == word[0].bar else "\n"
 
 
 @dataclass
@@ -311,6 +389,8 @@ def parse_abc(text: str) -> list:
         body_notes = []
         bar_accidentals = {}
         pending_tie = [None]
+        bar_counter = [0]
+        has_lyrics = False
         lyric_cursor = 0  # count of "sounding" notes already consumed by a
         # previous w: line in this tune; each new w: line only zips against
         # sounding notes added since this cursor position.
@@ -324,12 +404,13 @@ def parse_abc(text: str) -> list:
                 continue
             wm = re.match(r"^w:\s?(.*)$", stripped)
             if wm:
-                syllables = wm.group(1).split()
+                syllables = split_lyrics(wm.group(1))
+                has_lyrics = True
                 sounding = [nn for nn in body_notes if nn.freq is not None]
                 remaining = sounding[lyric_cursor:]
                 consumed = 0
                 for note, syll in zip(remaining, syllables):
-                    note.comment = syll.rstrip("-")
+                    note.comment = syll
                     consumed += 1
                 lyric_cursor += consumed
                 continue
@@ -351,10 +432,13 @@ def parse_abc(text: str) -> list:
                     continue
             body_notes.extend(
                 _parse_body_line_notes(stripped, unit_length, key_accidentals,
-                                        bar_accidentals, pending_tie, lineno)
+                                        bar_accidentals, pending_tie, lineno,
+                                        bar_counter)
             )
         if pending_tie[0] is not None:
             body_notes.append(pending_tie[0])
+        if has_lyrics:
+            format_lyrics_inline(body_notes)
 
         tunes.append(AbcTune(number=tune_number, title=title, notes=body_notes,
                               tempo_bpm=tempo_bpm))

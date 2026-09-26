@@ -9,7 +9,7 @@ def test_parse_bespoke_basic_note():
     n = notes[0]
     assert n.freq == pitch_to_freq("A4")
     assert n.beats == 1.0
-    assert n.comment == "hello"
+    assert n.comment == "hello\n"
     assert n.line == 1
 
 
@@ -31,7 +31,7 @@ def test_parse_bespoke_no_comment():
 
 def test_parse_bespoke_comment_may_contain_spaces():
     notes = parse_bespoke("C4 /4 a whole sentence of comment\n")
-    assert notes[0].comment == "a whole sentence of comment"
+    assert notes[0].comment == "a whole sentence of comment\n"
 
 
 def test_parse_bespoke_skips_blank_and_comment_lines():

@@ -213,7 +213,7 @@ def test_tokens_to_notes_tie_merges_same_pitch():
     assert notes[0].beats == pytest.approx(2.0)
 
 
-from abcnotation import AbcTune, parse_abc
+from abcnotation import AbcTune, parse_abc, split_lyrics
 
 
 _SIMPLE_TUNE = """X:1
@@ -254,17 +254,17 @@ def test_parse_abc_no_tempo_field_leaves_none():
 def test_parse_abc_lyrics_line_maps_to_comments():
     text = "X:1\nT:Lyrics\nK:C\nCDEF\nw:one two three four\n"
     tunes = parse_abc(text)
-    assert [n.comment for n in tunes[0].notes] == ["one", "two", "three", "four"]
+    assert [n.comment for n in tunes[0].notes] == ["one ", "two ", "three ", "four\n"]
 
 
 def test_parse_abc_lyrics_skip_rests():
     text = "X:1\nT:Lyrics\nK:C\nCzDF\nw:one two three\n"
     tunes = parse_abc(text)
     comments = [n.comment for n in tunes[0].notes]
-    assert comments[0] == "one"   # C
-    assert comments[1] == ""      # z (rest, no lyric)
-    assert comments[2] == "two"   # D
-    assert comments[3] == "three" # F
+    assert comments[0] == "one "    # C
+    assert comments[1] == ""        # z (rest, no lyric)
+    assert comments[2] == "two "    # D
+    assert comments[3] == "three\n" # F
 
 
 def test_parse_abc_multiple_w_lines_do_not_clobber_each_other():
@@ -280,8 +280,8 @@ def test_parse_abc_multiple_w_lines_do_not_clobber_each_other():
     )
     tunes = parse_abc(text)
     comments = [n.comment for n in tunes[0].notes]
-    assert comments == ["one", "two", "three", "four",
-                         "five", "six", "sev", "eight"]
+    assert comments == ["one ", "two ", "three ", "four\n",
+                         "five ", "six ", "sev ", "eight\n"]
 
 
 def test_parse_abc_voice_header_rejected():
@@ -302,3 +302,39 @@ def test_parse_abc_multibar_line_spans_lines_reset_by_bar_not_newline():
     # since only bar lines reset it
     freqs = [n.freq for n in tunes[0].notes]
     assert freqs == [midi_to_freq(61), midi_to_freq(61), midi_to_freq(61)]
+
+
+def test_split_lyrics_hyphen_splits_syllables_and_keeps_marker():
+    assert split_lyrics("Twin-kle, twin-kle star") == ["Twin-", "kle,", "twin-", "kle", "star"]
+
+
+def test_split_lyrics_hold_and_skip_produce_empty_entries():
+    assert split_lyrics("grace,_ how * sweet") == ["grace,", "", "how", "", "sweet"]
+
+
+def test_split_lyrics_tilde_joins_and_escaped_hyphen_is_literal():
+    assert split_lyrics("the~sound e\\-mail | ok") == ["the sound", "e-mail", "ok"]
+
+
+def test_parse_abc_lyrics_melisma_hold_aligns_following_syllables():
+    text = "X:1\nT:t\nK:C\nCDEFG\nw:A-maz-ing_ grace\n"
+    tunes = parse_abc(text)
+    assert [n.comment for n in tunes[0].notes] == ["A", "maz", "ing ", "", "grace\n"]
+
+
+def test_parse_abc_lyrics_break_line_after_last_word_of_each_bar():
+    text = "X:1\nT:t\nK:C\nCD|EF|G\nw:one two three four five\n"
+    tunes = parse_abc(text)
+    assert "".join(n.comment for n in tunes[0].notes) == "one two\nthree four\nfive\n"
+
+
+def test_parse_abc_lyrics_word_split_across_bar_stays_on_its_line():
+    text = "X:1\nT:t\nK:C\nC|DE|F\nw:A-maz-ing grace\n"
+    tunes = parse_abc(text)
+    assert "".join(n.comment for n in tunes[0].notes) == "Amazing\ngrace\n"
+
+
+def test_parse_abc_lyrics_word_crossing_bar_ends_its_starting_line():
+    text = "X:1\nT:t\nK:C\nCDE|FG\nw:Round yon Mo-ther and\n"
+    tunes = parse_abc(text)
+    assert "".join(n.comment for n in tunes[0].notes) == "Round yon Mother\nand\n"

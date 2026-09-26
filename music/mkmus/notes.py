@@ -16,6 +16,7 @@ class Note:
     beats: float            # duration in quarter-note beats (quarter = 1.0)
     comment: str
     line: int                # source line number, for error messages
+    bar: int = 0             # ABC bar index (bar lines seen before this note)
 
 
 def note_to_divisor(freq: Optional[float], tone_freq: float, line: int) -> int:

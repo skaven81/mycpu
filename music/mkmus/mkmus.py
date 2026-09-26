@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # vim: syntax=python ts=4 sts=4 sw=4 expandtab
-"""mkmus.py -- generate .MUS music files for os/util/music/MUSIC.ODY.
+"""mkmus.py -- generate .MUS music files for the Odyssey music player.
 
 Reads either the bespoke line format or a bounded subset of ABC notation
 (auto-detected) and writes a .MUS file: a sequence of 16-byte note
 records (divisor u16 BE, duration u16 BE, 12-byte comment) terminated by
-an all-zero record, matching what MUSIC.ODY's .play_next_note reads.
+an all-zero record, matching what os/lib/music_player.asm reads.
 """
 
 import argparse
@@ -98,7 +98,7 @@ def build_records(notes: list, tone_freq: float, beat_freq: float, tempo: float,
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="mkmus.py",
-        description="Generate a .MUS music file for MUSIC.ODY from a "
+        description="Generate a .MUS music file for the Odyssey music player from a "
                      "bespoke or ABC-notation input file.",
     )
     parser.add_argument("input", help="input file (bespoke or ABC notation)")

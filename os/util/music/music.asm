@@ -6,7 +6,12 @@
 # Loads up to the first 8 sectors (4096 bytes) of <filename> into a
 # freshly allocated extended memory page (E window, 0xE000) and plays
 # it once with the background player in music_player.asm (symlinked
-# from os/lib/), printing each note's comment as it starts.
+# from os/lib/), printing each note's comment verbatim as it starts
+# (mkmus.py bakes the spaces/newlines into the comments, so lyrics run
+# on one line per bar).
+#
+# Song files are built from source in music/ at the repo root; see
+# music/README.md.
 
 :main
 CALL :argv_init                 # AL=argc, C=argv base; clobbers A and C
@@ -92,8 +97,6 @@ ALUOP_FLAGS %A%+%AL%
 JZ .wait_loop
 LDI_C .status_buf+1
 CALL :print
-LDI_C .newline_str
-CALL :print
 JMP .wait_loop
 
 .song_done
@@ -159,7 +162,6 @@ RET
 .err_extmem_str "music: extended memory full\n\0"
 .err_read_str "music: ATA error while reading file\n\0"
 .goodbye_str "music: done playing.\n\0"
-.newline_str "\n\0"
 .argv_buf "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
 
 # struct music_status: new_note flag byte + 12-byte comment

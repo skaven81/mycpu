@@ -1,0 +1,16 @@
+% Silent Night (Stille Nacht), verse 1 -- melody transcribed for mkmus.py
+% from the traditional Gruber setting, reduced to a single voice.
+% '_' in the w: lines holds a syllable across a melisma note.
+X: 1
+T: Silent Night
+C: Franz Xaver Gruber (words: Joseph Mohr)
+M: 6/8
+L: 1/8
+Q: 3/8=66
+K: C
+G3/2A/2G E3 | G3/2A/2G E3 | d2d B3 | c2c G3 |
+w: Si-lent night,_ ho-ly night,_ All is calm, all is bright,
+A2A c3/2B/2A | G3/2A/2G E3 | A2A c3/2B/2A | G3/2A/2G E3 |
+w: Round yon Vir-gin Mo-ther and Child,_ Ho-ly In-fant so ten-der and mild,
+d2d f3/2d/2B | c3 e3 | c3/2G/2E G3/2F/2D | C6 |]
+w: Sleep in hea-ven-ly peace,_ Sleep in hea-ven-ly_ peace.
