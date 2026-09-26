@@ -82,12 +82,22 @@ ODY_ASM_FLAGS := $(ASM_FLAGS) --symbols $(BIOS_SYM) --odyssey
 C_FLAGS :=
 C_INCLUDES := -I$(BIOS_DIR)/lib
 
+# Header dependency tracking for %.asm: %.c recipes; writes $*.d for -include
+C_DEPGEN = cpp -MM -MP -MT $@ -MF $*.d $(C_INCLUDES) $<
+
 #------------------------------------------------------------------------------
 # Build Configuration
 #------------------------------------------------------------------------------
 # Ensure tee pipe doesn't mask failures
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
+
+# The C compiler streams its output, so a failed compile leaves a truncated
+# .asm that a later make would treat as up to date. KEEP_FAILED=1 keeps it
+# for compiler debugging; rm it (or make clean) before the next normal build.
+ifneq ($(KEEP_FAILED),1)
+.DELETE_ON_ERROR:
+endif
 
 # Default target for utilities
 MEM_TARGET := main

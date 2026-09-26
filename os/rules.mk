@@ -58,7 +58,10 @@ $(OPCODES_FILE): $(OPCODES_GEN)
 # Pattern rule: any .c -> .asm (Make built-in feature)
 %.asm: %.c
 	$(Q)echo "  CC      $<"
+	$(Q)$(C_DEPGEN)
 	$(Q)$(C_COMPILER) $(C_VERBOSE_FLAG) $(C_FLAGS) --cpp-args='$(C_INCLUDES)' $< --output=$@ $(C_LOG_REDIRECT)
+
+-include $(C_SOURCES:.c=.d)
 
 #------------------------------------------------------------------------------
 # Common Phony Targets - Use .PHONY (Make built-in)
@@ -67,7 +70,7 @@ $(OPCODES_FILE): $(OPCODES_GEN)
 
 clean:
 	$(Q)echo "  CLEAN   $(DIRNAME)"
-	$(Q)rm -f $(FILENAME) $(C_ASMS) *.log *.sym *.hex
+	$(Q)rm -f $(FILENAME) $(C_ASMS) $(C_SOURCES:.c=.d) *.log *.sym *.hex
 
 clean-opcodes:
 	$(Q)echo "  CLEAN   $(OPCODES_FILE)"

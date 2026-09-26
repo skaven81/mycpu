@@ -1,7 +1,7 @@
 ---
 name: ody-c
 description: Wire Wrap Odyssey C compiler reference. Use when writing C code for the Odyssey - covers which C constructs compile / fail / silently miscompile, the BIOS header inventory and include rules, build integration, compiler error diagnosis, and validated code size optimization techniques.
-version: 2.2.0
+version: 2.3.0
 ---
 
 # Odyssey C Compiler Reference
@@ -44,6 +44,9 @@ warnings of any kind, so anything suspicious must be caught by reading.
 - **`static` local variables require an explicit initializer.**
 - Calling an undeclared function is an error (no implicit declarations), but
   functions defined later in the same file need no forward declaration.
+- **Calls must match the prototype's argument count exactly** (variadic
+  `...` functions: at least the fixed ones). `f()` and `f(void)` both mean
+  zero arguments -- there are no unprototyped K&R declarations.
 
 ## Constructs that COMPILE BUT ARE WRONG (silent miscompiles)
 
@@ -110,23 +113,21 @@ re-initialized on every call to their function, not once).
 
 ## BIOS headers (`os/bios/lib/*.h`)
 
-`#include "name.h"`; the Makefile passes the include path. **Headers do not
-include their own dependencies -- order matters. Include `types.h` first,
-always** (`uint8_t/uint16_t/int8_t/int16_t`, `struct uint32 {hi,lo}`,
-`true/false/NULL` -- there is NO `bool`).
+`#include "name.h"`; the Makefile passes the include path. **Every BIOS and
+`os/lib` header is self-sufficient**: `#pragma once` plus `#include`s of
+whatever it depends on, so include order doesn't matter. `types.h` provides
+`uint8_t/uint16_t/int8_t/int16_t`, `struct uint32 {hi,lo}`, and
+`true/false/NULL` -- there is NO `bool`.
 
-**A header that declares a function taking a `struct X *` needs `X`'s
-DEFINING header included first -- this compiler has no incomplete/
-forward-declared struct type support, unlike real C.** Example:
-`os/lib/fat16_dirent_string.h` declares
-`extern char *fat16_dirent_string(struct fat16_dirent *dirent);` but does
-not itself define `struct fat16_dirent` (that struct stays BIOS-resident,
-defined in `os/bios/lib/fat16_dirent.h`). Including
-`fat16_dirent_string.h` before `fat16_dirent.h` fails with
-`SyntaxError: Struct type fat16_dirent used without declaration` --
-confirmed empirically against `c_compiler.py`. Always include the header
-that DEFINES a struct before any header that only references a pointer
-to it.
+**Headers you write (including program-local ones) must follow the same
+rule.** A header that uses `uint16_t` must itself `#include <types.h>`;
+relying on the including `.c` file to include it first breaks as soon as
+your header is the first include (`ParseError: myhdr.h:3:10: before:
+func_name`). A header declaring a function that takes `struct X *` must
+include `X`'s DEFINING header -- this compiler has no incomplete/
+forward-declared struct support, so a bare `struct X *` fails with
+`SyntaxError: Struct type X used without declaration`
+(`os/lib/fat16_dirent_string.h` including `fat16_dirent.h` is the model).
 
 | Header | Contents |
 |--------|----------|
@@ -242,6 +243,19 @@ overrides: `C_SOURCES`, `ASM_SOURCES`, `C_FLAGS`, `MEM_TARGET`
 be built first (`make -C os bios` provides `bios.sym` and the C helper ROM
 routines). `make C_VERBOSE=verbose` tees `c_compiler.log`.
 
+Build behavior (`os/config.mk`, `os/rules.mk`, `os/bios/Makefile`):
+- **Header dependencies are tracked.** Each compile also writes `name.d`
+  (`cpp -MM`, git-ignored via `os/.gitignore`), so editing any included
+  header recompiles the `.c` files that use it. A directory last built
+  before this existed has no `.d` yet -- `make clean` once if a header edit
+  isn't being picked up.
+- **Failed compiles delete their output.** The compiler streams `.asm` as it
+  goes, so a crash leaves a truncated file; `.DELETE_ON_ERROR` removes it
+  so the next `make` recompiles instead of assembling the stub.
+- **`make KEEP_FAILED=1` keeps the partial `.asm`** for debugging the
+  compiler itself (see where codegen stopped). Delete it or `make clean`
+  before the next normal build, or make will treat it as up to date.
+
 Idiomatic skeleton:
 
 ```c
@@ -317,6 +331,19 @@ exception type:
   context (array dim, case label, initializer element)
 - `SyntaxError: Incompatible types in function call` -> pointer/size
   mismatch or the inline-cast quirk
+- `SyntaxError: Function ... expects N argument(s), but M given` -> call
+  doesn't match the prototype (often a header signature changed and a
+  caller wasn't updated)
+- `ParseError: file.h:L:C: before: name` (pycparser, before codegen) ->
+  usually an undeclared type name at that spot: the header uses
+  `uint16_t`/a struct without including the header that defines it
+- `ValueError: BinaryOp with incompatible sized types, left= struct ...` ->
+  a whole struct in an expression, e.g. `*ptr` compared to a number where
+  the pointer value itself was meant
+- **Assembler** `Label .FILE___global_local_init__ unresolved` -> that
+  file's `.asm` is a truncated leftover of a failed compile (kept by
+  `KEEP_FAILED=1`, or from before `.DELETE_ON_ERROR`). Delete it / `make
+  clean` and rebuild to see the real compiler error.
 - `AttributeError: 'NoneType' ...` with no source coord -> an edge case like
   `for(;;)` or a string-pointer-array initializer
 

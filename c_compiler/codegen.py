@@ -893,6 +893,12 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             func = self.visit(node.name, mode='return_function')
             if not func:
                 raise ValueError(f"Function {node.name} not found in function registry")
+            fixed_params = [p for p in func.parameters if p.typespec.base_type != '...']
+            is_variadic = len(fixed_params) != len(func.parameters)
+            num_args = len(self.visit(node.args, mode='return_nodes')) if node.args else 0
+            if num_args < len(fixed_params) or (num_args > len(fixed_params) and not is_variadic):
+                expected = f"{'at least ' if is_variadic else ''}{len(fixed_params)}"
+                raise SyntaxError(f"Function {func.c_str()} expects {expected} argument(s), but {num_args} given")
             with self._debug_block(f"FuncCall {func.name}"):
                 # Check for custom function call override, for external library
                 # functions that don't conform to our standard call semantics

@@ -38,7 +38,10 @@ $(BIOS_HEX) $(BIOS_SYM) &: $(ALL_SOURCES) $(OPCODES_FILE) $(MACROS)
 # C compiled assembly
 %.asm: %.c
 	$(Q)echo "  CC      $<"
+	$(Q)$(C_DEPGEN)
 	$(Q)$(C_COMPILER) $(C_VERBOSE_FLAG) $(C_FLAGS) --cpp-args='$(C_INCLUDES)' --target-rom $< --output=$@ $(C_LOG_REDIRECT)
+
+-include $(BIOS_C:.c=.d) $(LIBS_C:.c=.d)
 
 #------------------------------------------------------------------------------
 # EEPROM Programming
@@ -54,4 +57,4 @@ program1: $(BIOS_HEX)
 .PHONY: clean
 clean:
 	$(Q)echo "  CLEAN   bios"
-	$(Q)rm -f $(FILENAME) $(C_ASMS) *.log *.sym *.hex
+	$(Q)rm -f $(FILENAME) $(C_ASMS) $(BIOS_C:.c=.d) $(LIBS_C:.c=.d) *.log *.sym *.hex
