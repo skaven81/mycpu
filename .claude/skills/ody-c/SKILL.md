@@ -83,9 +83,6 @@ warnings of any kind, so anything suspicious must be caught by reading.
 - **`printf`/`print` format argument must be a simple expression**: a string
   literal or a plain `char *` variable. `printf(msgs[i])` fails to compile;
   assign to a local `char *` first. (Args after the format are unrestricted.)
-- Known bug: **inline cast-to-pointer as a function argument fails**
-  (`func((void *)0xD000)` -> "Incompatible types"). Declare a typed local
-  (`char *buf = (char *)0xD000;`) and pass that.
 - String literals must not BEGIN with `:` or `.` (assembler treats the data
   item as a label). Restructure or emit that first char separately.
 - `const`/`volatile` parse but are completely ignored. Narrowing assignments
@@ -101,7 +98,9 @@ at its top level; no statements before the first case; no duplicate cases),
 struct typedefs), 2D arrays, `sizeof` (variables, types, members), all of
 `+ - & | ^ ~ ! << >> == != < <= > >=`, `++`/`--`, compound assignment except
 `*= /= %=`, casts incl. widening with correct sign extension,
-`*(char *)0xD000 = 5;` absolute pointer access, pointer arithmetic (scaled
+`*(char *)0xD000 = 5;` absolute pointer access, inline pointer-cast and
+`NULL` call arguments (`f(NULL, (void *)0xD000)` -- compiles to a bare
+`LDI_A`, no temporary local needed), pointer arithmetic (scaled
 by pointee size; `void *` stride 1), signed/unsigned comparison follows C
 promotion rules, `extern` globals map to assembly `$name` variables.
 
@@ -330,7 +329,8 @@ exception type:
 - `NotImplementedError: ... mode get_value ...` -> non-literal in a constant
   context (array dim, case label, initializer element)
 - `SyntaxError: Incompatible types in function call` -> pointer/size
-  mismatch or the inline-cast quirk
+  mismatch (e.g. a non-zero integer passed to a pointer param without a
+  cast)
 - `SyntaxError: Function ... expects N argument(s), but M given` -> call
   doesn't match the prototype (often a header signature changed and a
   caller wasn't updated)

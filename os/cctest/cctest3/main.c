@@ -204,6 +204,14 @@ void test_sizeof() {
     uint8_t *ptr_sz = 0;
     uint8_t sz_ptr = sizeof(ptr_sz);
     assert_equal_u8(sz_ptr, 2, "sizeof(pointer)");
+
+    // sizeof on pointer type names (visit_Typename used to drop the '*',
+    // making sizeof(uint8_t *) report 1)
+    uint8_t sz_ptr_type = sizeof(uint8_t *);
+    assert_equal_u8(sz_ptr_type, 2, "sizeof(uint8_t *)");
+
+    uint8_t sz_struct_ptr_type = sizeof(struct Rect *);
+    assert_equal_u8(sz_struct_ptr_type, 2, "sizeof(struct Rect *)");
 }
 
 // ============================================================================
@@ -334,6 +342,55 @@ void test_functions() {
     assert_equal_u8(static1, 1, "Static local call 1");
     assert_equal_u8(static2, 2, "Static local call 2");
     assert_equal_u8(static3, 3, "Static local call 3");
+}
+
+// ============================================================================
+// TEST: INLINE POINTER CASTS AND NULL AS CALL ARGUMENTS
+// (visit_Typename return_var, visit_FuncCall pointer-param check)
+// ============================================================================
+// Regression: visit_Typename used to drop the '*' from a cast's type, so
+// f((void *)0xD000) failed with "Incompatible types in function call" and a
+// throwaway typed local was needed. A literal 0 (NULL) was rejected the same
+// way. Also covers cast-then-arithmetic, which used to silently skip the
+// pointee-size scaling because the cast result was not seen as a pointer.
+
+// Helper function - returns the address it was handed, so tests can check
+// what the caller pushed without dereferencing absolute memory
+uint16_t ptr_to_u16(void *any_ptr) {
+    return (uint16_t)any_ptr;
+}
+
+void test_pointer_cast_args() {
+    // Integer constant cast inline to a pointer argument
+    uint16_t addr_const = ptr_to_u16((void *)0xD000);
+    assert_equal_u16(addr_const, 0xD000, "Inline (void *) const arg");
+
+    uint16_t addr_typed = ptr_to_u16((uint8_t *)0xD123);
+    assert_equal_u16(addr_typed, 0xD123, "Inline (uint8_t *) const arg");
+
+    // NULL and literal 0 are null pointer constants for any pointer param
+    uint16_t addr_null = ptr_to_u16(NULL);
+    assert_equal_u16(addr_null, 0, "NULL pointer arg");
+
+    uint16_t addr_zero = ptr_to_u16(0);
+    assert_equal_u16(addr_zero, 0, "Literal 0 pointer arg");
+
+    uint16_t addr_null_cast = ptr_to_u16((struct Point *)NULL);
+    assert_equal_u16(addr_null_cast, 0, "Cast NULL pointer arg");
+
+    // Integer variable cast inline to a typed pointer, then dereferenced
+    // by the callee
+    uint8_t cast_target = 15;
+    uint16_t cast_addr = (uint16_t)&cast_target;
+    modify_by_ptr((uint8_t *)cast_addr);
+    assert_equal_u8(cast_target, 25, "Inline (uint8_t *) var arg");
+
+    // Pointer arithmetic on a cast result scales by pointee size
+    uint16_t addr_arith16 = ptr_to_u16((uint16_t *)0xD000 + 1);
+    assert_equal_u16(addr_arith16, 0xD002, "(uint16_t *)const + 1");
+
+    uint16_t addr_arith_rect = ptr_to_u16((struct Rect *)0xD000 + 2);
+    assert_equal_u16(addr_arith_rect, 0xD008, "(struct Rect *)const + 2");
 }
 
 // ============================================================================
@@ -501,6 +558,7 @@ void main() {
     test_sizeof();
     test_cast();
     test_functions();
+    test_pointer_cast_args();
     test_globals();
     test_scopes();
     test_comma_operator();

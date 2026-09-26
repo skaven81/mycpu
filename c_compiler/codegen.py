@@ -756,8 +756,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
     def visit_Typename(self, node, mode, **kwargs):
         if mode == 'return_var':
-            typespec = self.visit(node.type, mode='return_typespec')
-            return Variable(typespec=typespec, name=typespec.name, is_type_wrapper=True)
+            # Walk the full declarator (not just the base typespec) so that
+            # pointer levels survive: (void *)0xD000 must yield a pointer,
+            # not a bare void.
+            var = self.visit(node.type, mode='return_var')
+            var.name = var.typespec.name
+            var.is_type_wrapper = True
+            return var
         elif mode == 'return_typespec':
             return self.visit(node.type, mode='return_typespec')
         else:
@@ -918,7 +923,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         with self._debug_block(f"FuncCall {func.name} push parameter {pv.friendly_name()}"):
                             if pv.is_pointer:
                                 rvalue_var = self.visit(an, mode='generate_rvalue', dest_reg='A', dest_var=pv)
-                                if not rvalue_var.is_pointer and not rvalue_var.is_array:
+                                # A literal 0 (e.g. NULL) is a null pointer constant, valid for any pointer param
+                                is_null_constant = type(an) is c_ast.Constant and an.type == 'int' and int(an.value, base=0) == 0
+                                if not rvalue_var.is_pointer and not rvalue_var.is_array and not is_null_constant:
                                     raise SyntaxError(f"Incompatible types in function call, function param: {pv.friendly_name()}, call param: {rvalue_var.friendly_name()}")
                                 self.emit(f"CALL :heap_push_A", f"Push parameter {pv.friendly_name()} (pointer)")
                             elif pv.is_array or pv.typespec.is_struct:
