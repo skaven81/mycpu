@@ -1,0 +1,8 @@
+# levelup - rising major arpeggio, twice, then a held top note
+repeat 2
+  tone C5 40
+  tone E5 40
+  tone G5 40
+end
+rest 20
+tone C6 150

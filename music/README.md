@@ -3,8 +3,8 @@
 This directory holds the song sources and the host-side converter that turns them into `.MUS` files. Those files are played through the piezo speaker by `MUSIC.ODY` (`os/util/music/`) and by any program that links the background player library `os/lib/music_player.asm`.
 
 ```
-make            # build every NAME.MUS from NAME.abc / NAME.txt
-make sdcard     # copy the .MUS files to /media/skaven/ODYSSEY/MUSIC
+make            # build every NAME.MUS from NAME.abc / NAME.txt, and sfx/NAME.MUS from sfx/NAME.sfx
+make sdcard     # copy all of those .MUS files to /media/skaven/ODYSSEY/MUSIC
 make test       # run the converter's unit tests (sets up mkmus/.venv with uv)
 make clean
 ```
@@ -101,6 +101,75 @@ mkmus/mkmus.py [--tempo BPM] [--repeat-gap PCT] [--tune N]
 - `--tone-freq` and `--beat-freq` set the timer clocks: 1.8432 MHz for Timer 1 tone generation and 32.768 kHz for Timer 2 note duration. Change them only if the hardware changes.
 
 A single note's duration must fit in 65535 ticks of the 32.768 kHz clock, which is just under 2 seconds. A very long held note at a slow tempo fails with "duration out of range". Raise the tempo or split the note with a rest.
+
+## Sound effects
+
+A sound effect is just a short song. It uses the same `.MUS` records and plays through the same `music_play` call, but it is authored in milliseconds and Hz instead of beats and tempo. Changing the tone every few milliseconds gives sweeps, chirps and arpeggios. The piezo is monophonic: starting an effect stops whatever was playing, and it does not resume.
+
+Tempo plays no part. A record's duration is raw 32.768 kHz Timer 2 ticks (1 ms is about 33 ticks, 1 tick is 30.5 µs), so millisecond steps work directly.
+
+### `.sfx` source format
+
+Each `.sfx` file is one effect, named after its basename (letters, digits and `_`; at most 8 characters if you want a `.MUS` for it). There is one command per line, and `#` starts a comment:
+
+```
+tone  C6   8              # PITCH MS: note name (C6, F#5, Bb4) or Hz (880, 1.2k)
+rest       4              # MS of silence
+sweep 300  1500  120  4   # FROM TO MS STEP_MS: glide in STEP_MS steps
+repeat 3                  # repeat everything up to 'end' N times (nestable)
+  tone E6 15
+  tone G6 15
+end
+```
+
+- `sweep` is pitch-linear: consecutive steps have equal frequency ratios, so it sounds even. It starts exactly at FROM, ends exactly at TO, and its total length is exactly MS.
+- Nothing is inserted between steps; there are no repeat gaps.
+- Durations round to whole ticks, with a minimum of 1.
+- A step over about 2 s, or a pitch outside about 28 Hz to 1.8 MHz, is an error.
+
+Examples are in `sfx/`. Preview any effect with `python3 mkmus/mksfx.py --dry-run sfx/laser.sfx`.
+
+### Step length: keep it at 3 ms or more
+
+Every step costs one Timer 2 interrupt, with interrupts masked while the handler runs. With `status = NULL` that is about 230 CPU cycles (counted from the microcode), or about 0.12 ms at 2 MHz. So:
+
+- **1 ms steps** take about 12% of the CPU while the effect plays. **3–5 ms steps** cost 2–4% and still sound smooth, and mksfx warns below 2 ms.
+- Each step also runs slightly long by that interrupt latency. This does not matter for effects.
+- **A pitch change waits for the current half-cycle** of the tone. That keeps glides click-free, but a step shorter than half the tone's period is not heard (at 200 Hz a half-cycle is 2.5 ms). mksfx warns about these steps.
+- Sub-millisecond "noise" (random pitch hopping) is not practical.
+
+### Auditioning
+
+`make` builds each `sfx/NAME.sfx` into `sfx/NAME.MUS`, and `make sdcard` copies them into `MUSIC/` with the songs, so you can try one on the machine:
+
+```
+music laser.mus
+```
+
+### Using effects in a program
+
+A program embeds its effects as a bank:
+
+```
+python3 path/to/music/mkmus/mksfx.py -o sfx_bank sfx/*.sfx
+```
+
+This writes two files:
+- `sfx_bank.asm`: the records for each effect, plus `:sfx_get`, which maps an id to the address of that effect's records.
+- `sfx_bank.h`: an `SFX_<NAME>` id for each effect (numbered in command-line order), plus the `sfx_get` prototype.
+
+Put both in the build directory next to the `music_player` symlinks, then:
+
+```c
+#include "music_player.h"
+#include "sfx_bank.h"
+
+music_play(sfx_get(SFX_LASER), 0, NULL, NULL);   // one-shot; stops any music
+```
+
+- Pass `status = NULL`. That skips the per-note comment copy, which is the most expensive part of each step.
+- Pass a `loop_count` pointer instead of `NULL` if you need to know when the effect has finished: it becomes 1.
+- To bring background music back after an effect, call `music_play` on the song again. It starts from the beginning.
 
 ## .MUS file format
 

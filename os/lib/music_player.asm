@@ -10,7 +10,7 @@
 #   ln -s ../../lib/music_player.h music_player.h
 #
 # Song data is a sequence of 16-byte note records (see
-# os/util/music/mus_writer.py):
+# music/mkmus/mus_writer.py):
 #   offset 0x00  divisor   (16-bit, big-endian; 0x0000 = silence)
 #   offset 0x02  duration  (16-bit, big-endian; 32.768kHz ticks)
 #   offset 0x04  comment   (12 bytes, null-terminated)
@@ -32,6 +32,12 @@
 #
 # All state is file-local label data, so it is compiled into the
 # consuming ODY (no VAR pool use).
+#
+# Sound effects are just short songs (millisecond steps, authored with
+# music/mkmus/mksfx.py; see music/README.md). Play one with loop=0 and
+# status=0x0000 (skips the per-note comment copy); it replaces anything
+# already playing. Each note costs one Timer 2 interrupt, so keep steps
+# at 3ms or longer.
 #####
 
 ####

@@ -5,6 +5,9 @@
 // Background .MUS playback (Timer 1 tone + Timer 2 note timing).
 // Split library -- symlink os/lib/music_player.asm and this header into
 // the consuming build directory. See music_player.asm for the details.
+//
+// Sound effects are just short songs: build a bank with
+// music/mkmus/mksfx.py and play with music_play(sfx_get(ID), 0, NULL, NULL).
 
 // Optional per-note handoff filled in by the playback interrupt handler.
 struct music_status {
