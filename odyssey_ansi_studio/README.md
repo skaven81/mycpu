@@ -78,6 +78,200 @@ refresh after the repo moves.
   header, ASM data, and PNG. Every text / binary export lets you choose how
   empty cells are stored (space / NULL / black block / transparent cursor-skip).
 
+## Output formats
+
+Every export starts from the same 64x60 **composite**: for each cell, the
+topmost layer with a non-NULL glyph supplies that cell's glyph byte (CP437,
+`char_plane`) and color byte (`color_plane`). A cell no layer touches is
+NULL (glyph `0x00`). The color byte is:
+
+```
+bit 7   BLINK
+bit 6   CURSOR   (editor-only; always masked to 0 on export)
+bits 5:4  red index   0..3 -> intensity 0/85/170/255
+bits 3:2  green index 0..3 -> intensity 0/85/170/255
+bits 1:0  blue index  0..3 -> intensity 0/85/170/255
+```
+
+There is no background color -- a cell is always its glyph's foreground pixels
+in that RGB color on black.
+
+Every text/binary exporter takes a `null_mode` for how a NULL cell is
+written: `"space"` (glyph `0x20`, attr `0x00`), `"null"` (glyph `0x00`, attr
+`0x00`), `"block"` (glyph `0xDB`, a full block, attr `0x00`), or
+`"transparent"` (Odyssey-native `.ANS` only -- the cell is skipped with a
+cursor-forward move instead of being written, so whatever is already on
+screen shows through).
+
+### Odyssey-native `.ANS` (`export_ans`)
+
+The format the Odyssey terminal itself replays. It is a flat byte stream, not
+a container -- there is no header and no length field; parse it by executing
+it as a tiny escape-code VM against a 64-wide, auto-wrapping cursor:
+
+1. The stream opens with `ESC[H` (`\x1b[H`, cursor home) -- unless the
+   document is empty and blank-trimmed, in which case that's the entire
+   file.
+2. Cells are then emitted in row-major order (row 0 first, left to right).
+   For each cell, if its color-attr byte differs from the last one emitted,
+   an `ESC[<v>p` escape is written first, where `<v>` is the **decimal**
+   value 0-255 of the attr byte with bit 6 (cursor) masked out and bit 7
+   (blink) kept -- e.g. `ESC[128p` sets blink+black, `ESC[42p` sets a color
+   with blink off. This is an Odyssey-specific out-of-spec CSI escape, not
+   standard ANSI SGR; it both sets the color-plane byte for subsequent
+   glyphs *and* switches the terminal into color-rendering mode. `ESC[0p`
+   selects black with blink off.
+3. Immediately after the (possibly omitted) color escape, the cell's raw
+   CP437 glyph byte is written -- one byte, no encoding, straight into the
+   stream.
+4. The terminal is exactly 64 columns wide and auto-wraps at column 64, so
+   **rows need no separator for hardware playback** -- row N's last glyph is
+   immediately followed by row N+1's first escape/glyph. The exporter can
+   optionally insert a `row_separator` (the export dialog offers `\r\n`)
+   after every emitted row, including the last, purely so the file also
+   looks right when `cat`ed at a normal (non-64-col-locked) terminal; a
+   parser must not assume rows are delimited.
+5. By default (`trim_trailing_blanks=True`) the stream is cut after the last
+   cell that is not a NULL and not a plain `(0x20, attr 0x00)` blank, and any
+   wholly-blank rows after that are omitted entirely -- so a shorter file
+   does not necessarily mean a shorter document; count colors/glyphs, don't
+   assume 64x60 cells are present.
+6. With `null_mode="transparent"`, NULL cells are never written. Instead
+   each row begins with an absolute `ESC[<row+1>;1H` position (1-based), and
+   runs of consecutive NULL cells within a row are skipped with a relative
+   `ESC[<n>C` (cursor forward `n`) instead of `ESC[<v>p`+glyph pairs; the
+   color escape is re-asserted after any such jump since the terminal's
+   "last color" tracking cannot be assumed to persist across a positioning
+   command.
+7. CP437 codes below `0x20` and `0x7F` are valid glyphs on real VRAM but
+   collide with this stream's own control characters (`ESC`, cursor moves);
+   the exporter flags these cells as warnings but still emits them literally
+   -- a strict parser will misinterpret them as control codes, matching real
+   hardware behavior when the file is streamed to a live terminal.
+
+### Portable 16-color `.ANS` (`export_ans16`)
+
+Same composite and row-major traversal as above, but written in standard
+SGR so any conventional ANSI-art viewer/terminal can render it (approximately
+-- see the palette note below):
+
+1. Opens with `ESC[H`.
+2. Each cell's RGB color (from its 6-bit color code, ignoring blink/cursor)
+   is snapped to whichever of the Odyssey's **16 named ANSI colors** is
+   nearest by RGB distance (`nearest_ansi16`) -- a single nearest-neighbor
+   lookup against a fixed 16-entry table, no dithering or per-channel remap.
+   Those 16 reference colors are the same 6-bit color codes the Odyssey
+   terminal's own SGR handling recognizes for `ESC[30-37m` (black, red,
+   green, yellow, blue, magenta, cyan, white) and `ESC[90-97m` ("bright"
+   versions of the same eight); which range a given cell snaps to depends
+   purely on which of the 16 reference RGB values is closest, independent of
+   that cell's own blink bit. The blink bit itself is carried separately
+   (see below), not folded into the color snap.
+3. Whenever a cell's resolved style (the snapped SGR code + blink flag)
+   differs from the previous cell's, the stream emits `ESC[0m` (full reset)
+   then `ESC[<sgr>m`, where `<sgr>` is one of `30-37` or `90-97` per the
+   snap above. If the cell is blinking, `ESC[5m` follows immediately after
+   the color SGR.
+4. A NULL cell rendered as `null_mode="space"` (the default) needs no style
+   at all if the running style is already "no style" (`ESC[0m` only, no
+   color); the exporter tracks this so plain space runs don't repeat
+   `ESC[0m` redundantly for every cell, but do not rely on run-length -- a
+   spec-correct parser should apply each escape as it's seen, not assume any
+   particular batching.
+5. `row_separator` defaults to `\r\n` here (unlike the Odyssey-native
+   exporter) since this format's whole purpose is to be viewed in ordinary
+   terminals/tools that do not auto-wrap at exactly column 64.
+6. `trim_trailing_blanks` and `null_mode` (including `"transparent"`, using
+   the same absolute-position / cursor-forward scheme as the native
+   exporter) behave identically to `export_ans`.
+
+Because the snap is to only 16 colors, this format is lossy relative to the
+Odyssey's native 64-color space -- do not round-trip through it expecting
+exact colors back.
+
+### Raw binary -- split-plane and interleaved (`export_binary`)
+
+A fixed-size, headerless dump of the two VRAM planes -- exactly
+`width * height` bytes each (3840 bytes for the standard 64x60 document; a
+non-default document size changes this), with **no dimension recorded in the
+file**. A parser must know (or be told out-of-band) `width`/`height` to
+reshape the bytes back into a grid; offset within a plane is always
+`row * width + col`.
+
+* **`layout="split"`** (default) -- the entire char plane first
+  (`width*height` bytes, one CP437 byte per cell, row-major), immediately
+  followed by the entire color plane (`width*height` bytes, one attr byte per
+  cell, same row-major order, cursor bit always masked to 0). Total file size
+  `2 * width * height` bytes. This layout matches the Odyssey's real VRAM
+  layout: char plane at `0x4000`, color plane at `0x5000`, so it can be
+  `memcpy`'d straight into place on real hardware.
+* **`layout="interleaved"`** -- the two planes are zipped byte-for-byte:
+  `char[0], color[0], char[1], color[1], ...`, i.e. even byte offsets are
+  glyphs, odd byte offsets are attrs. Same total size as split. Useful when a
+  consumer wants one struct-of-2-bytes per cell rather than two parallel
+  arrays.
+
+`null_mode` here can only be `"null"` (glyph `0x00`), `"space"` (`0x20`), or
+`"block"` (`0xDB`) -- `"transparent"` is accepted but collapses to `"null"`,
+since a fixed-size plane format has no way to "omit" a cell.
+
+### C header (`export_c_header`)
+
+A generated, human-readable `.h` file, not a binary format -- parse it as C
+source. For a document exported with `name="foo"` it defines:
+
+```c
+#define FOO_W      64          /* doc.width */
+#define FOO_H      60          /* doc.height */
+#define FOO_CELLS  3840         /* width * height */
+
+static const unsigned char foo_chr[3840] = { 0x20, 0x20, ... };  /* char plane, row-major */
+static const unsigned char foo_clr[3840] = { 0x00, 0x00, ... };  /* color plane, row-major */
+```
+
+`name` is sanitized to a valid C identifier (non-word characters become `_`,
+a leading digit gets a `_` prefix) and upper-cased for the macros. An
+`#ifndef`/`#define`/`#endif` include guard (`FOO_H`) wraps the file unless
+`guard=False`. Byte values are `0x`-prefixed uppercase hex, one source line
+per document row (`width` values per line) for readability -- line breaks in
+the C array carry no semantic meaning, only the two arrays' element order
+does. `mask_cursor` and `null_mode` behave as in `export_binary`.
+
+### ASM data (`export_asm`)
+
+A generated text file in this repo's assembler's data-literal syntax (not a
+binary format). For `name="foo"`:
+
+```
+# Generated by Odyssey ANSI Studio.
+# 64x60 cells, row-major (off = row*64 + col).
+# Char plane loads at 0x4000, color plane at 0x5000.
+
+:foo_chr 0x20 0x20 0x20 ...
+:foo_clr 0x00 0x00 0x00 ...
+```
+
+Two label lines, each holding one plane as a single space-separated run of
+`0xNN` byte literals in row-major order -- there is no line wrapping, the
+whole plane is one logical line per label. `name` is sanitized to
+`[0-9A-Za-z_]` (defaulting to `screen` if that leaves nothing). Lines
+starting with `#` are assembler comments and carry no data. `mask_cursor` and
+`null_mode` behave as in `export_binary`.
+
+### PNG (`export_png`)
+
+A real raster image, `width*8*scale` by `height*8*scale` pixels (each cell is
+an 8x8 glyph from the active font bank). Rendering, per cell: skip entirely
+(leave black) if the glyph is `0x00` (NULL); skip if `show_blink=False` and
+the cell's blink bit is set (renders blink's "off" phase); otherwise decode
+the glyph's 8 rows of 8 bits from the font bank (bit 7 = leftmost pixel) and
+plot each set bit in the cell's RGB color (from the same 6-bit color code as
+every other format, `LEVELS = [0, 85, 170, 255]` per channel) on a black
+background -- there is no anti-aliasing or background fill beyond black.
+`scale` (default 3 in the UI) does a final nearest-neighbor resize, so the
+image stays crisp at any integer zoom; a consumer that wants 1:1 hardware
+pixels should request `scale=1`.
+
 ## Design
 
 The code splits into a **GUI-independent core** and a **thin Qt layer**:
