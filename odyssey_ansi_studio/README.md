@@ -215,6 +215,50 @@ reshape the bytes back into a grid; offset within a plane is always
 `"block"` (`0xDB`) -- `"transparent"` is accepted but collapses to `"null"`,
 since a fixed-size plane format has no way to "omit" a cell.
 
+#### Worked example -- standard 64x60 document
+
+`width=64`, `height=60`, so each plane is `64*60 = 3840` bytes and every cell
+offset within a plane is `row*64 + col` (0-indexed, row 0 / col 0 = top-left).
+Total file size is `2 * 3840 = 7680` bytes for **both** layouts -- they
+differ only in *where* a given cell's two bytes land, not in overall size.
+
+**`layout="split"`** -- this is where "split" happens: the char plane
+occupies the first `width*height` bytes (offsets `0` .. `width*height - 1`),
+and the color plane starts immediately after, at absolute offset
+`width*height` (`3840` for 64x60), running to `2*width*height - 1`. Put
+another way, a cell's color byte is always exactly `width*height` bytes
+*after* its char byte, and that fixed split point is the only thing a parser
+needs to know beyond `width`/`height`:
+
+| Screen location (col,row) | Char byte offset (`row*64+col`) | Color byte offset (`+3840`) |
+|---|---|---|
+| (0,0) -- top-left | `0` | `3840` |
+| (63,0) -- end of row 0 | `63` | `3903` |
+| (0,1) -- start of row 1 | `64` | `3904` |
+| (32,30) -- roughly center | `1952` | `5792` |
+| (63,59) -- bottom-right, last cell | `3839` | `7679` |
+
+File size: **7680 bytes**, split point (char plane end / color plane start):
+**offset 3840** (`= width*height`), file end: **offset 7679**.
+
+**`layout="interleaved"`** -- there is no split point; each cell's two bytes
+are adjacent, char first then color, so a cell's byte pair starts at
+`2*(row*64+col)`:
+
+| Screen location (col,row) | Char byte offset (`2*(row*64+col)`) | Color byte offset (`+1`) |
+|---|---|---|
+| (0,0) -- top-left | `0` | `1` |
+| (63,0) -- end of row 0 | `126` | `127` |
+| (0,1) -- start of row 1 | `128` | `129` |
+| (32,30) -- roughly center | `3904` | `3905` |
+| (63,59) -- bottom-right, last cell | `7678` | `7679` |
+
+File size: **7680 bytes** (same total as split), file end: **offset 7679**.
+
+For a non-default document size, substitute `width*height` for `3840` (the
+plane size and split point) and `2*width*height` for `7680` (the total file
+size) throughout.
+
 ### C header (`export_c_header`)
 
 A generated, human-readable `.h` file, not a binary format -- parse it as C
