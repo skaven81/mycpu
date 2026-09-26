@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 // Compare two strings. Returns negative if s1 < s2, positive if s1 > s2, zero if equal.
 extern int8_t strcmp(char *s1, char *s2);
 

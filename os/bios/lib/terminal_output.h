@@ -1,3 +1,5 @@
+#pragma once
+
 extern void printf(char *fmt, ...);
 extern void print(char *str);
 extern void print_raw(char *str);

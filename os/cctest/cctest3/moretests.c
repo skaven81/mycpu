@@ -1,5 +1,6 @@
 #include "types.h"
 #include "terminal_output.h"
+#include "moretests.h"
 
 extern void assert_equal_u8(uint8_t actual, uint8_t expected, const char* test_name);
 

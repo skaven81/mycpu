@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 // Non-blocking read of one byte from the UART receive buffer. Returns
 // 0x00 if the buffer was empty -- use uart_bufsize() first to tell an
 // empty buffer apart from a genuine received 0x00 byte.

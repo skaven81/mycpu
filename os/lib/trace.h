@@ -1,3 +1,5 @@
+#pragma once
+
 extern void trace();
 extern void trace_begin();
 extern void trace_end();

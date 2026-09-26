@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 // Key-release flag bit, in the high byte of kb_readbuf()'s return value.
 #define KB_KEYFLAG_BREAK 0x01
 

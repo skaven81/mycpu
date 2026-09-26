@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 // FAT16 directory entry (32 bytes)
 // On-disk fields are little-endian; the CPU is big-endian.
 // Entries returned by fat16_dirwalk_next() are already parsed to native

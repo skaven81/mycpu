@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 struct fs_handle {
     char path[54];                   // 0x00: current dir path (53 chars + null)
     uint16_t current_dir_cluster;    // 0x36: cluster of current dir (0=root)

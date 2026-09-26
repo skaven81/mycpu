@@ -1,3 +1,8 @@
+#pragma once
+
+#include "types.h"
+#include "fat16_util.h"
+
 // Mount a FAT16 filesystem.
 // ata_id: 0=master, 1=slave
 // start_lo/start_hi: LBA of partition start (usually both 0)

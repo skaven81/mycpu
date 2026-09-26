@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 // Get the nth argument string pointer from the shell's argv array.
 // Input: AL = index n (0-based; 0 = command name).
 // Returns: A = argv[n] string address, or 0x0000 if n >= argc.

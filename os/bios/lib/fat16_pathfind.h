@@ -1,3 +1,9 @@
+#pragma once
+
+#include "types.h"
+#include "fat16_util.h"
+#include "fat16_dirent.h"
+
 // Find a file or directory by path.
 // Supported path formats:
 //   FILENAME.EXT          - current directory

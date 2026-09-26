@@ -1,3 +1,9 @@
+#pragma once
+
+#include "types.h"
+#include "fat16_util.h"
+#include "fat16_dirent.h"
+
 // Context struct for streaming file reads (16 bytes, 1 malloc block).
 // Caller allocates via malloc_blocks(1) and zeroes flags byte before first use.
 // Pass NULL (0x0000) for state when doing one-shot reads.

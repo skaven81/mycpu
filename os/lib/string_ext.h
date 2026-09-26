@@ -1,3 +1,5 @@
+#pragma once
+
 // Concatenate null-terminated strings referenced on the heap into the
 // buffer at a destination address.
 //

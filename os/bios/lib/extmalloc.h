@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 // Allocate a 4 KiB extended memory page.
 // Returns page number (1-255), or 0 if extended memory is full.
 // No inputs. Result byte pushed to heap; handler pops it into return register.

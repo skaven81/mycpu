@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 // Inspect a loaded binary to check if it's a valid ODY executable.
 // Returns 0xff if not ODY; otherwise returns the ODY flag byte.
 extern uint8_t fat16_inspect_ody(void *addr);

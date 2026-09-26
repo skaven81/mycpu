@@ -1,3 +1,7 @@
+#pragma once
+
+#include "types.h"
+
 /* readline flags byte (AH input to :readline) */
 #define RL_ECHO      0x01   /* echo typed characters to the screen */
 #define RL_KEYBOARD  0x02   /* accept input from the physical keyboard */

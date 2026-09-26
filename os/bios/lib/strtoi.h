@@ -1,3 +1,5 @@
+#pragma once
+
 #include "types.h"
 
 // Convert null-terminated string to a 16-bit signed integer.

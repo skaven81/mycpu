@@ -1,3 +1,9 @@
+#pragma once
+
+#include "types.h"
+#include "fat16_util.h"
+#include "fat16_dirent.h"
+
 // Context struct for directory walking (16 bytes, 1 malloc block).
 // Allocated by dirwalk_start, freed by dirwalk_end.
 struct fat16_dirwalk_ctx {

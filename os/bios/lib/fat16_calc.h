@@ -1,3 +1,8 @@
+#pragma once
+
+#include "types.h"
+#include "fat16_util.h"
+
 // Get the next cluster in a file's cluster chain.
 // Returns next cluster number. Special values:
 //   0x0000=free, 0x0001=reserved/ATA error, 0xfff7=bad sector,
