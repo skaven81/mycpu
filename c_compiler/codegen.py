@@ -1594,20 +1594,23 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                         with self._debug_block(f"UnaryOp {node.op}: boolean NOT"):
                             label_wastrue = self._get_label("unarynot_wastrue")
                             label_done = self._get_label("unarynot_done")
+                            # Pointers are 16-bit whatever they point to; typespec.sizeof()
+                            # is the pointee size (1 for void*/char*), so check is_pointer too.
+                            is_word = var.is_pointer or var.is_array or var.typespec.sizeof() == 2
 
                             self.emit(f"ALUOP_FLAGS %{dest_reg}%+%{dest_reg}L%", "Unary boolean NOT")
                             self.emit(f"JNZ {label_wastrue}", "Unary boolean NOT, jump if true")
-                            if var.typespec.sizeof() == 2:
+                            if is_word:
                                 self.emit(f"ALUOP_FLAGS %{dest_reg}%+%{dest_reg}H%", "Unary boolean NOT")
                                 self.emit(f"JNZ {label_wastrue}", "Unary boolean NOT, jump if true")
-                            if var.typespec.sizeof() == 2:
+                            if is_word:
                                 self.emit(f"LDI_{dest_reg} 1", "Unary boolan NOT, is false: return true")
                             else:
                                 self.emit(f"LDI_{dest_reg}L 1", "Unary boolan NOT, is false: return true")
                             self.emit(f"JMP {label_done}", "Unary boolean NOT: done")
 
                             self.emit(f"{label_wastrue}")
-                            if var.typespec.sizeof() == 2:
+                            if is_word:
                                 self.emit(f"LDI_{dest_reg} 0", "Unary boolan NOT, is true: return false")
                             else:
                                 self.emit(f"LDI_{dest_reg}L 0", "Unary boolan NOT, is true: return false")
