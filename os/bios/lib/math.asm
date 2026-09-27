@@ -10,8 +10,8 @@
 # ----------------------
 # 0b0000 0000  xor
 # 0b1000 0000  zero
-# 0b0xxx xxxx  shift+xor
-# 0b1xxx xxxx  shift
+# 0b0xxx xxxx  shift
+# 0b1xxx xxxx  shift+xor
 
 VAR global byte $rand_seed
 ALUOP_PUSH %A%+%AL%
@@ -30,9 +30,9 @@ ALUOP_FLAGS %A&B%+%AL%+%BL%
 JEQ .rand8_shift_no_xor     # If seed is 0x80 then shift but don't do the xor
 
 ALUOP_AL %A<<1%+%AL%        # shift seed left
-JO .rand8_ret               # 0b1xxxxxxx case: shift but don't xor
+JNO .rand8_ret              # 0b0xxxxxxx case: shift but don't xor
 
-.rand8_do_xor               # 0b0xxxxxxx or 0x00 case: shift and xor
+.rand8_do_xor               # 0b1xxxxxxx or 0x00 case: shift and xor
 LDI_BL 0x1d                 # see link above for other valid values
 ALUOP_AL %AxB%+%AL%+%BL%    # AL xor BL -> AL
 JMP .rand8_ret

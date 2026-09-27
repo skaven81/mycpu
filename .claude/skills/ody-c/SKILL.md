@@ -147,6 +147,7 @@ forward-declared struct support, so a bare `struct X *` fails with
 | `ata_identify_string.h` | `ata_identify_string(uint8_t drive_id)` -> `char*` -- full "model+firmware+capacity" ATA drive identity string, malloc'd (caller must `free()`) |
 | `uart.h` | `uart_readbuf()` -> byte (0x00 if empty), `uart_bufsize()` -> byte, `uart_sendchar(uint8_t)` (blocking) |
 | `keyboard.h` | `kb_readbuf()` -> word (AH=key flags, AL=char, 0x0000 if empty), `KB_KEYFLAG_BREAK` |
+| `rand.h` | `rand8()` -> byte PRNG (period 256, every value once), `rand_seed` (extern `$rand_seed`, not zeroed at load -- seed it) |
 
 `trace.h`, `fat16_print.h`, `ata_identify_string.h`, and
 `fat16_dirent_string.h` (declares `fat16_dirent_string(struct fat16_dirent
@@ -158,7 +159,7 @@ and calling convention work identically to any other BIOS header -- see
 skill **ody-asm**, "Where code should live" for the eviction/symlink
 mechanics.
 
-**No header exists** for math.asm, memcpy.asm, memfill.asm, timer.asm,
+**No header exists** for the rest of math.asm (only `:rand8` has one, `rand.h`), memcpy.asm, memfill.asm, timer.asm,
 heap.asm, system.asm -- these do NOT follow the C calling convention and
 have no `custom_FuncCall_*` handler either; do not declare them `extern`
 yourself. The same logic applies to a split-library file evicted with a

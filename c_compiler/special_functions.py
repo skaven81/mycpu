@@ -481,6 +481,24 @@ class SpecialFunctions():
             self.emit("POP_AL", "Restore A")
             self.emit("POP_AH", "Restore A")
 
+    # ---- Random numbers (heap-return) ----
+
+    def custom_FuncCall_rand8(self, node, mode, func, dest_reg='A', **kwargs):
+        # ASM: no inputs -> CALL :rand8 -> new 8-bit value pushed to the heap
+        #      (also stored back to $rand_seed).  :rand8 preserves A, B and C.
+        # C: uint8_t rand8(void)
+        if dest_reg != 'A':
+            self.emit("ALUOP_PUSH %A%+%AH%", "Save A (clobbered by return value)")
+            self.emit("ALUOP_PUSH %A%+%AL%", "Save A (clobbered by return value)")
+        self.emit(f"CALL {func.asm_name()}", "Advance PRNG; new value pushed to heap")
+        self.emit("CALL :heap_pop_AL", "Pop random byte into AL")
+        self.emit("LDI_AH 0x00", "Clear AH (byte return)")
+        if dest_reg != 'A':
+            self.emit(f"ALUOP_{dest_reg}H %A%+%AH%", f"Copy result hi to {dest_reg}H")
+            self.emit(f"ALUOP_{dest_reg}L %A%+%AL%", f"Copy result lo to {dest_reg}L")
+            self.emit("POP_AL", "Restore A")
+            self.emit("POP_AH", "Restore A")
+
     # ---- String functions (register-based) ----
 
     def custom_FuncCall_strcmp(self, node, mode, func, dest_reg='A', **kwargs):
