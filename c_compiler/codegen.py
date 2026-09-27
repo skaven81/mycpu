@@ -1220,7 +1220,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             elif node.type in ('int', 'char',) and mode == 'generate_rvalue':
                 parsed_value = ast.literal_eval(node.value)
                 if node.type == 'char':
-                    parsed_value = f"'{parsed_value}'"
+                    # Plain printable chars stay readable as 'x'; anything the
+                    # assembler can't take verbatim (control chars like '\n',
+                    # quote, backslash, non-ASCII) is emitted as hex.
+                    if parsed_value.isprintable() and parsed_value.isascii() and parsed_value not in ("'", "\\"):
+                        parsed_value = f"'{parsed_value}'"
+                    else:
+                        parsed_value = f"0x{ord(parsed_value):02x}"
                 if not dest_var:
                     ret_var = Variable(typespec=TypeSpec(node.type, node.type), name='const', qualifiers=['const'], is_virtual=True)
                     if ret_var.typespec.sizeof() == 1:
