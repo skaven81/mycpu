@@ -8,7 +8,7 @@ include ../config.mk
 INSTALL_SUBDIR := TETRIS
 
 # Asset files that ride along with the built ODY onto the SD card.
-ASSET_FILES := $(wildcard *.BIN) $(wildcard *.ANS)
+ASSET_FILES := $(wildcard *.BIN) $(wildcard *.ANS) $(wildcard *.MUS)
 
 # Adds a prerequisite to rules.mk's sdcard target (no recipe here, so the
 # original install recipe for $(FILENAME) still runs) that also copies
