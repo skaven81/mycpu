@@ -39,7 +39,8 @@ warnings of any kind, so anything suspicious must be caught by reading.
   `void f(struct P p)` fail.
 - **Structs must be defined at file scope** (no local struct types). Max 2
   array dimensions.
-- **No `long`, `float`, `double`, `bool`** (use `uint8_t` with 0/1), no libc
+- **No `long`, `float`, `double`, no native `_Bool`** (`types.h` provides
+  `typedef uint8_t bool;` -- use it with 0/1), no libc
   headers (`#include <stdio.h>` is a parse error).
 - **`static` local variables require an explicit initializer.**
 - Calling an undeclared function is an error (no implicit declarations), but
@@ -116,7 +117,7 @@ re-initialized on every call to their function, not once).
 `os/lib` header is self-sufficient**: `#pragma once` plus `#include`s of
 whatever it depends on, so include order doesn't matter. `types.h` provides
 `uint8_t/uint16_t/int8_t/int16_t`, `struct uint32 {hi,lo}`, and
-`true/false/NULL` -- there is NO `bool`.
+`true/false/NULL`, and `bool` (a `uint8_t` typedef).
 
 **Headers you write (including program-local ones) must follow the same
 rule.** A header that uses `uint16_t` must itself `#include <types.h>`;

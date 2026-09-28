@@ -425,6 +425,11 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         if mode == 'codegen':
             done_label = self._get_label("switch_end")
             cond_var = None
+            # A switch nested in a loop inherits the loop's break_label; drop
+            # it so `break` in a case exits the switch. continue_label passes
+            # through untouched (continue targets the enclosing loop, and the
+            # switch pushes nothing that would need unwinding).
+            kwargs.pop('break_label', None)
             with self._debug_block("Switch"):
                 with self._debug_block("Switch: Load case statements and assign labels"):
                     if type(node.stmt) is not c_ast.Compound:
