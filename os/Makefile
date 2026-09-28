@@ -2,8 +2,8 @@
 
 include config.mk
 
-.PHONY: all bios system util cctest termtest
-all: bios system util cctest termtest
+.PHONY: all bios system util cctest termtest tetris
+all: bios system util cctest termtest tetris
 
 bios:
 	$(Q)$(MAKE) -C $(BIOS_DIR)
