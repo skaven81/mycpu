@@ -18,6 +18,8 @@ extern void uart_rx_disable(void);
 /* BIOS direct-exec IPC fields -- see os/bios/80-run_system_ody.asm and
    os/README-bios-exec.md.  $exec_argc/$exec_argv_ptr are shared with the
    dirent-based chaining path. */
+#pragma asmvar exec_direct_pending exec_direct_program_ptr exec_direct_entry_ptr
+#pragma asmvar exec_direct_flags exec_argc exec_argv_ptr
 extern uint8_t exec_direct_pending;
 extern uint16_t exec_direct_program_ptr;
 extern uint16_t exec_direct_entry_ptr;

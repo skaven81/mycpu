@@ -1,0 +1,5 @@
+# Generated from main.c and globals.c by c_compiler (asmvar_helpers.asm is hand-written)
+main.asm
+globals.asm
+# Compiled binary
+*.ODY

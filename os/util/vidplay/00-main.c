@@ -15,6 +15,10 @@
 #define MAX_FRAMES 2048
 #define BUFFER_SIZE (uint8_t)250
 
+// VARs declared in the vidplay assembly sources
+#pragma asmvar ring_read_page ring_write_page frames_in_buffer total_frames_remaining
+#pragma asmvar frame_count playback_frame frame_segments color_mode loop_mode
+#pragma asmvar frames_per_loop frames_until_wrap loops_remaining
 extern uint8_t ring_read_page;
 extern uint8_t ring_write_page;
 extern uint8_t frames_in_buffer;

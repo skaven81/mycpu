@@ -10,4 +10,5 @@ extern uint8_t rand8(void);
 // PRNG state ($rand_seed). VAR globals are not zeroed at load, so it holds
 // whatever was left behind; assign it for a repeatable sequence, or from
 // something variable (e.g. a keypress timing counter) for a different one.
+#pragma asmvar rand_seed
 extern uint8_t rand_seed;

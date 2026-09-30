@@ -426,6 +426,10 @@ for input_file, line_num, line in concat_source:
 
     # data: assign a label and add some data to the assembly list
     if 'data' in match:
+        if match['data'][0] in labels:
+            raise SyntaxError(f"In {input_file} line {line_num}: label {match['data'][0]} is already defined")
+        if match['data'][0] in ext_labels:
+            raise SyntaxError(f"In {input_file} line {line_num}: label {match['data'][0]} is already defined in external labels")
         labels[match['data'][0]] = len(assembly)
         label_addrs[len(assembly)] = match['data'][0]
         logging.debug("{:16.16s} {:3d}: Label {} => 0x{:04x} => {}".format(input_file, line_num, match['data'][0], len(assembly), match['data'][1]))

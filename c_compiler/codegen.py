@@ -60,6 +60,25 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         """Get the assembly prefix for static/global variables"""
         return '$' if self.context.static_type == 'asm_var' else '.'
 
+    def _var_symbol(self, var):
+        """
+        Full assembler symbol (prefix included) for a global or static local var.
+
+        ODY mode:  static global / static local -> .var_x (file-scoped label)
+                   global                       -> :var_x (program-wide label)
+                   extern                       -> :var_x, or $x if named in `#pragma asmvar`
+        ROM mode:  everything is a VAR ($var_x), and extern is always $x
+        """
+        if var.storage_class == 'extern':
+            if self.context.static_type == 'asm_var' or var.name in self.context.asmvars:
+                return f"${var.name}"
+            return f":{var.padded_name()}"
+        if self.context.static_type == 'asm_var':
+            return f"${var.padded_name()}"
+        if var.kind == 'global' and var.storage_class != 'static':
+            return f":{var.padded_name()}"
+        return f".{var.padded_name()}"
+
     @contextmanager
     def _debug_block(self, name: str, min_verbose: int = 2):
         """Emit debug comments for begin/end of operation block"""
@@ -123,7 +142,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
     def visit_FileAST(self, node, mode, **kwargs):
         if mode == 'type_collection':
             for c in node:
-                if type(c) is c_ast.Typedef:
+                if type(c) is c_ast.Pragma:
+                    self.visit(c, mode=mode, **kwargs)
+                elif type(c) is c_ast.Typedef:
                     self.visit(c, mode=mode, **kwargs)
                 elif type(c) is c_ast.Decl and type(c.type) is c_ast.Struct:
                     # insert a fake Typedef node so non-typedef structs get
@@ -184,7 +205,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             if self._get_static_prefix() == '$':
                 with self._debug_block("Zero-fill uninitialized globals (BIOS target)"):
                     for c in node:
-                        if type(c) is c_ast.Decl and c.init is None and type(c.type) not in (c_ast.Struct, c_ast.FuncDecl):
+                        # skip extern declarations: in the header pattern (extern, then the definition) the
+                        # extern node resolves to the defined var and would clobber its initializer
+                        if type(c) is c_ast.Decl and c.init is None and 'extern' not in c.storage and type(c.type) not in (c_ast.Struct, c_ast.FuncDecl):
                             var = self.visit(c, mode='return_var')
                             if var and var.kind == 'global' and var.storage_class != 'extern':
                                 with self._debug_block(f"Zero-fill global {var.name}"):
@@ -222,30 +245,46 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             with self._debug_block("Global vars"):
                 for var in self.context.vartable.get_all_globals():
                     if var.storage_class == 'extern':
-                        self.emit_verbose(f"External global declaration: assuming ${var.padded_name()} exists")
+                        self.emit_verbose(f"External global declaration: assuming {self._var_symbol(var)} exists")
                     elif prefix == '$':
                         if var.sizeof() == 1:
-                            self.emit(f"VAR global byte ${var.padded_name()}")
+                            self.emit(f"VAR global byte {self._var_symbol(var)}")
                         elif var.sizeof() == 2:
-                            self.emit(f"VAR global word ${var.padded_name()}")
+                            self.emit(f"VAR global word {self._var_symbol(var)}")
                         else:
-                            self.emit(f"VAR global {var.typespec.sizeof()} ${var.padded_name()}")
+                            self.emit(f"VAR global {var.typespec.sizeof()} {self._var_symbol(var)}")
                     else:
-                        self.emit(f'.{var.padded_name()} "' + '\\0'*var.sizeof() + '"')
+                        self.emit(f'{self._var_symbol(var)} "' + '\\0'*var.sizeof() + '"')
             # Generate data block: static local vars
             with self._debug_block("Static local vars"):
                 for var in self.context.vartable.get_all_local_statics():
                     if prefix == '$':
                         if var.sizeof() == 1:
-                            self.emit(f"VAR global byte ${var.padded_name()}")
+                            self.emit(f"VAR global byte {self._var_symbol(var)}")
                         elif var.sizeof() == 2:
-                            self.emit(f"VAR global word ${var.padded_name()}")
+                            self.emit(f"VAR global word {self._var_symbol(var)}")
                         else:
-                            self.emit(f"VAR global {var.sizeof()} ${var.padded_name()}")
+                            self.emit(f"VAR global {var.sizeof()} {self._var_symbol(var)}")
                     else:
-                        self.emit(f'.{var.padded_name()} "' + '\\0'*var.sizeof() + '"')
+                        self.emit(f'{self._var_symbol(var)} "' + '\\0'*var.sizeof() + '"')
         else:
             raise NotImplementedError(f"visit_FileAST mode {mode} not yet supported")
+
+    def visit_Pragma(self, node, mode, **kwargs):
+        """
+        `#pragma asmvar name [name ...]` marks extern vars as assembler VARs ($name)
+        rather than C globals (:var_name).  File-wide, so it may appear anywhere at
+        file scope.  Other pragmas are ignored, as in gcc.
+        """
+        words = node.string.split()
+        if not words or words[0] != 'asmvar':
+            return
+        if self.context.vartable.get_scope_depth() != 0:
+            raise SyntaxError(f"#pragma asmvar must be at file scope, not inside a function: #pragma {node.string}")
+        if mode == 'type_collection':
+            if len(words) < 2:
+                raise SyntaxError("#pragma asmvar requires at least one variable name")
+            self.context.asmvars.update(words[1:])
 
     def visit_If(self, node, mode, **kwargs):
         if mode == 'codegen':
@@ -382,6 +421,9 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
             true_label = self._get_label("for_cond_true")
             sub_true_label = self._get_label("for_cond_sub_true")
             done_label = self._get_label("for_end")
+            # A declaration in the init clause is scoped to the loop (C99), so
+            # sequential `for (int i ...)` loops each get their own variable
+            self.context.vartable.push_scope()
             with self._debug_block("For loop"):
                 with self._debug_block("For loop init"):
                     self.visit(node.init, mode='codegen', **kwargs)
@@ -417,7 +459,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                     self.visit(node.next, mode='codegen', **kwargs)
                     self.emit(f"JMP {cond_label}", "Next for loop iteration")
                 self.emit(f"{done_label}", "End for loop")
-            pass
+            self.context.vartable.pop_scope()
         else:
             raise NotImplementedError(f"visit_For mode {mode} not yet supported")
 
@@ -617,7 +659,77 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
         else:
             raise NotImplementedError(f"visit_StructRef mode {mode} not yet supported")
 
-    def visit_Decl(self, node, mode, var_kind=None, register_var=True, generate_init=False, **kwargs):
+    def _check_static_init(self, init, var_name, addr_ctx=False):
+        """
+        Globals and static locals are initialized by each file's
+        __global_local_init__, and those run one file after another at startup.
+        An initializer that reads another variable's *value* could see it before
+        its own file initialized it, so allow only constants and addresses
+        (`&x`, array and function names, string literals), as C requires.
+        """
+        t = type(init)
+        if t is c_ast.ID:
+            if addr_ctx or self.context.funcreg.lookup(init.name):
+                return
+            var = self.context.vartable.lookup(init.name)
+            if var and not (var.is_array and not var.is_pointer):
+                hint = f" (&{init.name})" if var.kind == 'global' else ""
+                raise SyntaxError(f"Initializer of '{var_name}' reads the value of '{init.name}'; "
+                                  f"global and static initializers may only use constants and addresses{hint}")
+        elif t is c_ast.FuncCall:
+            raise SyntaxError(f"Initializer of '{var_name}' calls a function; global and static initializers must be constant")
+        elif t is c_ast.UnaryOp and init.op == 'sizeof':
+            return
+        elif t is c_ast.UnaryOp and init.op == '&':
+            self._check_static_init(init.expr, var_name, addr_ctx=True)
+        elif t is c_ast.StructRef:
+            # s.member keeps address context; p->member reads p
+            self._check_static_init(init.name, var_name, addr_ctx=addr_ctx and init.type == '.')
+        elif t is c_ast.ArrayRef:
+            # arr[i] reads an element; only &arr[i] is an address
+            if not addr_ctx:
+                raise SyntaxError(f"Initializer of '{var_name}' reads an array element; "
+                                  f"global and static initializers may only use constants and addresses")
+            self._check_static_init(init.name, var_name, addr_ctx=False)
+            self._check_static_init(init.subscript, var_name)
+        elif t is c_ast.UnaryOp and init.op == '*':
+            raise SyntaxError(f"Initializer of '{var_name}' dereferences a pointer; "
+                              f"global and static initializers may only use constants and addresses")
+        elif t is c_ast.Cast:
+            self._check_static_init(init.expr, var_name, addr_ctx=addr_ctx)
+        else:
+            for child in init:
+                self._check_static_init(child, var_name)
+
+    def _merge_global_redecl(self, existing, candidate, node):
+        """
+        Reconcile a second file-scope declaration of an existing global (e.g. the
+        header pattern: `extern int x;` from a header, then `int x = 0;`).  The
+        definition always wins; two definitions or mismatched types are errors.
+        """
+        if existing.storage_class != 'extern' and candidate.storage_class != 'extern':
+            raise SyntaxError(f"Global variable '{node.name}' is defined more than once")
+        same_type = (existing.typespec.name == candidate.typespec.name
+                     and existing.pointer_depth == candidate.pointer_depth
+                     and existing.is_array == candidate.is_array
+                     and (not existing.is_array or None in existing.array_dims or None in candidate.array_dims
+                          or existing.array_dims == candidate.array_dims))
+        if not same_type:
+            raise SyntaxError(f"Conflicting declarations of global '{node.name}': {existing.friendly_name()} vs {candidate.friendly_name()}")
+        if existing.storage_class == 'extern' and candidate.storage_class != 'extern':
+            if candidate.storage_class == 'static':
+                raise SyntaxError(f"Global '{node.name}' is declared extern and then defined static")
+            # Upgrade the extern in place: code already emitted for it used :var_x, which is
+            # exactly the label the definition will get
+            existing.storage_class = candidate.storage_class
+            existing.init_node = candidate.init_node
+            existing.array_dims = candidate.array_dims
+            existing.qualifiers = candidate.qualifiers
+            existing.decl_node = node
+            self.emit_verbose(f"Global {existing.friendly_name()}: extern declaration resolved to its definition")
+        return existing
+
+    def visit_Decl(self, node, mode, var_kind=None, register_var=True, generate_init=False, redecl=False, **kwargs):
         if mode in ('return_typespec', 'type_collection',):
             return self.visit(node.type, mode=mode, **kwargs)
         elif mode == 'function_collection':
@@ -632,10 +744,21 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 self.context.funcreg.register(node.name, new_funcdef)
                 return
         elif mode == 'return_var':
-            # Don't redo the work of generating the variable if the
-            # identifier already exists in the table
-            var = self.context.vartable.lookup(node.name)
+            # Don't redo the work of generating the variable if this declaration
+            # was already registered.  Only the scope it lands in counts: a local
+            # that shadows a global (or an extern from a header) is a new variable.
+            # Struct members and params are never registered via this path.
+            var = None
+            if not redecl and var_kind not in ('struct_member', 'param'):
+                var = self.context.vartable.lookup_declared_here(node.name)
             if var:
+                if (var.kind == 'global' and self.context.vartable.get_scope_depth() == 0
+                        and var.decl_node is not None and var.decl_node is not node
+                        and type(node.type) is not c_ast.FuncDecl):
+                    candidate = self.visit(node, mode='return_var', register_var=False, redecl=True)
+                    return self._merge_global_redecl(var, candidate, node)
+                if var.kind == 'local' and var.decl_node is not None and var.decl_node is not node:
+                    raise SyntaxError(f"Local variable '{node.name}' is declared twice in the same scope")
                 return var
             if type(node.type) is c_ast.FuncDecl:
                 raise ValueError(f"return_var for FuncDecl type Decl node doesn't make sense")
@@ -665,7 +788,13 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 elif self.context.vartable.get_scope_depth() == 0:
                     # global var declaration
                     new_var.kind = 'global'
+                    new_var.decl_node = node
+                    if new_var.storage_class == 'extern' and node.init:
+                        raise SyntaxError(f"extern declaration of '{node.name}' cannot have an initializer; define it without extern")
+                    if new_var.storage_class != 'extern' and node.name in self.context.asmvars:
+                        raise SyntaxError(f"'{node.name}' is named in #pragma asmvar but is defined here, not declared extern")
                     if node.init:
+                        self._check_static_init(node.init, node.name)
                         new_var.init_node = node.init
                     if register_var:
                         self.context.vartable.add(new_var)
@@ -674,8 +803,10 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
                 else:
                     # local var declaration
                     new_var.kind = 'local'
+                    new_var.decl_node = node
                     if register_var:
                         if node.init and new_var.storage_class == 'static':
+                            self._check_static_init(node.init, node.name)
                             new_var.init_node = node.init
                         self.context.vartable.add(new_var) # registration sets the offset
                         new_var = self.context.vartable.lookup(new_var.name)
@@ -2164,11 +2295,7 @@ class CodeGenerator(c_ast.NodeVisitor, SpecialFunctions):
 
         # otherwise, we're dealing with a variable
         if var.kind == 'global' or (var.kind == 'local' and var.storage_class == 'static'):
-            if var.kind == 'global' and var.storage_class == 'extern':
-                prefix = '$'
-            else:
-                prefix = self._get_static_prefix()
-            self.emit(f"LDI_{dest_reg} {prefix}{var.padded_name()}", f"Load base address of {var.name} into {dest_reg}")
+            self.emit(f"LDI_{dest_reg} {self._var_symbol(var)}", f"Load base address of {var.name} into {dest_reg}")
         else:
             other_reg = 'A' if dest_reg == 'B' else 'B'
             # The naiive approach loading the offset into a register and calling ALUOP16O

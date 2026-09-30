@@ -26,6 +26,7 @@ struct fs_handle {
     uint8_t _reserved[11];           // 0x75: pad to 128 bytes
 };
 
+#pragma asmvar drive_0_fs_handle drive_1_fs_handle
 extern struct fs_handle drive_0_fs_handle;
 extern struct fs_handle drive_1_fs_handle;
 

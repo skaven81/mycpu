@@ -7,7 +7,7 @@ import sys
 import argparse
 from pycparser import parse_file
 from pprint import pprint
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typeregistry import TypeRegistry
 from functionregistry import FunctionRegistry
 from literalregistry import LiteralRegistry
@@ -30,6 +30,8 @@ class CompilerContext:
     use_store_helpers: bool = True   # 16-bit store CALL helpers
     use_struct_self_incr: bool = True  # struct member self-increment for offset 1-2
     use_struct_helpers: bool = False  # struct member CALL helpers for offset 3+
+    # Names from `#pragma asmvar`: extern vars that are assembler VARs ($name), not C globals
+    asmvars: set = field(default_factory=set)
 
 def compile(filename, output, use_cpp=True, cpp_args="", static_type='inline', jmp_to_main=True, verbose=0, opt_settings=None):
     """
@@ -187,7 +189,13 @@ def main():
     if args.no_struct_self_incr:
         opt_settings['use_struct_self_incr'] = False
 
-    compile(args.filename, output=output, use_cpp=use_cpp, cpp_args=args.cpp_args, static_type=static_type, jmp_to_main=jmp_to_main, verbose=args.verbose if args.verbose else 0, opt_settings=opt_settings)
+    # Close the output explicitly: relying on interpreter shutdown to flush it
+    # is not guaranteed, and under Python 3.14 it silently produced empty .asm files
+    try:
+        compile(args.filename, output=output, use_cpp=use_cpp, cpp_args=args.cpp_args, static_type=static_type, jmp_to_main=jmp_to_main, verbose=args.verbose if args.verbose else 0, opt_settings=opt_settings)
+    finally:
+        if output is not sys.stdout:
+            output.close()
 
 if __name__ == "__main__":
     main()

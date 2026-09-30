@@ -82,6 +82,16 @@ class VariableTable:
         
         return None
 
+    def lookup_declared_here(self, name) -> Variable:
+        """
+        Look up a name only in the scope a new declaration would land in (the
+        innermost scope, or globals at file scope).  Used when registering a
+        declaration, so a local that shadows a global gets its own storage.
+        """
+        if not self.scopes:
+            return self.globals.get(name)
+        return self.scopes[-1].get(name)
+
     def get_all_globals(self) -> List[Variable]:
         """Get all global variables"""
         return list(self.globals.values())

@@ -17,6 +17,7 @@
 #include "string.h"
 #include "strtoi.h"
 
+#pragma asmvar term_flags
 extern uint8_t term_flags;
 
 static void print_usage(void);

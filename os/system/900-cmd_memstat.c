@@ -6,6 +6,8 @@
 #include "cursor.h"
 
 // BIOS global variables -- accessed directly via $variable name mapping
+#pragma asmvar malloc_range_start malloc_segments exec_loop_program_ptr extmalloc_ledger
+#pragma asmvar term_flags term_current_color crsr_addr_color
 extern uint16_t malloc_range_start;
 extern uint8_t  malloc_segments;
 extern uint16_t exec_loop_program_ptr;

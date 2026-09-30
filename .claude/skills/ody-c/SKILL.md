@@ -91,7 +91,8 @@ warnings of any kind, so anything suspicious must be caught by reading.
 
 ## What works (use freely)
 
-`if/else`, `while`, `do/while`, `for` (with condition; C99 init-decl ok),
+`if/else`, `while`, `do/while`, `for` (with condition; C99 init-decl ok and
+scoped to the loop, so sequential `for (uint8_t i ...)` loops are separate),
 `switch/case/default` with fall-through (body may contain ONLY case/default
 at its top level; no statements before the first case; no duplicate cases),
 `break`, `continue`, comma operator, recursion (hardware stack is 256 bytes
@@ -103,13 +104,57 @@ struct typedefs), 2D arrays, `sizeof` (variables, types, members), all of
 `NULL` call arguments (`f(NULL, (void *)0xD000)` -- compiles to a bare
 `LDI_A`, no temporary local needed), pointer arithmetic (scaled
 by pointee size; `void *` stride 1), signed/unsigned comparison follows C
-promotion rules, `extern` globals map to assembly `$name` variables.
+promotion rules, `extern` globals shared across C files or with assembly VARs
+(see "Globals across files" below).
 
 **Global and static initializers work** -- scalars, arrays, nested structs,
 inferred dimensions (`uint8_t t[] = {1,2,3};`), string-array init
 (`char b[8] = "hi";` zero-fills the tail). They are emitted into a
-`.__global_local_init__` routine called at program start (static locals:
-re-initialized on every call to their function, not once).
+`.__global_local_init__` routine called once at program start -- static
+locals included, so they keep their value across calls, as in C.
+**Global and static initializers must be constant**: numbers, string
+literals, `sizeof`, and addresses (`&x`, `&arr[2]`, `&s.member`, array and
+function names). Reading a variable's value (`int b = a;`, `arr[1]`, `*p`,
+`s.member`, `p->m`) or calling a function is a compile error, because each
+file's init routine runs one after another at startup, so another file's
+global may not be initialized yet.
+
+**Scoping follows C**: a local (or nested-block local) with the same name as
+a global -- including an `extern` pulled in by a header -- is a separate
+variable; declaring the same name twice in one scope is an error.
+
+### Globals across files, `extern`, and `#pragma asmvar` (ODY builds)
+
+Storage class decides the assembler symbol:
+
+| C declaration | Emitted as | Visible to |
+|---|---|---|
+| `static int x = 1;` (file scope) | `.var_x` | this file only |
+| `static int x = 1;` inside `f()` | `.var_f_x` | this file only |
+| `int x = 1;` (file scope) | `:var_x` | every file in the ODY |
+| `extern int x;` | `:var_x` | refers to a C global defined in another file |
+| `#pragma asmvar x` + `extern int x;` | `$x` | refers to an assembler `VAR global` (BIOS or this program's `.asm`) |
+
+- **Share C globals the standard way:** define once (`int score = 0;` in one
+  `.c`), declare `extern int score;` in a header everyone includes. The
+  defining file may include that header too -- extern-then-definition in one
+  file is merged. Two definitions of one name across files -> assembler
+  `label :var_x is already defined`; in one file -> compiler error.
+- **`extern` to an assembler VAR needs `#pragma asmvar name [name ...]`**
+  at file scope (anywhere in the file, order-independent; one line may list
+  several names). BIOS headers that expose VARs (`rand.h`, `fat16_util.h`)
+  already carry the pragma, so including them is enough. Without the pragma
+  the extern emits `:var_x` and the build fails with an unresolved label --
+  never silently wrong. gcc ignores the pragma, so host-side tests are fine.
+- `extern` declarations cannot have initializers, cannot be followed by a
+  `static` definition of the same name, and must match the definition's
+  type. `extern` arrays need an explicit size (`extern uint8_t t[4];`;
+  `t[]` is rejected).
+- Functions follow the same rule without any pragma: non-`static` functions
+  are `:name`, `static` ones `.name`.
+- `--target-rom` (BIOS) builds are different: all storage is `$var_x` VARs,
+  `static` is not file-scoped there, and `extern` is always `$x` (the
+  pragma is a no-op).
 
 ## BIOS headers (`os/bios/lib/*.h`)
 
@@ -148,7 +193,7 @@ forward-declared struct support, so a bare `struct X *` fails with
 | `ata_identify_string.h` | `ata_identify_string(uint8_t drive_id)` -> `char*` -- full "model+firmware+capacity" ATA drive identity string, malloc'd (caller must `free()`) |
 | `uart.h` | `uart_readbuf()` -> byte (0x00 if empty), `uart_bufsize()` -> byte, `uart_sendchar(uint8_t)` (blocking) |
 | `keyboard.h` | `kb_readbuf()` -> word (AH=key flags, AL=char, 0x0000 if empty), `KB_KEYFLAG_BREAK` |
-| `rand.h` | `rand8()` -> byte PRNG (period 256, every value once), `rand_seed` (extern `$rand_seed`, not zeroed at load -- seed it) |
+| `rand.h` | `rand8()` -> byte PRNG (period 256, every value once), `rand_seed` (extern `$rand_seed` via `#pragma asmvar` in the header, not zeroed at load -- seed it) |
 
 `trace.h`, `fat16_print.h`, `ata_identify_string.h`, and
 `fat16_dirent_string.h` (declares `fat16_dirent_string(struct fat16_dirent
@@ -284,7 +329,10 @@ static void show(struct P *p) {
 ```
 
 Mixing assembly: put a `.asm` alongside, export `:label` functions with the
-standard heap convention, declare them `extern` in C.
+standard heap convention, declare them `extern` in C. To share data, define
+`:var_name "\0\0"` in the `.asm` and declare a plain `extern uint16_t name;`
+in C (a C global is likewise reachable from assembly as `:var_name`). Only
+existing `VAR global $name` storage needs `#pragma asmvar`.
 
 ## Dividing work between C and assembly
 
@@ -302,8 +350,9 @@ code -- there is no optimizer. The house pattern:
   handler). ISRs are always hand-written assembly.
 
 Data placement: in ODY builds the compiler emits globals/statics as data
-blocks INSIDE the binary (localized, no address collisions -- this is why
-file-scope statics are the recommended cheap storage). Only `--target-rom`
+blocks INSIDE the binary (statics are `.var_*` file-localized labels,
+non-static globals are program-wide `:var_*` labels -- both are fixed
+addresses, which is why they are the recommended cheap storage). Only `--target-rom`
 (BIOS) builds use `VAR global` pool addresses. For large state, consider an
 extended-memory page: `extmalloc()` once, then access variables at constant
 offsets via pointer casts (`*(uint8_t *)0xD000` etc.) -- no malloc or
@@ -346,6 +395,17 @@ exception type:
   file's `.asm` is a truncated leftover of a failed compile (kept by
   `KEEP_FAILED=1`, or from before `.DELETE_ON_ERROR`). Delete it / `make
   clean` and rebuild to see the real compiler error.
+- **Assembler** `Label :var_x unresolved` -> an `extern x` with no C
+  definition anywhere in the ODY. If `x` is an assembler/BIOS VAR, add
+  `#pragma asmvar x`. Conversely `undefined variable $x` means the pragma
+  names something no `.asm`/BIOS declares as a VAR
+- `SyntaxError: ... named in #pragma asmvar but is defined here` -> the
+  pragma is only for `extern`s; remove it or drop the definition
+- `SyntaxError: Initializer of 'x' reads the value of 'y'` (or reads an
+  array element / dereferences / calls a function) -> global or static
+  initializer isn't constant; take `&y` or assign it at runtime in `main`
+- `SyntaxError: Local variable 'x' is declared twice in the same scope` ->
+  rename one, or move it into its own `{ }` block
 - `AttributeError: 'NoneType' ...` with no source coord -> an edge case like
   `for(;;)` or a string-pointer-array initializer
 
@@ -377,8 +437,8 @@ size reduction on `900-cmd_memstat.c` came from these, in impact order:
 10. **Delete dead variables** (no warnings will tell you).
 11. **Aggregate-initialized lookup tables**: declare constant tables as
     `static` arrays with initializers -- works at file scope OR function
-    scope (function-scope static arrays re-run their MEMCPY4 init on every
-    call, so file scope is better for hot functions).
+    scope; either way the MEMCPY4 init runs once at program start, not per
+    call, so function scope costs nothing extra in hot functions.
 12. **Table lookup instead of if/else-if dispatch chains** (shift + index).
 13. **Exploit uint8_t wraparound for 256-iteration loops**:
     `do { ... } while (++counter);` needs no comparison at all.

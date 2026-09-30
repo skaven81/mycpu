@@ -333,6 +333,15 @@ build) for tight loops, ISRs, and anything cycle- or size-critical. The
 compiler's output is verbose and inefficient -- see skill **ody-c** for
 the split pattern.
 
+**Sharing data with C (ODY builds)**: a non-`static` C global `x` is the
+program-wide label `:var_x` (e.g. `LDI_C :var_score`); `static` globals are
+`.var_x` in the C file's own namespace and unreachable from assembly. To
+expose assembler data to C, define it as a label named the same way,
+`:var_name "\0\0"`, and C reaches it with a plain `extern uint16_t name;`.
+(A `VAR global $name` also works, but the C side then needs
+`#pragma asmvar name`; keep VARs for BIOS code.) Words are big-endian
+(`:var_name` = high byte, `:var_name+1` = low byte).
+
 ## Where data should live
 
 All of these are the same speed (plain main-memory access) -- choose by
@@ -340,6 +349,7 @@ lifetime and safety, not speed:
 
 - **Label data segments in the ODY** (see the VAR section above): the
   default for program globals. Localized, no collisions, zero overhead.
+  (C-compiled globals land here too: `:var_x`, or `.var_x` if `static`.)
 - **Extended memory pages (0xD000/0xE000 windows)**: just as fast as main
   memory, and often the cheapest way to hold lots of state: `:extmalloc` a
   page once, then address every variable as a CONSTANT offset (0xD000,

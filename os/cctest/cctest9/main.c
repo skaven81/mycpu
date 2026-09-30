@@ -1,12 +1,14 @@
 #include "types.h"
 #include "terminal_output.h"
 #include "string.h"
+extern void exec_chain(char *path);
 
 // Tests for previously-untested code paths in c_compiler/codegen.py:
 //   - Global array with inferred dimension (uint8_t g_arr[] = {...})
 //   - Nested struct init with 16-bit member (InitList recursion + 16-bit emit)
 //   - Static local array with partial init (tail zero-fill path)
 //   - Static local scalar (byte + word) for BIOS VAR emission (lines 239, 241)
+//   - Static locals (scalar + array) persist across calls: initialized once
 //   - Local array with >= 4 tail bytes (MEMFILL4 path in _emit_zero_fill)
 //   - Struct-to-struct assignment (bulk copy without bytes= arg)
 //   - Mixed-size BinaryOp: left=word, right=byte (sign-extend other_reg path)
@@ -333,6 +335,25 @@ void test_static_scalars(void) {
 }
 
 // ============================================================================
+// Test: static locals are initialized ONCE at program start and keep their
+// value across calls (scalar and array); no per-call re-initialization.
+// ============================================================================
+uint8_t static_persist_step(void) {
+    static uint8_t s_count = 50;
+    static uint8_t s_tbl[6] = {1, 2, 3, 4, 5, 6};
+    s_count++;
+    s_tbl[5] = s_tbl[5] + 10;
+    return s_count + s_tbl[5];
+}
+
+void test_static_persist(void) {
+    static_persist_step();              // 51 + 16
+    static_persist_step();              // 52 + 26
+    total_tests++;
+    if (static_persist_step() != 89) { fail("static_persist: 3rd call 53+36 (not re-initialized)"); }
+}
+
+// ============================================================================
 // Test: sizeof on integer and char constants (lines 1129-1134, 1456-1457,
 // 1464-1470).
 // sizeof(5) -> visit_Constant return_typespec (line 1131-1132),
@@ -529,6 +550,7 @@ void main(void) {
     test_nested_struct_init();
     test_func_ref();
     test_static_scalars();
+    test_static_persist();
     test_sizeof_constant();
     test_for_c99_init();
     test_nested_dowhile();
@@ -543,4 +565,5 @@ void main(void) {
     } else {
         printf("cctest9: %U/%U FAIL\n", passed, total_tests);
     }
+    exec_chain("/CCTEST/CCTEST10.ODY");
 }
